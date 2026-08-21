@@ -8,12 +8,13 @@ add_executable(fac_lpr_native_tests
     geometry_validator_tests.cpp
     image_validation_tests.cpp
     logging_tests.cpp
+    lprnet_preprocessor_tests.cpp
     native_image_tests.cpp
     yolo_pose_parser_tests.cpp
     yolo_preprocessor_tests.cpp
 )
 target_compile_features(fac_lpr_native_tests PRIVATE cxx_std_20)
-target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::adaptive_detection fac_lpr::crop fac_lpr::geometry fac_lpr::native_image fac_lpr::yolo GTest::gtest_main Threads::Threads)
+target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::adaptive_detection fac_lpr::crop fac_lpr::geometry fac_lpr::lprnet fac_lpr::native_image fac_lpr::yolo GTest::gtest_main Threads::Threads)
 
 if(FAC_LPR_WITH_OPENCV)
     find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc)
