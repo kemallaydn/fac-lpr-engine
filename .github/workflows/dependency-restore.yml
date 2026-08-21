@@ -9,10 +9,14 @@ on:
       - 'scripts/bootstrap-dependencies.*'
       - 'tools/model-inspector/**'
       - 'include/fac_lpr/application/logging.hpp'
+      - 'include/fac_lpr/application/image_validation.hpp'
       - 'include/fac_lpr/infrastructure/spdlog_logger.hpp'
       - 'include/fac_lpr/infrastructure/onnx/**'
+      - 'include/fac_lpr/infrastructure/opencv_image_view.hpp'
+      - 'src/application/**'
       - 'src/infrastructure/spdlog_logger.cpp'
       - 'src/infrastructure/onnx/**'
+      - 'src/infrastructure/opencv_image_view.cpp'
       - 'src/infrastructure/CMakeLists.txt'
       - 'CMakeLists.txt'
       - '.github/workflows/dependency-restore.yml'
@@ -49,6 +53,7 @@ jobs:
           -DVCPKG_TARGET_TRIPLET=x64-linux
           -DFAC_LPR_WITH_SPDLOG=ON
           -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
           -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
       - name: Build dependency-backed targets
         run: cmake --build build/native-deps --config Release --parallel 2
@@ -79,6 +84,7 @@ jobs:
           -DVCPKG_TARGET_TRIPLET=x64-windows
           -DFAC_LPR_WITH_SPDLOG=ON
           -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
           -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
       - name: Build dependency-backed targets
         shell: pwsh
