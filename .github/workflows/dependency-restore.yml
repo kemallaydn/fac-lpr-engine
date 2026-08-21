@@ -1,8 +1,8 @@
 name: dependency-restore
 
 on:
-  push:
-    branches: [dev]
+  pull_request:
+    branches: [main]
     paths:
       - 'vcpkg.json'
       - 'cmake/vcpkg-baseline.txt'
@@ -24,7 +24,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: dependency-restore-${{ github.ref }}
+  group: dependency-restore-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:
