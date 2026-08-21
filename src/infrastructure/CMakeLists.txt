@@ -58,7 +58,11 @@ endif()
 
 if(FAC_LPR_WITH_OPENCV)
     find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc)
-    add_library(fac_lpr_opencv_adapter STATIC opencv_image_view.cpp opencv/perspective_aligner.cpp)
+    add_library(fac_lpr_opencv_adapter STATIC
+        opencv_image_view.cpp
+        opencv/perspective_aligner.cpp
+        opencv/crop_enhancers.cpp
+    )
     add_library(fac_lpr::opencv_adapter ALIAS fac_lpr_opencv_adapter)
     target_compile_features(fac_lpr_opencv_adapter PUBLIC cxx_std_20)
     target_include_directories(fac_lpr_opencv_adapter PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include> ${OpenCV_INCLUDE_DIRS})
