@@ -8,13 +8,6 @@ on:
       - 'cmake/vcpkg-baseline.txt'
       - 'scripts/bootstrap-dependencies.*'
       - '.github/workflows/dependency-restore.yml'
-  pull_request:
-    branches: [dev, main]
-    paths:
-      - 'vcpkg.json'
-      - 'cmake/vcpkg-baseline.txt'
-      - 'scripts/bootstrap-dependencies.*'
-      - '.github/workflows/dependency-restore.yml'
 
 permissions:
   contents: read
