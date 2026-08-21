@@ -77,7 +77,14 @@ if(FAC_LPR_WITH_ONNX_RUNTIME)
     target_compile_features(fac_lpr_lprnet_onnx PUBLIC cxx_std_20)
     target_include_directories(fac_lpr_lprnet_onnx PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
     target_link_libraries(fac_lpr_lprnet_onnx PUBLIC fac_lpr::lprnet fac_lpr::onnx_runtime)
-    target_link_libraries(fac_lpr_infrastructure INTERFACE fac_lpr::lprnet_onnx)
+
+    add_library(fac_lpr_generic_onnx_ocr STATIC onnx/generic_ocr_recognizer.cpp)
+    add_library(fac_lpr::generic_onnx_ocr ALIAS fac_lpr_generic_onnx_ocr)
+    target_compile_features(fac_lpr_generic_onnx_ocr PUBLIC cxx_std_20)
+    target_include_directories(fac_lpr_generic_onnx_ocr PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+    target_link_libraries(fac_lpr_generic_onnx_ocr PUBLIC fac_lpr::onnx_runtime fac_lpr::native_image)
+
+    target_link_libraries(fac_lpr_infrastructure INTERFACE fac_lpr::lprnet_onnx fac_lpr::generic_onnx_ocr)
 endif()
 
 if(FAC_LPR_WITH_OPENCV)

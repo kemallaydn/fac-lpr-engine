@@ -42,7 +42,18 @@ struct OnnxSessionConfig final {
     GraphOptimizationLevel optimization{GraphOptimizationLevel::ORT_ENABLE_ALL};
 };
 
-class OnnxSession final {
+class IOnnxInferenceSession {
+public:
+    virtual ~IOnnxInferenceSession() = default;
+    [[nodiscard]] virtual const std::vector<TensorDescriptor>& inputs() const noexcept = 0;
+    [[nodiscard]] virtual const std::vector<TensorDescriptor>& outputs() const noexcept = 0;
+    [[nodiscard]] virtual std::vector<Ort::Value> run(
+        std::span<const char* const> input_names,
+        std::span<const Ort::Value> input_values,
+        std::span<const char* const> output_names) = 0;
+};
+
+class OnnxSession final : public IOnnxInferenceSession {
 public:
     OnnxSession(
         std::shared_ptr<OnnxRuntimeEnvironment> environment,
@@ -53,19 +64,19 @@ public:
     OnnxSession& operator=(const OnnxSession&) = delete;
     OnnxSession(OnnxSession&&) noexcept = default;
     OnnxSession& operator=(OnnxSession&&) noexcept = default;
-    ~OnnxSession() = default;
+    ~OnnxSession() override = default;
 
     [[nodiscard]] Ort::Session& native() noexcept { return session_; }
     [[nodiscard]] const Ort::Session& native() const noexcept { return session_; }
 
-    [[nodiscard]] const std::vector<TensorDescriptor>& inputs() const noexcept { return inputs_; }
-    [[nodiscard]] const std::vector<TensorDescriptor>& outputs() const noexcept { return outputs_; }
+    [[nodiscard]] const std::vector<TensorDescriptor>& inputs() const noexcept override { return inputs_; }
+    [[nodiscard]] const std::vector<TensorDescriptor>& outputs() const noexcept override { return outputs_; }
     [[nodiscard]] const std::filesystem::path& model_path() const noexcept { return model_path_; }
 
     [[nodiscard]] std::vector<Ort::Value> run(
         std::span<const char* const> input_names,
         std::span<const Ort::Value> input_values,
-        std::span<const char* const> output_names);
+        std::span<const char* const> output_names) override;
 
 private:
     [[nodiscard]] static Ort::SessionOptions build_options(const OnnxSessionConfig& config);
