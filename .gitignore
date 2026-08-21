@@ -2,6 +2,8 @@
 /build/
 /out/
 /.cache/
+/.tools/
+/vcpkg_installed/
 CMakeUserPresets.json
 compile_commands.json
 
