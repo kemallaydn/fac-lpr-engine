@@ -1,18 +1,25 @@
-if(NOT TARGET onnxruntime::onnxruntime)
-    find_package(onnxruntime CONFIG REQUIRED)
-endif()
-
 add_executable(fac-lpr-model-info
     main.cpp
 )
 
 target_compile_features(fac-lpr-model-info PRIVATE cxx_std_20)
-target_link_libraries(fac-lpr-model-info PRIVATE onnxruntime::onnxruntime)
 
 if(MSVC)
-    target_compile_options(fac-lpr-model-info PRIVATE /W4 /permissive- /EHsc)
+    target_compile_options(fac-lpr-model-info PRIVATE
+        /W4
+        /permissive-
+        /EHsc
+        $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:/WX>
+    )
 else()
-    target_compile_options(fac-lpr-model-info PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
+    target_compile_options(fac-lpr-model-info PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+        $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:-Werror>
+    )
 endif()
 
 set_target_properties(fac-lpr-model-info PROPERTIES
