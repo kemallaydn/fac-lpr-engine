@@ -44,10 +44,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: [Debug, Release]
+        include:
+          - config: Debug
+            preset: windows-msvc-debug
+          - config: Release
+            preset: windows-msvc-release
     steps:
       - uses: actions/checkout@v4
       - name: Configure
         run: cmake --preset windows-msvc
       - name: Build
-        run: cmake --build --preset "windows-msvc-${{ matrix.config == 'Debug' && 'debug' || 'release' }}" --parallel
+        run: cmake --build --preset "${{ matrix.preset }}" --parallel
