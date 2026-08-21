@@ -14,7 +14,10 @@ target_compile_features(fac_lpr_yolo PUBLIC cxx_std_20)
 target_include_directories(fac_lpr_yolo PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_link_libraries(fac_lpr_yolo PUBLIC fac_lpr::application fac_lpr::domain fac_lpr::native_image)
 
-add_library(fac_lpr_lprnet STATIC lprnet/lprnet_preprocessor.cpp)
+add_library(fac_lpr_lprnet STATIC
+    lprnet/lprnet_preprocessor.cpp
+    lprnet/ctc_decoder.cpp
+)
 add_library(fac_lpr::lprnet ALIAS fac_lpr_lprnet)
 target_compile_features(fac_lpr_lprnet PUBLIC cxx_std_20)
 target_include_directories(fac_lpr_lprnet PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
