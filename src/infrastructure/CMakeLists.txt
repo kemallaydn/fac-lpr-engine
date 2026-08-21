@@ -9,6 +9,7 @@ target_link_libraries(
 )
 
 option(FAC_LPR_WITH_SPDLOG "Build the optional spdlog logger adapter" OFF)
+option(FAC_LPR_WITH_ONNX_RUNTIME "Build ONNX Runtime infrastructure" OFF)
 
 if(FAC_LPR_WITH_SPDLOG)
     find_package(spdlog CONFIG REQUIRED)
@@ -29,5 +30,27 @@ if(FAC_LPR_WITH_SPDLOG)
         fac_lpr_spdlog_adapter
         PUBLIC fac_lpr::application
         PRIVATE spdlog::spdlog
+    )
+endif()
+
+if(FAC_LPR_WITH_ONNX_RUNTIME)
+    find_package(onnxruntime CONFIG REQUIRED)
+
+    add_library(fac_lpr_onnx_runtime STATIC
+        onnx/onnx_session.cpp
+    )
+    add_library(fac_lpr::onnx_runtime ALIAS fac_lpr_onnx_runtime)
+
+    target_compile_features(fac_lpr_onnx_runtime PUBLIC cxx_std_20)
+    target_include_directories(
+        fac_lpr_onnx_runtime
+        PUBLIC
+            $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:include>
+    )
+    target_link_libraries(
+        fac_lpr_onnx_runtime
+        PUBLIC fac_lpr::application
+        PRIVATE onnxruntime::onnxruntime
     )
 endif()
