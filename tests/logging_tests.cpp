@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstddef>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -42,6 +43,21 @@ void throwing_callback(
     const char*,
     void*) {
     throw std::runtime_error{"consumer logger failure"};
+}
+
+struct TextCapture final {
+    std::string category{};
+    std::string message{};
+};
+
+void capture_text(
+    fac_lpr_log_level,
+    const char* category,
+    const char* message,
+    void* user_data) {
+    auto& capture = *static_cast<TextCapture*>(user_data);
+    capture.category = category;
+    capture.message = message;
 }
 
 TEST(CallbackLogger, SerializesConcurrentConsumerCallbacks) {
@@ -82,6 +98,25 @@ TEST(CallbackLogger, ConsumerExceptionNeverEscapesLoggingBoundary) {
         .message = "failure",
         .request_id = {},
     }));
+}
+
+TEST(CallbackLogger, CopiesNonNullTerminatedStringViewsAtCBoundary) {
+    const std::string category_storage{"prefix-category-suffix"};
+    const std::string message_storage{"prefix-message-suffix"};
+    const std::string_view category{category_storage.data() + 7, 8};
+    const std::string_view message{message_storage.data() + 7, 7};
+
+    TextCapture capture{};
+    fac_lpr::application::CallbackLogger logger{&capture_text, &capture};
+    logger.log({
+        .level = fac_lpr::application::LogLevel::info,
+        .category = category,
+        .message = message,
+        .request_id = {},
+    });
+
+    EXPECT_EQ(capture.category, "category");
+    EXPECT_EQ(capture.message, "message");
 }
 
 } // namespace
