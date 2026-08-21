@@ -8,17 +8,24 @@ target_compile_features(fac_lpr_native_image PUBLIC cxx_std_20)
 target_include_directories(fac_lpr_native_image PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_link_libraries(fac_lpr_native_image PUBLIC fac_lpr::application)
 
+add_library(fac_lpr_crypto STATIC crypto/sha256.cpp)
+add_library(fac_lpr::crypto ALIAS fac_lpr_crypto)
+target_compile_features(fac_lpr_crypto PUBLIC cxx_std_20)
+target_include_directories(fac_lpr_crypto PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+
+add_library(fac_lpr_paddle_adapter STATIC paddle/paddle_ocr_adapter.cpp)
+add_library(fac_lpr::paddle_adapter ALIAS fac_lpr_paddle_adapter)
+target_compile_features(fac_lpr_paddle_adapter PUBLIC cxx_std_20)
+target_include_directories(fac_lpr_paddle_adapter PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+target_link_libraries(fac_lpr_paddle_adapter PUBLIC fac_lpr::application fac_lpr::crypto)
+
 add_library(fac_lpr_yolo STATIC yolo/yolo_pose_preprocessor.cpp yolo/yolo_pose_parser.cpp)
 add_library(fac_lpr::yolo ALIAS fac_lpr_yolo)
 target_compile_features(fac_lpr_yolo PUBLIC cxx_std_20)
 target_include_directories(fac_lpr_yolo PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_link_libraries(fac_lpr_yolo PUBLIC fac_lpr::application fac_lpr::domain fac_lpr::native_image)
 
-add_library(fac_lpr_lprnet STATIC
-    lprnet/lprnet_preprocessor.cpp
-    lprnet/ctc_decoder.cpp
-    lprnet/constrained_ctc_beam_search.cpp
-)
+add_library(fac_lpr_lprnet STATIC lprnet/lprnet_preprocessor.cpp lprnet/ctc_decoder.cpp lprnet/constrained_ctc_beam_search.cpp)
 add_library(fac_lpr::lprnet ALIAS fac_lpr_lprnet)
 target_compile_features(fac_lpr_lprnet PUBLIC cxx_std_20)
 target_include_directories(fac_lpr_lprnet PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
@@ -44,7 +51,7 @@ target_link_libraries(fac_lpr_crop PUBLIC fac_lpr::application fac_lpr::domain f
 
 add_library(fac_lpr_infrastructure INTERFACE)
 add_library(fac_lpr::infrastructure ALIAS fac_lpr_infrastructure)
-target_link_libraries(fac_lpr_infrastructure INTERFACE fac_lpr::application fac_lpr::domain fac_lpr::native_image fac_lpr::yolo fac_lpr::lprnet fac_lpr::geometry fac_lpr::adaptive_detection fac_lpr::crop)
+target_link_libraries(fac_lpr_infrastructure INTERFACE fac_lpr::application fac_lpr::domain fac_lpr::native_image fac_lpr::crypto fac_lpr::paddle_adapter fac_lpr::yolo fac_lpr::lprnet fac_lpr::geometry fac_lpr::adaptive_detection fac_lpr::crop)
 
 if(FAC_LPR_WITH_SPDLOG)
     find_package(spdlog CONFIG REQUIRED)
@@ -59,7 +66,6 @@ if(FAC_LPR_WITH_ONNX_RUNTIME)
     if(NOT TARGET onnxruntime::onnxruntime)
         find_package(onnxruntime CONFIG REQUIRED)
     endif()
-
     add_library(fac_lpr_onnx_runtime STATIC onnx/onnx_session.cpp)
     add_library(fac_lpr::onnx_runtime ALIAS fac_lpr_onnx_runtime)
     target_compile_features(fac_lpr_onnx_runtime PUBLIC cxx_std_20)
@@ -76,13 +82,7 @@ endif()
 
 if(FAC_LPR_WITH_OPENCV)
     find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc)
-    add_library(fac_lpr_opencv_adapter STATIC
-        opencv_image_view.cpp
-        opencv/perspective_aligner.cpp
-        opencv/crop_enhancers.cpp
-        opencv/double_row_normalizer.cpp
-        opencv/connected_component_layout_analyzer.cpp
-    )
+    add_library(fac_lpr_opencv_adapter STATIC opencv_image_view.cpp opencv/perspective_aligner.cpp opencv/crop_enhancers.cpp opencv/double_row_normalizer.cpp opencv/connected_component_layout_analyzer.cpp)
     add_library(fac_lpr::opencv_adapter ALIAS fac_lpr_opencv_adapter)
     target_compile_features(fac_lpr_opencv_adapter PUBLIC cxx_std_20)
     target_include_directories(fac_lpr_opencv_adapter PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include> ${OpenCV_INCLUDE_DIRS})
