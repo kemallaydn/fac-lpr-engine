@@ -5,6 +5,7 @@
 #include <fac_lpr/domain/detection.hpp>
 #include <fac_lpr/domain/recognition.hpp>
 
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -19,10 +20,15 @@ struct LayoutEvidence final {
     float confidence{0.0F};
 };
 
+struct RecognitionDecisionContext final {
+    bool degraded{false};
+    bool fatal_provider_failure{false};
+    std::size_t provider_failure_count{0U};
+};
+
 class IPlateDetector {
 public:
     virtual ~IPlateDetector() = default;
-
     [[nodiscard]] virtual std::string_view name() const noexcept = 0;
     [[nodiscard]] virtual std::vector<domain::Detection> detect(
         const ImageView& image,
@@ -32,7 +38,6 @@ public:
 class IPlateAligner {
 public:
     virtual ~IPlateAligner() = default;
-
     [[nodiscard]] virtual std::optional<ImageBuffer> align(
         const ImageView& source,
         const domain::Detection& detection,
@@ -42,7 +47,6 @@ public:
 class ICropGenerator {
 public:
     virtual ~ICropGenerator() = default;
-
     [[nodiscard]] virtual std::string_view name() const noexcept = 0;
     [[nodiscard]] virtual std::vector<CropHypothesis> generate(
         const ImageView& source,
@@ -54,7 +58,6 @@ public:
 class IPlateRecognizer {
 public:
     virtual ~IPlateRecognizer() = default;
-
     [[nodiscard]] virtual std::string_view name() const noexcept = 0;
     [[nodiscard]] virtual domain::RecognitionEvidence recognize(
         const ImageView& plate,
@@ -64,7 +67,6 @@ public:
 class IPlateLayoutAnalyzer {
 public:
     virtual ~IPlateLayoutAnalyzer() = default;
-
     [[nodiscard]] virtual LayoutEvidence analyze(
         const ImageView& plate,
         std::span<const domain::PlateCandidate> candidates,
@@ -74,7 +76,6 @@ public:
 class ICandidateFusion {
 public:
     virtual ~ICandidateFusion() = default;
-
     [[nodiscard]] virtual std::vector<domain::PlateCandidate> fuse(
         std::span<const domain::RecognitionEvidence> evidence,
         std::span<const LayoutEvidence> layout_evidence) const = 0;
@@ -83,7 +84,6 @@ public:
 class IConfidenceCalibrator {
 public:
     virtual ~IConfidenceCalibrator() = default;
-
     [[nodiscard]] virtual float calibrate(
         std::string_view source,
         float raw_confidence,
@@ -94,11 +94,11 @@ public:
 class IDecisionPolicy {
 public:
     virtual ~IDecisionPolicy() = default;
-
     [[nodiscard]] virtual domain::PlateRecognitionResult decide(
         const domain::Detection& detection,
         std::span<const domain::RecognitionEvidence> evidence,
-        std::span<const domain::PlateCandidate> fused_candidates) const = 0;
+        std::span<const domain::PlateCandidate> fused_candidates,
+        const RecognitionDecisionContext& context) const = 0;
 };
 
 } // namespace fac_lpr::application

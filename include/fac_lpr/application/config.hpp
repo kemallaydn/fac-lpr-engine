@@ -40,8 +40,12 @@ struct CropConfig final {
 
 struct DecisionConfig final {
     float accepted_confidence_threshold{0.78F};
+    float review_confidence_threshold{0.55F};
+    float strong_conflict_threshold{0.70F};
     float minimum_crop_quality{0.28F};
+    float minimum_geometry_score{0.20F};
     float minimum_effective_detector_confidence{0.50F};
+    bool allow_accept_when_degraded{false};
     bool fail_closed{true};
 };
 
@@ -63,19 +67,16 @@ struct EngineConfig final {
 };
 
 namespace detail {
-
 inline void require_unit_interval(float value, const char* name) {
     if (!(value >= 0.0F && value <= 1.0F)) {
         throw ConfigurationError(std::string{name} + " must be in [0, 1]");
     }
 }
-
 inline void require_positive(std::size_t value, const char* name) {
     if (value == 0U) {
         throw ConfigurationError(std::string{name} + " must be greater than zero");
     }
 }
-
 } // namespace detail
 
 inline void validate_engine_config(const EngineConfig& config) {
@@ -84,7 +85,6 @@ inline void validate_engine_config(const EngineConfig& config) {
     detail::require_positive(config.detector.max_detections, "detector.max_detections");
     detail::require_positive(config.detector.tile_width, "detector.tile_width");
     detail::require_positive(config.detector.tile_height, "detector.tile_height");
-
     if (!(config.detector.tile_overlap_ratio >= 0.0F && config.detector.tile_overlap_ratio < 0.50F)) {
         throw ConfigurationError("detector.tile_overlap_ratio must be in [0, 0.5)");
     }
@@ -93,10 +93,7 @@ inline void validate_engine_config(const EngineConfig& config) {
     detail::require_positive(config.recognition.result_limit, "recognition.result_limit");
     detail::require_positive(config.recognition.classes_per_step, "recognition.classes_per_step");
     detail::require_positive(config.recognition.max_recognizers, "recognition.max_recognizers");
-    detail::require_unit_interval(
-        config.recognition.minimum_candidate_confidence,
-        "recognition.minimum_candidate_confidence");
-
+    detail::require_unit_interval(config.recognition.minimum_candidate_confidence, "recognition.minimum_candidate_confidence");
     if (config.recognition.result_limit > config.recognition.beam_width) {
         throw ConfigurationError("recognition.result_limit cannot exceed recognition.beam_width");
     }
@@ -116,13 +113,18 @@ inline void validate_engine_config(const EngineConfig& config) {
         throw ConfigurationError("crop.max_hypotheses cannot exceed 32");
     }
 
-    detail::require_unit_interval(
-        config.decision.accepted_confidence_threshold,
-        "decision.accepted_confidence_threshold");
+    detail::require_unit_interval(config.decision.accepted_confidence_threshold, "decision.accepted_confidence_threshold");
+    detail::require_unit_interval(config.decision.review_confidence_threshold, "decision.review_confidence_threshold");
+    detail::require_unit_interval(config.decision.strong_conflict_threshold, "decision.strong_conflict_threshold");
     detail::require_unit_interval(config.decision.minimum_crop_quality, "decision.minimum_crop_quality");
-    detail::require_unit_interval(
-        config.decision.minimum_effective_detector_confidence,
-        "decision.minimum_effective_detector_confidence");
+    detail::require_unit_interval(config.decision.minimum_geometry_score, "decision.minimum_geometry_score");
+    detail::require_unit_interval(config.decision.minimum_effective_detector_confidence, "decision.minimum_effective_detector_confidence");
+    if (config.decision.review_confidence_threshold > config.decision.accepted_confidence_threshold) {
+        throw ConfigurationError("decision.review_confidence_threshold cannot exceed accepted threshold");
+    }
+    if (config.decision.allow_accept_when_degraded) {
+        throw ConfigurationError("safe default policy does not allow acceptance while providers are degraded");
+    }
     if (!config.decision.fail_closed) {
         throw ConfigurationError("decision.fail_closed must remain enabled for the safe default policy");
     }
@@ -132,7 +134,6 @@ inline void validate_engine_config(const EngineConfig& config) {
     detail::require_positive(config.performance.max_image_width, "performance.max_image_width");
     detail::require_positive(config.performance.max_image_height, "performance.max_image_height");
     detail::require_positive(config.performance.max_image_bytes, "performance.max_image_bytes");
-
     if (config.performance.worker_count > 256U) {
         throw ConfigurationError("performance.worker_count cannot exceed 256");
     }
