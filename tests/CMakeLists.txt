@@ -4,6 +4,7 @@ find_package(Threads REQUIRED)
 add_executable(fac_lpr_native_tests
     adaptive_tile_detector_tests.cpp
     crop_hypothesis_generator_tests.cpp
+    ctc_decoder_tests.cpp
     error_boundary_tests.cpp
     geometry_validator_tests.cpp
     image_validation_tests.cpp
