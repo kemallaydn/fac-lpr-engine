@@ -13,6 +13,7 @@ add_executable(fac_lpr_native_tests
     logging_tests.cpp
     lprnet_preprocessor_tests.cpp
     native_image_tests.cpp
+    recognition_ensemble_tests.cpp
     turkish_plate_grammar_tests.cpp
     yolo_pose_parser_tests.cpp
     yolo_preprocessor_tests.cpp
