@@ -73,6 +73,7 @@ if(FAC_LPR_WITH_OPENCV)
         opencv/perspective_aligner.cpp
         opencv/crop_enhancers.cpp
         opencv/double_row_normalizer.cpp
+        opencv/connected_component_layout_analyzer.cpp
     )
     add_library(fac_lpr::opencv_adapter ALIAS fac_lpr_opencv_adapter)
     target_compile_features(fac_lpr_opencv_adapter PUBLIC cxx_std_20)
