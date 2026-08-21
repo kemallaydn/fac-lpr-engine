@@ -17,7 +17,11 @@ target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::adaptive_detection f
 
 if(FAC_LPR_WITH_OPENCV)
     find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc)
-    target_sources(fac_lpr_native_tests PRIVATE perspective_aligner_tests.cpp yolo_preprocessor_opencv_reference_tests.cpp)
+    target_sources(fac_lpr_native_tests PRIVATE
+        crop_enhancers_tests.cpp
+        perspective_aligner_tests.cpp
+        yolo_preprocessor_opencv_reference_tests.cpp
+    )
     target_include_directories(fac_lpr_native_tests PRIVATE ${OpenCV_INCLUDE_DIRS})
     target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::opencv_adapter ${OpenCV_LIBS})
 endif()
