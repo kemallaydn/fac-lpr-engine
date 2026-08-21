@@ -10,6 +10,7 @@ target_link_libraries(
 
 option(FAC_LPR_WITH_SPDLOG "Build the optional spdlog logger adapter" OFF)
 option(FAC_LPR_WITH_ONNX_RUNTIME "Build ONNX Runtime infrastructure" OFF)
+option(FAC_LPR_WITH_OPENCV "Build OpenCV infrastructure adapters" OFF)
 
 if(FAC_LPR_WITH_SPDLOG)
     find_package(spdlog CONFIG REQUIRED)
@@ -52,5 +53,28 @@ if(FAC_LPR_WITH_ONNX_RUNTIME)
         fac_lpr_onnx_runtime
         PUBLIC fac_lpr::application
         PRIVATE onnxruntime::onnxruntime
+    )
+endif()
+
+if(FAC_LPR_WITH_OPENCV)
+    find_package(OpenCV CONFIG REQUIRED COMPONENTS core)
+
+    add_library(fac_lpr_opencv_adapter STATIC
+        opencv_image_view.cpp
+    )
+    add_library(fac_lpr::opencv_adapter ALIAS fac_lpr_opencv_adapter)
+
+    target_compile_features(fac_lpr_opencv_adapter PUBLIC cxx_std_20)
+    target_include_directories(
+        fac_lpr_opencv_adapter
+        PUBLIC
+            $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:include>
+            ${OpenCV_INCLUDE_DIRS}
+    )
+    target_link_libraries(
+        fac_lpr_opencv_adapter
+        PUBLIC fac_lpr::application
+        PRIVATE ${OpenCV_LIBS}
     )
 endif()
