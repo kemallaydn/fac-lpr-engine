@@ -1,4 +1,5 @@
 add_library(fac_lpr_application STATIC
+    candidate_fusion.cpp
     image_validation.cpp
     turkish_plate_grammar.cpp
 )
