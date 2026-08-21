@@ -4,6 +4,7 @@ find_package(Threads REQUIRED)
 add_executable(fac_lpr_native_tests
     adaptive_tile_detector_tests.cpp
     candidate_fusion_tests.cpp
+    confidence_calibration_tests.cpp
     constrained_ctc_beam_search_tests.cpp
     crop_hypothesis_generator_tests.cpp
     ctc_decoder_tests.cpp
