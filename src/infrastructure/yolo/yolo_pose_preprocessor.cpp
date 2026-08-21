@@ -8,13 +8,21 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <string>
 
 namespace fac_lpr::infrastructure::yolo {
 namespace {
 
-[[nodiscard]] int checked_int(const std::size_t value, const char* field) {
+[[nodiscard]] int checked_positive_int(const std::size_t value, const char* field) {
     if (value == 0U || value > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
         throw application::ConfigurationError(std::string{field} + " is outside OpenCV dimension limits");
+    }
+    return static_cast<int>(value);
+}
+
+[[nodiscard]] int checked_nonnegative_int(const std::size_t value, const char* field) {
+    if (value > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        throw application::ConfigurationError(std::string{field} + " is outside OpenCV integer limits");
     }
     return static_cast<int>(value);
 }
@@ -83,7 +91,9 @@ YoloInputTensor YoloPosePreprocessor::preprocess(
     cv::resize(
         rgb,
         resized,
-        cv::Size{checked_int(resized_width, "resized width"), checked_int(resized_height, "resized height")},
+        cv::Size{
+            checked_positive_int(resized_width, "resized width"),
+            checked_positive_int(resized_height, "resized height")},
         0.0,
         0.0,
         cv::INTER_LINEAR);
@@ -99,15 +109,15 @@ YoloInputTensor YoloPosePreprocessor::preprocess(
     cv::copyMakeBorder(
         resized,
         letterboxed,
-        checked_int(pad_top, "pad top"),
-        checked_int(pad_bottom, "pad bottom"),
-        checked_int(pad_left, "pad left"),
-        checked_int(pad_right, "pad right"),
+        checked_nonnegative_int(pad_top, "pad top"),
+        checked_nonnegative_int(pad_bottom, "pad bottom"),
+        checked_nonnegative_int(pad_left, "pad left"),
+        checked_nonnegative_int(pad_right, "pad right"),
         cv::BORDER_CONSTANT,
         cv::Scalar{spec_.pad_value, spec_.pad_value, spec_.pad_value});
 
-    if (letterboxed.cols != checked_int(spec_.width, "input width") ||
-        letterboxed.rows != checked_int(spec_.height, "input height") ||
+    if (letterboxed.cols != checked_positive_int(spec_.width, "input width") ||
+        letterboxed.rows != checked_positive_int(spec_.height, "input height") ||
         letterboxed.channels() != 3) {
         throw application::InternalError("YOLO letterbox output shape is inconsistent");
     }
@@ -128,7 +138,7 @@ YoloInputTensor YoloPosePreprocessor::preprocess(
 
     const auto plane_size = spec_.width * spec_.height;
     for (std::size_t y = 0; y < spec_.height; ++y) {
-        const auto* row = letterboxed.ptr<cv::Vec3b>(checked_int(y, "row"));
+        const auto* row = letterboxed.ptr<cv::Vec3b>(checked_nonnegative_int(y, "row"));
         for (std::size_t x = 0; x < spec_.width; ++x) {
             const auto& pixel = row[x];
             const auto index = y * spec_.width + x;
