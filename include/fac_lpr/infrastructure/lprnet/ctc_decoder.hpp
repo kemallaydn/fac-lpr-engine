@@ -1,8 +1,10 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace fac_lpr::infrastructure::lprnet {
