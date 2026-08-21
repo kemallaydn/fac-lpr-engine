@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 
@@ -17,10 +18,23 @@ using fac_lpr::infrastructure::native_image::NativeImageWorkspace;
 using fac_lpr::infrastructure::yolo::YoloInputSpec;
 using fac_lpr::infrastructure::yolo::YoloPosePreprocessor;
 
+TEST(YoloPreprocessor, UsesInspectedProductionInputContract) {
+    // best.onnx: images float32 [1, 3, 960, 960]
+    const YoloPosePreprocessor preprocessor{
+        YoloInputSpec{960U, 960U, 3U, 1.0F / 255.0F, 114.0F}};
+    EXPECT_EQ(preprocessor.spec().width, 960U);
+    EXPECT_EQ(preprocessor.spec().height, 960U);
+    EXPECT_EQ(preprocessor.spec().channels, 3U);
+    EXPECT_EQ(preprocessor.tensor_elements(), 3U * 960U * 960U);
+}
+
 TEST(YoloPreprocessor, ConvertsBgrDirectlyToRgbChw) {
     std::vector<std::byte> bytes{std::byte{10}, std::byte{20}, std::byte{30}};
-    const auto image = validate_image(ImageView{bytes, 1U, 1U, 3U, PixelFormat::bgr8}, PerformanceConfig{});
-    const YoloPosePreprocessor preprocessor{YoloInputSpec{1U, 1U, 3U, 1.0F / 255.0F, 114.0F}};
+    const auto image = validate_image(
+        ImageView{bytes, 1U, 1U, 3U, PixelFormat::bgr8},
+        PerformanceConfig{});
+    const YoloPosePreprocessor preprocessor{
+        YoloInputSpec{1U, 1U, 3U, 1.0F / 255.0F, 114.0F}};
     const auto output = preprocessor.preprocess(image);
     ASSERT_EQ(output.chw.size(), 3U);
     EXPECT_NEAR(output.chw[0], 30.0F / 255.0F, 1.0e-6F);
@@ -30,8 +44,11 @@ TEST(YoloPreprocessor, ConvertsBgrDirectlyToRgbChw) {
 
 TEST(YoloPreprocessor, ProducesDeterministicLetterboxMetadata) {
     std::vector<std::byte> bytes(4U * 2U * 3U, std::byte{64});
-    const auto image = validate_image(ImageView{bytes, 4U, 2U, 12U, PixelFormat::rgb8}, PerformanceConfig{});
-    const YoloPosePreprocessor preprocessor{YoloInputSpec{4U, 4U, 3U, 1.0F / 255.0F, 114.0F}};
+    const auto image = validate_image(
+        ImageView{bytes, 4U, 2U, 12U, PixelFormat::rgb8},
+        PerformanceConfig{});
+    const YoloPosePreprocessor preprocessor{
+        YoloInputSpec{4U, 4U, 3U, 1.0F / 255.0F, 114.0F}};
     NativeImageWorkspace workspace{};
     const auto first = preprocessor.preprocess(image, workspace);
     std::vector<float> snapshot(first.chw.begin(), first.chw.end());
@@ -46,8 +63,11 @@ TEST(YoloPreprocessor, ProducesDeterministicLetterboxMetadata) {
 
 TEST(YoloPreprocessor, ReusesCallerProvidedTensorStorage) {
     std::vector<std::byte> bytes(8U * 8U * 3U, std::byte{128});
-    const auto image = validate_image(ImageView{bytes, 8U, 8U, 24U, PixelFormat::bgr8}, PerformanceConfig{});
-    const YoloPosePreprocessor preprocessor{YoloInputSpec{16U, 16U, 3U, 1.0F / 255.0F, 114.0F}};
+    const auto image = validate_image(
+        ImageView{bytes, 8U, 8U, 24U, PixelFormat::bgr8},
+        PerformanceConfig{});
+    const YoloPosePreprocessor preprocessor{
+        YoloInputSpec{16U, 16U, 3U, 1.0F / 255.0F, 114.0F}};
     NativeImageWorkspace workspace{};
     const auto first = preprocessor.preprocess(image, workspace);
     const auto* first_address = first.chw.data();
