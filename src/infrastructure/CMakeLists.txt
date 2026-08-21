@@ -35,7 +35,9 @@ if(FAC_LPR_WITH_SPDLOG)
 endif()
 
 if(FAC_LPR_WITH_ONNX_RUNTIME)
-    find_package(onnxruntime CONFIG REQUIRED)
+    if(NOT TARGET onnxruntime::onnxruntime)
+        find_package(onnxruntime CONFIG REQUIRED)
+    endif()
 
     add_library(fac_lpr_onnx_runtime STATIC
         onnx/onnx_session.cpp

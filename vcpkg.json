@@ -13,7 +13,6 @@
         "thread"
       ]
     },
-    "onnxruntime",
     "gtest",
     "spdlog"
   ]

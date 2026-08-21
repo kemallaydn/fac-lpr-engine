@@ -6,6 +6,8 @@ on:
     paths:
       - 'vcpkg.json'
       - 'cmake/vcpkg-baseline.txt'
+      - 'cmake/onnxruntime-*.txt'
+      - 'cmake/OnnxRuntimePrebuilt.cmake'
       - 'scripts/bootstrap-dependencies.*'
       - 'tools/model-inspector/**'
       - 'include/fac_lpr/application/logging.hpp'
@@ -14,15 +16,16 @@ on:
       - 'include/fac_lpr/infrastructure/onnx/**'
       - 'include/fac_lpr/infrastructure/opencv_image_view.hpp'
       - 'src/application/**'
-      - 'src/infrastructure/spdlog_logger.cpp'
-      - 'src/infrastructure/onnx/**'
-      - 'src/infrastructure/opencv_image_view.cpp'
-      - 'src/infrastructure/CMakeLists.txt'
+      - 'src/infrastructure/**'
       - 'CMakeLists.txt'
       - '.github/workflows/dependency-restore.yml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: dependency-restore-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   VCPKG_DISABLE_METRICS: '1'
@@ -31,17 +34,22 @@ jobs:
   linux:
     name: Linux dependency build
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 30
     env:
       VCPKG_DEFAULT_TRIPLET: x64-linux
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite
     steps:
       - uses: actions/checkout@v4
-      - name: Restore vcpkg binary cache
+      - name: Restore dependency caches
         uses: actions/cache@v4
         with:
-          path: .vcpkg-binary-cache
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-baseline.txt') }}
+          path: |
+            .vcpkg-binary-cache
+            .cache/onnxruntime
+          key: deps-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-baseline.txt', 'cmake/onnxruntime-version.txt', 'cmake/onnxruntime-linux-x64.sha256') }}
+          restore-keys: |
+            deps-${{ runner.os }}-
+            vcpkg-${{ runner.os }}-
       - name: Restore dependencies
         run: bash scripts/bootstrap-dependencies.sh
       - name: Configure dependency-backed targets
@@ -51,6 +59,7 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
           -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
           -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
           -DFAC_LPR_WITH_SPDLOG=ON
           -DFAC_LPR_WITH_ONNX_RUNTIME=ON
           -DFAC_LPR_WITH_OPENCV=ON
@@ -61,17 +70,22 @@ jobs:
   windows:
     name: Windows dependency build
     runs-on: windows-2022
-    timeout-minutes: 120
+    timeout-minutes: 30
     env:
       VCPKG_DEFAULT_TRIPLET: x64-windows
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\.vcpkg-binary-cache,readwrite
     steps:
       - uses: actions/checkout@v4
-      - name: Restore vcpkg binary cache
+      - name: Restore dependency caches
         uses: actions/cache@v4
         with:
-          path: .vcpkg-binary-cache
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-baseline.txt') }}
+          path: |
+            .vcpkg-binary-cache
+            .cache/onnxruntime
+          key: deps-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-baseline.txt', 'cmake/onnxruntime-version.txt', 'cmake/onnxruntime-win-x64.sha256') }}
+          restore-keys: |
+            deps-${{ runner.os }}-
+            vcpkg-${{ runner.os }}-
       - name: Restore dependencies
         shell: pwsh
         run: ./scripts/bootstrap-dependencies.ps1
@@ -82,6 +96,7 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/build/vcpkg_installed"
           -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DFAC_LPR_ONNXRUNTIME_ROOT="${{ github.workspace }}/build/deps/onnxruntime"
           -DFAC_LPR_WITH_SPDLOG=ON
           -DFAC_LPR_WITH_ONNX_RUNTIME=ON
           -DFAC_LPR_WITH_OPENCV=ON

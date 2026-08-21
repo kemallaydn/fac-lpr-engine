@@ -1,4 +1,6 @@
-find_package(onnxruntime CONFIG REQUIRED)
+if(NOT TARGET onnxruntime::onnxruntime)
+    find_package(onnxruntime CONFIG REQUIRED)
+endif()
 
 add_executable(fac-lpr-model-info
     main.cpp

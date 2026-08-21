@@ -9,6 +9,12 @@ project(
 
 option(FAC_LPR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(FAC_LPR_BUILD_MODEL_INSPECTOR "Build the ONNX model inspector CLI" OFF)
+set(FAC_LPR_ONNXRUNTIME_ROOT "" CACHE PATH "Path to an official prebuilt ONNX Runtime package")
+
+if(FAC_LPR_ONNXRUNTIME_ROOT)
+    include(cmake/OnnxRuntimePrebuilt.cmake)
+    fac_lpr_import_onnxruntime("${FAC_LPR_ONNXRUNTIME_ROOT}")
+endif()
 
 add_subdirectory(src/domain)
 add_subdirectory(src/application)
