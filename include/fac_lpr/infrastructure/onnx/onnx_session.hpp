@@ -4,8 +4,10 @@
 
 #include <onnxruntime_cxx_api.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -59,6 +61,11 @@ public:
     [[nodiscard]] const std::vector<TensorDescriptor>& inputs() const noexcept { return inputs_; }
     [[nodiscard]] const std::vector<TensorDescriptor>& outputs() const noexcept { return outputs_; }
     [[nodiscard]] const std::filesystem::path& model_path() const noexcept { return model_path_; }
+
+    [[nodiscard]] std::vector<Ort::Value> run(
+        std::span<const char* const> input_names,
+        std::span<const Ort::Value> input_values,
+        std::span<const char* const> output_names);
 
 private:
     [[nodiscard]] static Ort::SessionOptions build_options(const OnnxSessionConfig& config);
