@@ -15,6 +15,7 @@
 #include <new>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace fac_lpr::infrastructure::opencv {
