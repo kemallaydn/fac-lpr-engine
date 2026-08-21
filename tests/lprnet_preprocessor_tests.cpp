@@ -26,18 +26,28 @@ std::vector<std::byte> make_bgr_fixture() {
         std::byte{255}, std::byte{255}, std::byte{255}};
 }
 
+LprNetInputSpec make_unit_rgb_spec(
+    const std::size_t width,
+    const std::size_t height,
+    const TensorLayout layout = TensorLayout::nchw,
+    const InputColorOrder color_order = InputColorOrder::rgb) {
+    LprNetInputSpec spec{};
+    spec.width = width;
+    spec.height = height;
+    spec.channels = 3U;
+    spec.layout = layout;
+    spec.color_order = color_order;
+    spec.input_scale = 1.0F / 255.0F;
+    spec.mean = {0.0F, 0.0F, 0.0F};
+    spec.standard_deviation = {1.0F, 1.0F, 1.0F};
+    return spec;
+}
+
 TEST(LprNetPreprocessor, SyntheticGoldenRgbNchwTensorIsDeterministic) {
     auto bytes = make_bgr_fixture();
     const ImageView image{bytes, 2U, 2U, 6U, PixelFormat::bgr8};
     const auto validated = validate_image(image, PerformanceConfig{});
-
-    LprNetInputSpec spec{};
-    spec.width = 2U;
-    spec.height = 2U;
-    spec.channels = 3U;
-    spec.layout = TensorLayout::nchw;
-    spec.color_order = InputColorOrder::rgb;
-    const LprNetPreprocessor preprocessor{spec};
+    const LprNetPreprocessor preprocessor{make_unit_rgb_spec(2U, 2U)};
 
     const auto tensor = preprocessor.preprocess(validated);
     ASSERT_EQ(tensor.values.size(), 12U);
@@ -55,18 +65,32 @@ TEST(LprNetPreprocessor, SyntheticGoldenRgbNchwTensorIsDeterministic) {
     }
 }
 
+TEST(LprNetPreprocessor, BilinearResizeGoldenFixtureUsesPixelCenterMapping) {
+    auto bytes = make_bgr_fixture();
+    const ImageView image{bytes, 2U, 2U, 6U, PixelFormat::bgr8};
+    const auto validated = validate_image(image, PerformanceConfig{});
+    const LprNetPreprocessor preprocessor{make_unit_rgb_spec(3U, 3U)};
+
+    const auto tensor = preprocessor.preprocess(validated);
+    ASSERT_EQ(tensor.values.size(), 27U);
+
+    constexpr std::size_t plane_size = 9U;
+    constexpr std::size_t center = 4U;
+    EXPECT_NEAR(tensor.values[center], 0.5F, 1.0e-6F);
+    EXPECT_NEAR(tensor.values[plane_size + center], 0.5F, 1.0e-6F);
+    EXPECT_NEAR(tensor.values[(2U * plane_size) + center], 0.5F, 1.0e-6F);
+
+    EXPECT_NEAR(tensor.values[0U], 1.0F, 1.0e-6F);
+    EXPECT_NEAR(tensor.values[plane_size], 0.0F, 1.0e-6F);
+    EXPECT_NEAR(tensor.values[2U * plane_size], 0.0F, 1.0e-6F);
+}
+
 TEST(LprNetPreprocessor, SupportsNhwcAndConfiguredBgrOrder) {
     auto bytes = make_bgr_fixture();
     const ImageView image{bytes, 2U, 2U, 6U, PixelFormat::bgr8};
     const auto validated = validate_image(image, PerformanceConfig{});
-
-    LprNetInputSpec spec{};
-    spec.width = 2U;
-    spec.height = 2U;
-    spec.channels = 3U;
-    spec.layout = TensorLayout::nhwc;
-    spec.color_order = InputColorOrder::bgr;
-    const LprNetPreprocessor preprocessor{spec};
+    const LprNetPreprocessor preprocessor{
+        make_unit_rgb_spec(2U, 2U, TensorLayout::nhwc, InputColorOrder::bgr)};
 
     const auto tensor = preprocessor.preprocess(validated);
     EXPECT_EQ(tensor.shape[0], 1);
@@ -79,29 +103,25 @@ TEST(LprNetPreprocessor, SupportsNhwcAndConfiguredBgrOrder) {
     EXPECT_NEAR(tensor.values[2], 1.0F, 1.0e-6F);
 }
 
-TEST(LprNetPreprocessor, ReusesNativeTensorWorkspace) {
+TEST(LprNetPreprocessor, ReusesNativeTensorWorkspaceWithoutReallocation) {
     auto bytes = make_bgr_fixture();
     const ImageView image{bytes, 2U, 2U, 6U, PixelFormat::bgr8};
     const auto validated = validate_image(image, PerformanceConfig{});
-
-    LprNetInputSpec spec{};
-    spec.width = 4U;
-    spec.height = 2U;
-    spec.channels = 3U;
-    const LprNetPreprocessor preprocessor{spec};
+    const LprNetPreprocessor preprocessor{make_unit_rgb_spec(4U, 2U)};
     NativeImageWorkspace workspace{};
 
     const auto first = preprocessor.preprocess(validated, workspace);
+    const auto* first_data = first.values.data();
     const auto capacity = workspace.tensor_capacity();
     const auto second = preprocessor.preprocess(validated, workspace);
+
     EXPECT_EQ(first.values.size(), second.values.size());
     EXPECT_EQ(workspace.tensor_capacity(), capacity);
+    EXPECT_EQ(second.values.data(), first_data);
 }
 
 TEST(LprNetPreprocessor, InvalidChannelContractFailsFast) {
-    LprNetInputSpec spec{};
-    spec.width = 94U;
-    spec.height = 24U;
+    auto spec = make_unit_rgb_spec(94U, 24U);
     spec.channels = 2U;
     EXPECT_THROW(
         LprNetPreprocessor{spec},
