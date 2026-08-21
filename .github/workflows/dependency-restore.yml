@@ -7,6 +7,12 @@ on:
       - 'vcpkg.json'
       - 'cmake/vcpkg-baseline.txt'
       - 'scripts/bootstrap-dependencies.*'
+      - 'tools/model-inspector/**'
+      - 'include/fac_lpr/application/logging.hpp'
+      - 'include/fac_lpr/infrastructure/spdlog_logger.hpp'
+      - 'src/infrastructure/spdlog_logger.cpp'
+      - 'src/infrastructure/CMakeLists.txt'
+      - 'CMakeLists.txt'
       - '.github/workflows/dependency-restore.yml'
 
 permissions:
@@ -17,7 +23,7 @@ env:
 
 jobs:
   linux:
-    name: Linux vcpkg restore
+    name: Linux dependency build
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -32,9 +38,20 @@ jobs:
           key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-baseline.txt') }}
       - name: Restore dependencies
         run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure dependency-backed targets
+        run: >-
+          cmake -S . -B build/native-deps -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+      - name: Build dependency-backed targets
+        run: cmake --build build/native-deps --config Release --parallel 2
 
   windows:
-    name: Windows vcpkg restore
+    name: Windows dependency build
     runs-on: windows-2022
     timeout-minutes: 120
     env:
@@ -50,3 +67,15 @@ jobs:
       - name: Restore dependencies
         shell: pwsh
         run: ./scripts/bootstrap-dependencies.ps1
+      - name: Configure dependency-backed targets
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/native-deps -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/build/vcpkg_installed"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+      - name: Build dependency-backed targets
+        shell: pwsh
+        run: cmake --build build/native-deps --config Release --parallel 2
