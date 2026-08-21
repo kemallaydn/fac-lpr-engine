@@ -1,6 +1,7 @@
 find_package(GTest CONFIG REQUIRED)
 
 add_executable(fac_lpr_native_tests
+    error_boundary_tests.cpp
     native_image_tests.cpp
     yolo_preprocessor_tests.cpp
 )
