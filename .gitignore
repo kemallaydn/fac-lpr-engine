@@ -1,0 +1,23 @@
+# Build output
+/build/
+/out/
+/.cache/
+CMakeUserPresets.json
+compile_commands.json
+
+# IDE/editor
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Runtime models and local datasets
+/models/*.onnx
+/models/*.engine
+/runtime/
+/.runtime/
+/test-data/private/
+
+# OS
+.DS_Store
+Thumbs.db
