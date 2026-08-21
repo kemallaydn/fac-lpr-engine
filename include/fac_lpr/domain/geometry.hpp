@@ -10,7 +10,7 @@ struct Point2f final {
     float x{0.0F};
     float y{0.0F};
 
-    [[nodiscard]] constexpr bool is_finite() const noexcept {
+    [[nodiscard]] bool is_finite() const noexcept {
         return std::isfinite(x) && std::isfinite(y);
     }
 };
@@ -25,7 +25,7 @@ struct BoundingBox final {
         return width > 0.0F && height > 0.0F ? width * height : 0.0F;
     }
 
-    [[nodiscard]] constexpr bool is_valid() const noexcept {
+    [[nodiscard]] bool is_valid() const noexcept {
         return std::isfinite(x) && std::isfinite(y) && std::isfinite(width) &&
                std::isfinite(height) && width > 0.0F && height > 0.0F;
     }
