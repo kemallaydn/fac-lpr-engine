@@ -9,6 +9,10 @@ project(
 
 option(FAC_LPR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 
+add_subdirectory(src/domain)
+add_subdirectory(src/application)
+add_subdirectory(src/infrastructure)
+
 add_library(fac_lpr_engine STATIC
     src/fac_lpr_engine.cpp
 )
@@ -26,6 +30,11 @@ target_include_directories(fac_lpr_engine
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(fac_lpr_engine
+    PUBLIC fac_lpr::domain
+    PRIVATE fac_lpr::infrastructure
 )
 
 if(MSVC)
