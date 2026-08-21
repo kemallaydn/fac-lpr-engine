@@ -1,8 +1,9 @@
 #pragma once
 
+#include <fac_lpr/application/error.hpp>
+
 #include <chrono>
 #include <cstddef>
-#include <stdexcept>
 #include <string>
 
 namespace fac_lpr::application {
@@ -65,13 +66,13 @@ namespace detail {
 
 inline void require_unit_interval(float value, const char* name) {
     if (!(value >= 0.0F && value <= 1.0F)) {
-        throw std::invalid_argument(std::string{name} + " must be in [0, 1]");
+        throw ConfigurationError(std::string{name} + " must be in [0, 1]");
     }
 }
 
 inline void require_positive(std::size_t value, const char* name) {
     if (value == 0U) {
-        throw std::invalid_argument(std::string{name} + " must be greater than zero");
+        throw ConfigurationError(std::string{name} + " must be greater than zero");
     }
 }
 
@@ -85,7 +86,7 @@ inline void validate_engine_config(const EngineConfig& config) {
     detail::require_positive(config.detector.tile_height, "detector.tile_height");
 
     if (!(config.detector.tile_overlap_ratio >= 0.0F && config.detector.tile_overlap_ratio < 0.50F)) {
-        throw std::invalid_argument("detector.tile_overlap_ratio must be in [0, 0.5)");
+        throw ConfigurationError("detector.tile_overlap_ratio must be in [0, 0.5)");
     }
 
     detail::require_positive(config.recognition.beam_width, "recognition.beam_width");
@@ -97,13 +98,13 @@ inline void validate_engine_config(const EngineConfig& config) {
         "recognition.minimum_candidate_confidence");
 
     if (config.recognition.result_limit > config.recognition.beam_width) {
-        throw std::invalid_argument("recognition.result_limit cannot exceed recognition.beam_width");
+        throw ConfigurationError("recognition.result_limit cannot exceed recognition.beam_width");
     }
     if (config.recognition.classes_per_step > 64U) {
-        throw std::invalid_argument("recognition.classes_per_step cannot exceed 64");
+        throw ConfigurationError("recognition.classes_per_step cannot exceed 64");
     }
     if (config.recognition.max_recognizers > 32U) {
-        throw std::invalid_argument("recognition.max_recognizers cannot exceed 32");
+        throw ConfigurationError("recognition.max_recognizers cannot exceed 32");
     }
 
     detail::require_positive(config.crop.max_hypotheses, "crop.max_hypotheses");
@@ -112,7 +113,7 @@ inline void validate_engine_config(const EngineConfig& config) {
     detail::require_positive(config.crop.minimum_width, "crop.minimum_width");
     detail::require_positive(config.crop.minimum_height, "crop.minimum_height");
     if (config.crop.max_hypotheses > 32U) {
-        throw std::invalid_argument("crop.max_hypotheses cannot exceed 32");
+        throw ConfigurationError("crop.max_hypotheses cannot exceed 32");
     }
 
     detail::require_unit_interval(
@@ -123,7 +124,7 @@ inline void validate_engine_config(const EngineConfig& config) {
         config.decision.minimum_effective_detector_confidence,
         "decision.minimum_effective_detector_confidence");
     if (!config.decision.fail_closed) {
-        throw std::invalid_argument("decision.fail_closed must remain enabled for the safe default policy");
+        throw ConfigurationError("decision.fail_closed must remain enabled for the safe default policy");
     }
 
     detail::require_positive(config.performance.worker_count, "performance.worker_count");
@@ -133,20 +134,20 @@ inline void validate_engine_config(const EngineConfig& config) {
     detail::require_positive(config.performance.max_image_bytes, "performance.max_image_bytes");
 
     if (config.performance.worker_count > 256U) {
-        throw std::invalid_argument("performance.worker_count cannot exceed 256");
+        throw ConfigurationError("performance.worker_count cannot exceed 256");
     }
     if (config.performance.queue_capacity > 65536U) {
-        throw std::invalid_argument("performance.queue_capacity cannot exceed 65536");
+        throw ConfigurationError("performance.queue_capacity cannot exceed 65536");
     }
     if (config.performance.max_image_width > 32768U || config.performance.max_image_height > 32768U) {
-        throw std::invalid_argument("performance image dimensions exceed safe engine limits");
+        throw ConfigurationError("performance image dimensions exceed safe engine limits");
     }
     if (config.performance.max_image_bytes > 1024ULL * 1024ULL * 1024ULL) {
-        throw std::invalid_argument("performance.max_image_bytes cannot exceed 1 GiB");
+        throw ConfigurationError("performance.max_image_bytes cannot exceed 1 GiB");
     }
     if (config.performance.recognition_timeout <= std::chrono::milliseconds::zero() ||
         config.performance.recognition_timeout > std::chrono::minutes{5}) {
-        throw std::invalid_argument("performance.recognition_timeout must be in (0, 5min]");
+        throw ConfigurationError("performance.recognition_timeout must be in (0, 5min]");
     }
 }
 
