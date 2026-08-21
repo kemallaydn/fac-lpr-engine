@@ -8,6 +8,7 @@ project(
 )
 
 option(FAC_LPR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
+option(FAC_LPR_BUILD_MODEL_INSPECTOR "Build the ONNX model inspector CLI" OFF)
 
 add_subdirectory(src/domain)
 add_subdirectory(src/application)
@@ -61,3 +62,7 @@ set_target_properties(fac_lpr_engine PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${FAC_LPR_OUTPUT_ROOT}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${FAC_LPR_OUTPUT_ROOT}/bin"
 )
+
+if(FAC_LPR_BUILD_MODEL_INSPECTOR)
+    add_subdirectory(tools/model-inspector)
+endif()
