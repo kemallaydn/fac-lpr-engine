@@ -1,8 +1,8 @@
 name: dependency-restore
 
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches: [dev]
     paths:
       - 'vcpkg.json'
       - 'cmake/vcpkg-baseline.txt'
@@ -10,21 +10,19 @@ on:
       - 'cmake/OnnxRuntimePrebuilt.cmake'
       - 'scripts/bootstrap-dependencies.*'
       - 'tools/model-inspector/**'
-      - 'include/fac_lpr/application/logging.hpp'
-      - 'include/fac_lpr/application/image_validation.hpp'
-      - 'include/fac_lpr/infrastructure/spdlog_logger.hpp'
-      - 'include/fac_lpr/infrastructure/onnx/**'
-      - 'include/fac_lpr/infrastructure/opencv_image_view.hpp'
-      - 'src/application/**'
-      - 'src/infrastructure/**'
+      - 'include/fac_lpr/**'
+      - 'src/**'
+      - 'tests/**'
       - 'CMakeLists.txt'
       - '.github/workflows/dependency-restore.yml'
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: dependency-restore-${{ github.event.pull_request.number }}
+  group: dependency-restore-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -64,8 +62,11 @@ jobs:
           -DFAC_LPR_WITH_ONNX_RUNTIME=ON
           -DFAC_LPR_WITH_OPENCV=ON
           -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+          -DFAC_LPR_BUILD_TESTS=ON
       - name: Build dependency-backed targets
         run: cmake --build build/native-deps --config Release --parallel 2
+      - name: Run native tests
+        run: ctest --test-dir build/native-deps --output-on-failure
 
   windows:
     name: Windows dependency build
@@ -101,6 +102,10 @@ jobs:
           -DFAC_LPR_WITH_ONNX_RUNTIME=ON
           -DFAC_LPR_WITH_OPENCV=ON
           -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+          -DFAC_LPR_BUILD_TESTS=ON
       - name: Build dependency-backed targets
         shell: pwsh
         run: cmake --build build/native-deps --config Release --parallel 2
+      - name: Run native tests
+        shell: pwsh
+        run: ctest --test-dir build/native-deps -C Release --output-on-failure

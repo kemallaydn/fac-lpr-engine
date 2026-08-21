@@ -1,31 +1,13 @@
 #include <fac_lpr/infrastructure/yolo/yolo_pose_preprocessor.hpp>
 
 #include <fac_lpr/application/error.hpp>
-#include <fac_lpr/infrastructure/opencv_image_view.hpp>
-
-#include <opencv2/imgproc.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <string>
 
 namespace fac_lpr::infrastructure::yolo {
 namespace {
-
-[[nodiscard]] int checked_positive_int(const std::size_t value, const char* field) {
-    if (value == 0U || value > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-        throw application::ConfigurationError(std::string{field} + " is outside OpenCV dimension limits");
-    }
-    return static_cast<int>(value);
-}
-
-[[nodiscard]] int checked_nonnegative_int(const std::size_t value, const char* field) {
-    if (value > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-        throw application::ConfigurationError(std::string{field} + " is outside OpenCV integer limits");
-    }
-    return static_cast<int>(value);
-}
 
 [[nodiscard]] std::size_t checked_tensor_size(const YoloInputSpec& spec) {
     if (spec.width == 0U || spec.height == 0U || spec.channels != 3U) {
@@ -45,110 +27,146 @@ namespace {
     return pixels * spec.channels;
 }
 
-} // namespace
+struct RgbSample final {
+    float red{0.0F};
+    float green{0.0F};
+    float blue{0.0F};
+};
 
-YoloPosePreprocessor::YoloPosePreprocessor(YoloInputSpec spec)
-    : spec_(spec) {
-    static_cast<void>(checked_tensor_size(spec_));
+[[nodiscard]] float byte_value(const std::byte value) noexcept {
+    return static_cast<float>(std::to_integer<unsigned int>(value));
 }
 
-YoloInputTensor YoloPosePreprocessor::preprocess(
-    const application::ValidatedImage& image) const {
-    const auto tensor_size = checked_tensor_size(spec_);
-    const OpenCvImageView source_view{image};
-    const auto& source = source_view.mat();
-
-    cv::Mat rgb{};
-    switch (image.view.format) {
-        case application::PixelFormat::gray8:
-            cv::cvtColor(source, rgb, cv::COLOR_GRAY2RGB);
-            break;
-        case application::PixelFormat::bgr8:
-            cv::cvtColor(source, rgb, cv::COLOR_BGR2RGB);
-            break;
-        case application::PixelFormat::rgb8:
-            rgb = source;
-            break;
+[[nodiscard]] RgbSample pixel_at(
+    const application::ImageView& image,
+    const std::size_t x,
+    const std::size_t y) noexcept {
+    const auto* row = image.bytes.data() + (y * image.stride_bytes);
+    if (image.format == application::PixelFormat::gray8) {
+        const auto gray = byte_value(row[x]);
+        return RgbSample{gray, gray, gray};
     }
+    const auto base = x * 3U;
+    if (image.format == application::PixelFormat::rgb8) {
+        return RgbSample{byte_value(row[base]), byte_value(row[base + 1U]), byte_value(row[base + 2U])};
+    }
+    return RgbSample{byte_value(row[base + 2U]), byte_value(row[base + 1U]), byte_value(row[base])};
+}
 
-    const auto scale_x = static_cast<double>(spec_.width) / static_cast<double>(image.view.width);
-    const auto scale_y = static_cast<double>(spec_.height) / static_cast<double>(image.view.height);
+[[nodiscard]] RgbSample bilinear_sample(
+    const application::ImageView& image,
+    const double source_x,
+    const double source_y) noexcept {
+    const auto max_x = static_cast<double>(image.width - 1U);
+    const auto max_y = static_cast<double>(image.height - 1U);
+    const auto clamped_x = std::clamp(source_x, 0.0, max_x);
+    const auto clamped_y = std::clamp(source_y, 0.0, max_y);
+    const auto x0 = static_cast<std::size_t>(std::floor(clamped_x));
+    const auto y0 = static_cast<std::size_t>(std::floor(clamped_y));
+    const auto x1 = std::min(x0 + 1U, image.width - 1U);
+    const auto y1 = std::min(y0 + 1U, image.height - 1U);
+    const auto dx = static_cast<float>(clamped_x - static_cast<double>(x0));
+    const auto dy = static_cast<float>(clamped_y - static_cast<double>(y0));
+
+    const auto p00 = pixel_at(image, x0, y0);
+    const auto p10 = pixel_at(image, x1, y0);
+    const auto p01 = pixel_at(image, x0, y1);
+    const auto p11 = pixel_at(image, x1, y1);
+    const auto top_weight_left = 1.0F - dx;
+    const auto bottom_weight_top = 1.0F - dy;
+
+    const auto interpolate = [=](const float a, const float b, const float c, const float d) noexcept {
+        const auto top = (a * top_weight_left) + (b * dx);
+        const auto bottom = (c * top_weight_left) + (d * dx);
+        return (top * bottom_weight_top) + (bottom * dy);
+    };
+    return RgbSample{
+        interpolate(p00.red, p10.red, p01.red, p11.red),
+        interpolate(p00.green, p10.green, p01.green, p11.green),
+        interpolate(p00.blue, p10.blue, p01.blue, p11.blue)};
+}
+
+[[nodiscard]] LetterboxMetadata make_letterbox_metadata(
+    const application::ImageView& image,
+    const YoloInputSpec& spec) {
+    const auto scale_x = static_cast<double>(spec.width) / static_cast<double>(image.width);
+    const auto scale_y = static_cast<double>(spec.height) / static_cast<double>(image.height);
     const auto scale = std::min(scale_x, scale_y);
     if (!std::isfinite(scale) || scale <= 0.0) {
         throw application::InvalidImageError("cannot compute a valid YOLO letterbox scale");
     }
 
     const auto resized_width = std::clamp<std::size_t>(
-        static_cast<std::size_t>(std::llround(static_cast<double>(image.view.width) * scale)),
+        static_cast<std::size_t>(std::llround(static_cast<double>(image.width) * scale)),
         1U,
-        spec_.width);
+        spec.width);
     const auto resized_height = std::clamp<std::size_t>(
-        static_cast<std::size_t>(std::llround(static_cast<double>(image.view.height) * scale)),
+        static_cast<std::size_t>(std::llround(static_cast<double>(image.height) * scale)),
         1U,
-        spec_.height);
-
-    cv::Mat resized{};
-    cv::resize(
-        rgb,
-        resized,
-        cv::Size{
-            checked_positive_int(resized_width, "resized width"),
-            checked_positive_int(resized_height, "resized height")},
-        0.0,
-        0.0,
-        cv::INTER_LINEAR);
-
-    const auto remaining_width = spec_.width - resized_width;
-    const auto remaining_height = spec_.height - resized_height;
-    const auto pad_left = remaining_width / 2U;
-    const auto pad_top = remaining_height / 2U;
-    const auto pad_right = remaining_width - pad_left;
-    const auto pad_bottom = remaining_height - pad_top;
-
-    cv::Mat letterboxed{};
-    cv::copyMakeBorder(
-        resized,
-        letterboxed,
-        checked_nonnegative_int(pad_top, "pad top"),
-        checked_nonnegative_int(pad_bottom, "pad bottom"),
-        checked_nonnegative_int(pad_left, "pad left"),
-        checked_nonnegative_int(pad_right, "pad right"),
-        cv::BORDER_CONSTANT,
-        cv::Scalar{spec_.pad_value, spec_.pad_value, spec_.pad_value});
-
-    if (letterboxed.cols != checked_positive_int(spec_.width, "input width") ||
-        letterboxed.rows != checked_positive_int(spec_.height, "input height") ||
-        letterboxed.channels() != 3) {
-        throw application::InternalError("YOLO letterbox output shape is inconsistent");
-    }
-
-    YoloInputTensor result{};
-    result.chw.resize(tensor_size);
-    result.letterbox = LetterboxMetadata{
-        .source_width = image.view.width,
-        .source_height = image.view.height,
-        .input_width = spec_.width,
-        .input_height = spec_.height,
+        spec.height);
+    return LetterboxMetadata{
+        .source_width = image.width,
+        .source_height = image.height,
+        .input_width = spec.width,
+        .input_height = spec.height,
         .scale = static_cast<float>(scale),
-        .pad_left = pad_left,
-        .pad_top = pad_top,
+        .pad_left = (spec.width - resized_width) / 2U,
+        .pad_top = (spec.height - resized_height) / 2U,
         .resized_width = resized_width,
         .resized_height = resized_height,
     };
+}
 
+} // namespace
+
+YoloPosePreprocessor::YoloPosePreprocessor(YoloInputSpec spec)
+    : spec_(spec),
+      tensor_elements_(checked_tensor_size(spec_)) {}
+
+YoloInputTensor YoloPosePreprocessor::preprocess(
+    const application::ValidatedImage& image) const {
+    YoloInputTensor result{};
+    result.chw.resize(tensor_elements_);
+    preprocess_into(image, result.chw, result.letterbox);
+    return result;
+}
+
+YoloInputTensorView YoloPosePreprocessor::preprocess(
+    const application::ValidatedImage& image,
+    native_image::NativeImageWorkspace& workspace) const {
+    auto output = workspace.prepare_tensor(tensor_elements_);
+    LetterboxMetadata metadata{};
+    preprocess_into(image, output, metadata);
+    return YoloInputTensorView{output, metadata};
+}
+
+void YoloPosePreprocessor::preprocess_into(
+    const application::ValidatedImage& image,
+    const std::span<float> output,
+    LetterboxMetadata& metadata) const {
+    if (output.size() != tensor_elements_) {
+        throw application::InvalidImageError("YOLO output tensor workspace has the wrong element count");
+    }
+    metadata = make_letterbox_metadata(image.view, spec_);
     const auto plane_size = spec_.width * spec_.height;
-    for (std::size_t y = 0; y < spec_.height; ++y) {
-        const auto* row = letterboxed.ptr<cv::Vec3b>(checked_nonnegative_int(y, "row"));
-        for (std::size_t x = 0; x < spec_.width; ++x) {
-            const auto& pixel = row[x];
-            const auto index = y * spec_.width + x;
-            result.chw[index] = static_cast<float>(pixel[0]) * spec_.scale;
-            result.chw[plane_size + index] = static_cast<float>(pixel[1]) * spec_.scale;
-            result.chw[(2U * plane_size) + index] = static_cast<float>(pixel[2]) * spec_.scale;
+    const auto pad_normalized = spec_.pad_value * spec_.scale;
+    std::fill(output.begin(), output.end(), pad_normalized);
+
+    const auto scale_x = static_cast<double>(image.view.width) / static_cast<double>(metadata.resized_width);
+    const auto scale_y = static_cast<double>(image.view.height) / static_cast<double>(metadata.resized_height);
+    for (std::size_t resized_y = 0U; resized_y < metadata.resized_height; ++resized_y) {
+        const auto source_y = ((static_cast<double>(resized_y) + 0.5) * scale_y) - 0.5;
+        const auto output_y = metadata.pad_top + resized_y;
+        for (std::size_t resized_x = 0U; resized_x < metadata.resized_width; ++resized_x) {
+            const auto source_x = ((static_cast<double>(resized_x) + 0.5) * scale_x) - 0.5;
+            const auto output_x = metadata.pad_left + resized_x;
+            const auto sample = bilinear_sample(image.view, source_x, source_y);
+            const auto index = (output_y * spec_.width) + output_x;
+            output[index] = sample.red * spec_.scale;
+            output[plane_size + index] = sample.green * spec_.scale;
+            output[(2U * plane_size) + index] = sample.blue * spec_.scale;
         }
     }
-
-    return result;
 }
 
 } // namespace fac_lpr::infrastructure::yolo
