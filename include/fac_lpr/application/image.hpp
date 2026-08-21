@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace fac_lpr::application {
@@ -34,7 +35,7 @@ struct ImageBuffer final {
 
 struct CropHypothesis final {
     ImageBuffer image{};
-    const char* type{"unknown"};
+    std::string type{"unknown"};
 };
 
 } // namespace fac_lpr::application
