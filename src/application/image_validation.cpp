@@ -8,6 +8,16 @@
 namespace fac_lpr::application {
 namespace {
 
+[[nodiscard]] std::size_t checked_add(
+    const std::size_t left,
+    const std::size_t right,
+    const char* field) {
+    if (right > std::numeric_limits<std::size_t>::max() - left) {
+        throw InvalidImageError(std::string{field} + " overflows size_t");
+    }
+    return left + right;
+}
+
 [[nodiscard]] std::size_t checked_multiply(
     const std::size_t left,
     const std::size_t right,
@@ -57,9 +67,11 @@ ValidatedImage validate_image(
         throw InvalidImageError("image stride is smaller than minimum packed row size");
     }
 
-    const auto required_bytes = checked_multiply(image.stride_bytes, image.height, "image byte size");
+    const auto rows_before_last = image.height - 1U;
+    const auto last_row_offset = checked_multiply(image.stride_bytes, rows_before_last, "image last row offset");
+    const auto required_bytes = checked_add(last_row_offset, minimum_row_bytes, "image required byte size");
     if (required_bytes > image.bytes.size()) {
-        throw InvalidImageError("image buffer is smaller than stride * height");
+        throw InvalidImageError("image buffer is smaller than the strided image extent");
     }
     if (required_bytes > limits.max_image_bytes) {
         throw InvalidImageError("validated image size exceeds configured byte limit");
