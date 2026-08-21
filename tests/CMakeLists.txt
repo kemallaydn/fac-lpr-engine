@@ -22,6 +22,7 @@ target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::adaptive_detection f
 if(FAC_LPR_WITH_OPENCV)
     find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc)
     target_sources(fac_lpr_native_tests PRIVATE
+        connected_component_layout_analyzer_tests.cpp
         crop_enhancers_tests.cpp
         double_row_normalizer_tests.cpp
         perspective_aligner_tests.cpp
