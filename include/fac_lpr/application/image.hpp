@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
@@ -63,6 +64,9 @@ struct ImageBuffer final {
 struct CropHypothesis final {
     ImageBuffer image{};
     std::string type{"unknown"};
+    std::string source{"unknown"};
+    std::uint64_t fingerprint{0U};
+    float quality{0.0F};
 };
 
 } // namespace fac_lpr::application
