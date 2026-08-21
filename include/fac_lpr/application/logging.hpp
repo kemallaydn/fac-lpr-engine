@@ -2,6 +2,7 @@
 
 #include <fac_lpr/fac_lpr_logging.h>
 
+#include <mutex>
 #include <string>
 #include <string_view>
 
@@ -38,12 +39,20 @@ public:
     CallbackLogger(fac_lpr_log_callback callback, void* user_data) noexcept
         : callback_(callback), user_data_(user_data) {}
 
+    CallbackLogger(const CallbackLogger&) = delete;
+    CallbackLogger& operator=(const CallbackLogger&) = delete;
+    CallbackLogger(CallbackLogger&&) = delete;
+    CallbackLogger& operator=(CallbackLogger&&) = delete;
+
     void log(const LogRecord& record) noexcept override {
         if (callback_ == nullptr) {
             return;
         }
 
         try {
+            // Consumer callbacks are serialized so callers do not need to make
+            // their logging backend re-entrant merely to consume engine logs.
+            const std::scoped_lock lock{callback_mutex_};
             const std::string category{record.category};
             const std::string message{record.message};
             callback_(to_c_level(record.level), category.c_str(), message.c_str(), user_data_);
@@ -66,6 +75,7 @@ private:
 
     fac_lpr_log_callback callback_{nullptr};
     void* user_data_{nullptr};
+    std::mutex callback_mutex_{};
 };
 
 } // namespace fac_lpr::application

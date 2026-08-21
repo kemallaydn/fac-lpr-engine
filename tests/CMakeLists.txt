@@ -1,7 +1,9 @@
 find_package(GTest CONFIG REQUIRED)
+find_package(Threads REQUIRED)
 
 add_executable(fac_lpr_native_tests
     error_boundary_tests.cpp
+    logging_tests.cpp
     native_image_tests.cpp
     yolo_preprocessor_tests.cpp
 )
@@ -12,6 +14,7 @@ target_link_libraries(
         fac_lpr::native_image
         fac_lpr::yolo
         GTest::gtest_main
+        Threads::Threads
 )
 
 if(FAC_LPR_WITH_OPENCV)
