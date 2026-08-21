@@ -1,3 +1,4 @@
+#include <fac_lpr/application/providers.hpp>
 #include <fac_lpr/domain/recognition.hpp>
 #include <fac_lpr/fac_lpr_engine.hpp>
 
@@ -10,5 +11,8 @@ static_assert(std::is_copy_constructible_v<domain::BoundingBox>);
 static_assert(std::is_copy_constructible_v<domain::Detection>);
 static_assert(std::is_copy_constructible_v<domain::PlateCandidate>);
 static_assert(std::is_move_constructible_v<domain::PlateRecognitionResult>);
+static_assert(std::has_virtual_destructor_v<application::IPlateDetector>);
+static_assert(std::has_virtual_destructor_v<application::IPlateRecognizer>);
+static_assert(std::has_virtual_destructor_v<application::IDecisionPolicy>);
 
 } // namespace fac_lpr
