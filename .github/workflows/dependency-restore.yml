@@ -1,0 +1,59 @@
+name: dependency-restore
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'vcpkg.json'
+      - 'cmake/vcpkg-baseline.txt'
+      - 'scripts/bootstrap-dependencies.*'
+      - '.github/workflows/dependency-restore.yml'
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - 'vcpkg.json'
+      - 'cmake/vcpkg-baseline.txt'
+      - 'scripts/bootstrap-dependencies.*'
+      - '.github/workflows/dependency-restore.yml'
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux:
+    name: Linux vcpkg restore
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: .vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-baseline.txt') }}
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+
+  windows:
+    name: Windows vcpkg restore
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: .vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-baseline.txt') }}
+      - name: Restore dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
