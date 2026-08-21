@@ -1,0 +1,54 @@
+cmake_minimum_required(VERSION 3.25)
+
+project(
+    fac_lpr_engine
+    VERSION 0.1.0
+    DESCRIPTION "Reusable production-grade license plate recognition engine"
+    LANGUAGES CXX
+)
+
+option(FAC_LPR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
+
+add_library(fac_lpr_engine STATIC
+    src/fac_lpr_engine.cpp
+)
+
+add_library(fac_lpr::engine ALIAS fac_lpr_engine)
+
+target_compile_features(fac_lpr_engine PUBLIC cxx_std_20)
+set_target_properties(fac_lpr_engine PROPERTIES
+    CXX_EXTENSIONS OFF
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON
+)
+
+target_include_directories(fac_lpr_engine
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
+
+if(MSVC)
+    target_compile_options(fac_lpr_engine PRIVATE
+        /W4
+        /permissive-
+        /EHsc
+        $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:/WX>
+    )
+else()
+    target_compile_options(fac_lpr_engine PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+        $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:-Werror>
+    )
+endif()
+
+set(FAC_LPR_OUTPUT_ROOT "${CMAKE_BINARY_DIR}/artifacts")
+set_target_properties(fac_lpr_engine PROPERTIES
+    ARCHIVE_OUTPUT_DIRECTORY "${FAC_LPR_OUTPUT_ROOT}/lib"
+    LIBRARY_OUTPUT_DIRECTORY "${FAC_LPR_OUTPUT_ROOT}/lib"
+    RUNTIME_OUTPUT_DIRECTORY "${FAC_LPR_OUTPUT_ROOT}/bin"
+)
