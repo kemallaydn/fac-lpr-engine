@@ -68,6 +68,23 @@ LetterboxMetadata metadata() {
     };
 }
 
+TEST(YoloPoseParser, AcceptsInspectedProductionOutputShape) {
+    // best.onnx: output0 float32 [1, 17, 18900]
+    constexpr std::size_t candidates = 18900U;
+    std::vector<float> output(feature_count * candidates, 0.0F);
+    write_candidate(output, candidates, 0U, 0.95F, 100.0F, 100.0F, 80.0F, 40.0F);
+
+    const YoloPoseOutputParser parser{YoloPoseOutputSpec{}};
+    const std::array<std::int64_t, 3> shape{
+        1,
+        static_cast<std::int64_t>(feature_count),
+        static_cast<std::int64_t>(candidates),
+    };
+    const auto detections = parser.parse(output, shape, metadata());
+    ASSERT_EQ(detections.size(), 1U);
+    EXPECT_NEAR(detections[0].confidence, 0.95F, 0.001F);
+}
+
 TEST(YoloPoseParser, MapsCoordinatesAndSuppressesOverlappingCandidate) {
     constexpr std::size_t candidates = 2U;
     std::vector<float> output(feature_count * candidates, 0.0F);
