@@ -3,6 +3,7 @@
 #include <fac_lpr/application/error.hpp>
 
 #include <limits>
+#include <span>
 #include <string>
 
 namespace fac_lpr::application {
@@ -39,6 +40,27 @@ std::size_t pixel_format_channels(const PixelFormat format) noexcept {
             return 3U;
     }
     return 0U;
+}
+
+ImageView make_image_view(
+    const void* data,
+    const std::size_t byte_count,
+    const std::size_t width,
+    const std::size_t height,
+    const std::size_t stride_bytes,
+    const PixelFormat format) {
+    if (data == nullptr && byte_count != 0U) {
+        throw InvalidImageError("image data pointer is null while byte_count is non-zero");
+    }
+
+    const auto* bytes = static_cast<const std::byte*>(data);
+    return ImageView{
+        std::span<const std::byte>{bytes, byte_count},
+        width,
+        height,
+        stride_bytes,
+        format,
+    };
 }
 
 ValidatedImage validate_image(

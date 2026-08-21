@@ -16,6 +16,16 @@ struct ValidatedImage final {
 
 [[nodiscard]] std::size_t pixel_format_channels(PixelFormat format) noexcept;
 
+// Safe boundary helper for caller-owned/C ABI buffers. A non-zero byte count
+// with a null pointer is rejected before constructing std::span.
+[[nodiscard]] ImageView make_image_view(
+    const void* data,
+    std::size_t byte_count,
+    std::size_t width,
+    std::size_t height,
+    std::size_t stride_bytes,
+    PixelFormat format);
+
 [[nodiscard]] ValidatedImage validate_image(
     const ImageView& image,
     const PerformanceConfig& limits);
