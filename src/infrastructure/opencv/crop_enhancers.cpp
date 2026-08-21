@@ -9,9 +9,11 @@
 #include <opencv2/imgproc.hpp>
 
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <new>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
