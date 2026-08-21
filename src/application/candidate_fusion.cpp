@@ -15,6 +15,17 @@ namespace {
     return std::clamp(value, 0.0F, 1.0F);
 }
 
+[[nodiscard]] float effective_confidence(
+    const domain::PlateCandidate& candidate) noexcept {
+    if (std::isfinite(candidate.calibrated_confidence) &&
+        candidate.calibrated_confidence > 0.0F) {
+        return clamp01(candidate.calibrated_confidence);
+    }
+    return std::isfinite(candidate.confidence)
+        ? clamp01(candidate.confidence)
+        : 0.0F;
+}
+
 void require_probability(const float value, const char* name) {
     if (!std::isfinite(value) || value < 0.0F || value > 1.0F) {
         throw ConfigurationError(std::string{name} + " must be finite and in [0,1]");
@@ -33,13 +44,16 @@ struct Aggregate final {
         return 0.0F;
     }
 
-    const auto candidate_confidence = evidence.candidates[candidate_index].confidence;
+    const auto candidate_confidence = effective_confidence(
+        evidence.candidates[candidate_index]);
     float highest_other = 0.0F;
     for (std::size_t index = 0U; index < evidence.candidates.size(); ++index) {
         if (index == candidate_index) {
             continue;
         }
-        highest_other = std::max(highest_other, evidence.candidates[index].confidence);
+        highest_other = std::max(
+            highest_other,
+            effective_confidence(evidence.candidates[index]));
     }
     return clamp01(candidate_confidence - highest_other);
 }
@@ -107,19 +121,16 @@ std::vector<domain::PlateCandidate> WeightedMultiCropCandidateFusion::fuse(
             ? clamp01(layout_evidence[evidence_index].confidence)
             : 0.0F;
 
-        // One crop is allowed to vote for a plate only once, even if a provider
-        // accidentally returns duplicate candidates in the same evidence item.
         std::map<std::string, std::pair<float, bool>> per_crop_support{};
         for (std::size_t candidate_index = 0U;
              candidate_index < source_evidence.candidates.size();
              ++candidate_index) {
             const auto& candidate = source_evidence.candidates[candidate_index];
-            if (candidate.text.empty() || !std::isfinite(candidate.confidence) ||
-                candidate.confidence < config_.minimum_candidate_confidence) {
+            const auto recognition = effective_confidence(candidate);
+            if (candidate.text.empty() || recognition < config_.minimum_candidate_confidence) {
                 continue;
             }
 
-            const auto recognition = clamp01(candidate.confidence);
             const auto margin = candidate_margin(source_evidence, candidate_index);
             const auto score = source_factor * clamp01((
                 (recognition * config_.recognition_weight) +
@@ -136,8 +147,6 @@ std::vector<domain::PlateCandidate> WeightedMultiCropCandidateFusion::fuse(
 
         for (const auto& [text, local] : per_crop_support) {
             auto& target = aggregate[text];
-            // Probabilistic-OR style accumulation rewards independent agreement
-            // while keeping the final score naturally bounded in [0,1].
             target.support = clamp01(
                 1.0F - ((1.0F - target.support) * (1.0F - local.first)));
             target.format_valid = target.format_valid || local.second;
