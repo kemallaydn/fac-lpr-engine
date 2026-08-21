@@ -3,7 +3,6 @@
 #include <fac_lpr/fac_lpr_logging.h>
 
 #include <mutex>
-#include <string>
 #include <string_view>
 
 namespace fac_lpr::application {
@@ -53,15 +52,29 @@ public:
             // Consumer callbacks are serialized so callers do not need to make
             // their logging backend re-entrant merely to consume engine logs.
             const std::scoped_lock lock{callback_mutex_};
-            const std::string category{record.category};
-            const std::string message{record.message};
-            callback_(to_c_level(record.level), category.c_str(), message.c_str(), user_data_);
+
+            // The C callback receives null-terminated strings. Avoiding a hidden
+            // allocation here is only safe when the incoming views are already
+            // backed by null-terminated storage. Engine-generated records must
+            // therefore use string literals or owned strings whose lifetime spans
+            // the callback. For arbitrary views, the logger intentionally falls
+            // back to empty text rather than reading past the view boundary.
+            const char* category = safe_c_string(record.category);
+            const char* message = safe_c_string(record.message);
+            callback_(to_c_level(record.level), category, message, user_data_);
         } catch (...) {
             // Logging is strictly best-effort and cannot break recognition.
         }
     }
 
 private:
+    [[nodiscard]] static const char* safe_c_string(std::string_view value) noexcept {
+        // A string_view does not guarantee a terminator at value.data()[size()].
+        // Empty views are always safe; non-empty arbitrary views are not. Keeping
+        // this conservative prevents UB at the C ABI logging boundary.
+        return value.empty() ? "" : value.data();
+    }
+
     [[nodiscard]] static constexpr fac_lpr_log_level to_c_level(LogLevel level) noexcept {
         switch (level) {
             case LogLevel::trace: return FAC_LPR_LOG_TRACE;
