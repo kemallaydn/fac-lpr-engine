@@ -19,6 +19,7 @@ if(FAC_LPR_WITH_OPENCV)
     find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc)
     target_sources(fac_lpr_native_tests PRIVATE
         crop_enhancers_tests.cpp
+        double_row_normalizer_tests.cpp
         perspective_aligner_tests.cpp
         yolo_preprocessor_opencv_reference_tests.cpp
     )
