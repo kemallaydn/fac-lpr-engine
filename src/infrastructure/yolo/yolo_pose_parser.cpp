@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <numeric>
 #include <string>
 #include <utility>
 
@@ -29,9 +28,33 @@ struct OutputMatrix final {
     }
 };
 
+[[nodiscard]] std::size_t checked_add(
+    const std::size_t left,
+    const std::size_t right,
+    const char* field) {
+    if (right > std::numeric_limits<std::size_t>::max() - left) {
+        throw application::ConfigurationError(std::string{field} + " overflows size_t");
+    }
+    return left + right;
+}
+
+[[nodiscard]] std::size_t checked_multiply(
+    const std::size_t left,
+    const std::size_t right,
+    const char* field) {
+    if (left != 0U && right > std::numeric_limits<std::size_t>::max() / left) {
+        throw application::ConfigurationError(std::string{field} + " overflows size_t");
+    }
+    return left * right;
+}
+
 [[nodiscard]] std::size_t checked_dimension(const std::int64_t value, const char* field) {
     if (value <= 0) {
         throw application::InferenceError(std::string{"YOLO output "} + field + " must be a positive static dimension");
+    }
+    if (static_cast<std::uint64_t>(value) >
+        static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        throw application::InferenceError(std::string{"YOLO output "} + field + " exceeds size_t");
     }
     return static_cast<std::size_t>(value);
 }
@@ -79,6 +102,26 @@ struct OutputMatrix final {
     return std::clamp(value, 0.0F, static_cast<float>(metadata.source_height));
 }
 
+[[nodiscard]] std::size_t required_features(const YoloPoseOutputSpec& spec) {
+    auto required = checked_add(spec.box_offset, 4U, "YOLO box feature extent");
+    required = std::max(
+        required,
+        checked_add(spec.class_score_offset, spec.class_count, "YOLO class feature extent"));
+    const auto keypoint_span = checked_multiply(
+        spec.keypoint_count,
+        spec.keypoint_stride,
+        "YOLO keypoint feature span");
+    required = std::max(
+        required,
+        checked_add(spec.keypoint_offset, keypoint_span, "YOLO keypoint feature extent"));
+    if (spec.objectness_offset.has_value()) {
+        required = std::max(
+            required,
+            checked_add(*spec.objectness_offset, 1U, "YOLO objectness feature extent"));
+    }
+    return required;
+}
+
 void validate_spec(const YoloPoseOutputSpec& spec) {
     if (spec.class_count == 0U) {
         throw application::ConfigurationError("YOLO pose output class_count must be positive");
@@ -102,16 +145,10 @@ void validate_spec(const YoloPoseOutputSpec& spec) {
     if (spec.maximum_detections == 0U || spec.maximum_detections > 4096U) {
         throw application::ConfigurationError("YOLO maximum_detections must be in [1, 4096]");
     }
-}
-
-[[nodiscard]] std::size_t required_features(const YoloPoseOutputSpec& spec) {
-    auto required = spec.box_offset + 4U;
-    required = std::max(required, spec.class_score_offset + spec.class_count);
-    required = std::max(required, spec.keypoint_offset + (spec.keypoint_count * spec.keypoint_stride));
-    if (spec.objectness_offset.has_value()) {
-        required = std::max(required, *spec.objectness_offset + 1U);
+    if (spec.provider_name.empty()) {
+        throw application::ConfigurationError("YOLO provider_name cannot be empty");
     }
-    return required;
+    static_cast<void>(required_features(spec));
 }
 
 } // namespace
@@ -127,6 +164,10 @@ float intersection_over_union(
     const auto left_y2 = left.y + left.height;
     const auto right_x2 = right.x + right.width;
     const auto right_y2 = right.y + right.height;
+    if (!std::isfinite(left_x2) || !std::isfinite(left_y2) ||
+        !std::isfinite(right_x2) || !std::isfinite(right_y2)) {
+        return 0.0F;
+    }
 
     const auto intersection_width = std::max(0.0F, std::min(left_x2, right_x2) - std::max(left.x, right.x));
     const auto intersection_height = std::max(0.0F, std::min(left_y2, right_y2) - std::max(left.y, right.y));
