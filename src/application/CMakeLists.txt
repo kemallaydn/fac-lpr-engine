@@ -1,6 +1,7 @@
 add_library(fac_lpr_application STATIC
     candidate_fusion.cpp
     image_validation.cpp
+    recognition_ensemble.cpp
     turkish_plate_grammar.cpp
 )
 add_library(fac_lpr::application ALIAS fac_lpr_application)
