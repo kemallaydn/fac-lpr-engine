@@ -16,6 +16,8 @@ ocr.model=lprnet_turkey.onnx
 # 17 features = cx,cy,w,h + one plate class score + 4 keypoints x (x,y,confidence).
 detector.input_name=images
 detector.output_name=output0
+detector.expected_output_features=17
+detector.expected_output_candidates=18900
 detector.input_scale=0.00392156862745098
 detector.pad_value=114
 detector.output_layout=features_first
@@ -42,6 +44,8 @@ ocr.model_version=V2 Mixed Epoch 7
 ocr.input_name=input
 ocr.output_name=output
 ocr.output_layout=bct
+ocr.expected_classes=34
+ocr.expected_timesteps=24
 ocr.charset=0123456789ABCDEFGHIJKLMNOPRSTUVYZ
 ocr.blank_index=33
 
