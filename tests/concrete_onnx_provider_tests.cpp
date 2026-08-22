@@ -143,4 +143,51 @@ TEST(LprNetOnnxOcrAdapter, DecodesExplicitBctLayoutWithoutGuessingCharsetOrBlank
     EXPECT_EQ(evidence.candidates.front().text, "12A");
 }
 
+TEST(LprNetOnnxOcrAdapter, ActiveV2MixedEpoch7DecodesBct34By24Contract) {
+    constexpr char active_charset[] = "0123456789ABCDEFGHIJKLMNOPRSTUVYZ";
+
+    infrastructure::lprnet::LprNetOnnxOcrAdapterConfig config{};
+    config.input_name = "input";
+    config.output_name = "output";
+    config.model_version = "V2 Mixed Epoch 7";
+    config.input = {
+        .width = 160U,
+        .height = 40U,
+        .channels = 3U,
+        .layout = infrastructure::lprnet::TensorLayout::nchw,
+        .color_order = infrastructure::lprnet::InputColorOrder::bgr,
+        .element_type = infrastructure::lprnet::TensorElementType::float32,
+        .input_scale = 1.0F,
+        .mean = {127.5F, 127.5F, 127.5F},
+        .standard_deviation = {128.0F, 128.0F, 128.0F}};
+    config.output_layout = infrastructure::lprnet::LprNetOutputLayout::batch_classes_timesteps;
+    config.decoder.ctc.charset.assign(std::begin(active_charset), std::end(active_charset) - 1);
+    config.decoder.ctc.blank_index = 33U;
+    config.decoder.ctc.maximum_timesteps = 24U;
+    config.decoder.ctc.maximum_classes = 34U;
+    config.decoder.beam_width = 16U;
+    config.decoder.result_limit = 5U;
+    config.decoder.classes_per_step = 6U;
+    infrastructure::lprnet::LprNetOnnxOcrAdapter adapter{config};
+
+    constexpr std::size_t classes = 34U;
+    constexpr std::size_t timesteps = 24U;
+    std::vector<float> bct(classes * timesteps, -12.0F);
+    const std::array<std::size_t, 8U> plate_classes{3U, 4U, 10U, 11U, 12U, 1U, 2U, 3U};
+    for (std::size_t timestep = 0U; timestep < timesteps; ++timestep) {
+        const auto class_index = timestep < plate_classes.size() ? plate_classes[timestep] : 33U;
+        bct[(class_index * timesteps) + timestep] = 12.0F;
+    }
+
+    const std::array<std::int64_t, 3U> shape{1, 34, 24};
+    auto memory = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    std::vector<Ort::Value> outputs;
+    outputs.emplace_back(Ort::Value::CreateTensor<float>(
+        memory, bct.data(), bct.size(), shape.data(), shape.size()));
+
+    const auto evidence = adapter.decode(outputs, {});
+    ASSERT_FALSE(evidence.candidates.empty());
+    EXPECT_EQ(evidence.candidates.front().text, "34ABC123");
+}
+
 } // namespace
