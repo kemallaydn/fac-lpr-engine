@@ -55,6 +55,21 @@ void record_failure(
     ++decision_context.provider_failure_count;
 }
 
+void publish_diagnostics(
+    const std::shared_ptr<EngineDiagnostics>& diagnostics,
+    const LprPipelineResult& result) {
+    if (!diagnostics) {
+        return;
+    }
+    for (const auto& recognition : result.recognitions) {
+        diagnostics->record_recognition(recognition.status);
+    }
+    diagnostics->record_provider_failures(result.provider_failure_count);
+    for (const auto& timing : result.stage_timings) {
+        diagnostics->record_stage_latency(timing.stage, timing.latency_ms);
+    }
+}
+
 } // namespace
 
 LprPipeline::LprPipeline(LprPipelineDependencies dependencies)
@@ -275,6 +290,7 @@ LprPipelineResult LprPipeline::recognize(
     }
 
     pipeline_result.total_latency_ms = std::max(0.0, elapsed_ms(pipeline_started));
+    publish_diagnostics(dependencies_.diagnostics, pipeline_result);
     return pipeline_result;
 }
 
