@@ -1,0 +1,123 @@
+name: abi-compatibility
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'include/fac_lpr/**'
+      - 'src/c_api/**'
+      - 'abi/**'
+      - 'scripts/abi-compatibility.py'
+      - 'scripts/test_abi_compatibility.py'
+      - 'tests/abi/**'
+      - '.github/workflows/abi-compatibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  mac-arm64:
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 30
+    env:
+      VCPKG_DEFAULT_TRIPLET: arm64-osx
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test ABI policy
+        run: python3 scripts/test_abi_compatibility.py -v
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Build shared library
+        run: |
+          set -euo pipefail
+          rm -rf build/abi
+          cmake -S . -B build/abi -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="$PWD/build/vcpkg_installed" \
+            -DVCPKG_TARGET_TRIPLET=arm64-osx \
+            -DFAC_LPR_BUILD_SHARED=ON
+          cmake --build build/abi --parallel 2
+      - name: Capture current ABI
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/abi
+          cc -std=c11 -Wall -Wextra -Werror -Iinclude tests/abi/layout_probe.c -o artifacts/abi/layout-probe
+          artifacts/abi/layout-probe > artifacts/abi/layout.json
+          dylib=$(find build/abi/artifacts/lib -type f -name 'libfac_lpr_engine*.dylib' | head -n 1)
+          test -n "$dylib"
+          nm -gU "$dylib" > artifacts/abi/symbols.txt
+          python3 scripts/abi-compatibility.py capture \
+            --header include/fac_lpr/fac_lpr_engine.h \
+            --layout-json artifacts/abi/layout.json \
+            --symbols-file artifacts/abi/symbols.txt \
+            --output artifacts/abi/current.json
+          python3 scripts/abi-compatibility.py check \
+            --baseline abi/baseline-v1.json \
+            --current artifacts/abi/current.json \
+            --report artifacts/abi/report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: abi-macos-arm64-${{ github.run_id }}
+          path: artifacts/abi/
+          if-no-files-found: warn
+
+  linux-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/bootstrap-dependencies.sh
+      - name: Capture and compare ABI
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/abi -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="$PWD/build/vcpkg_installed" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DFAC_LPR_BUILD_SHARED=ON
+          cmake --build build/abi --parallel 2
+          mkdir -p artifacts/abi
+          cc -std=c11 -Wall -Wextra -Werror -Iinclude tests/abi/layout_probe.c -o artifacts/abi/layout-probe
+          artifacts/abi/layout-probe > artifacts/abi/layout.json
+          so=$(find build/abi/artifacts/lib -type f -name 'libfac_lpr_engine.so*' | head -n 1)
+          nm -D --defined-only "$so" > artifacts/abi/symbols.txt
+          python3 scripts/abi-compatibility.py capture --header include/fac_lpr/fac_lpr_engine.h --layout-json artifacts/abi/layout.json --symbols-file artifacts/abi/symbols.txt --output artifacts/abi/current.json
+          python3 scripts/abi-compatibility.py check --baseline abi/baseline-v1.json --current artifacts/abi/current.json --report artifacts/abi/report.json
+
+  windows-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+    steps:
+      - uses: actions/checkout@v4
+      - shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Capture and compare ABI
+        shell: pwsh
+        run: |
+          cmake -S . -B build/abi -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:GITHUB_WORKSPACE/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_INSTALLED_DIR="$env:GITHUB_WORKSPACE/build/vcpkg_installed" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DFAC_LPR_BUILD_SHARED=ON
+          cmake --build build/abi --config Release --parallel 2
+          New-Item -ItemType Directory -Force artifacts/abi | Out-Null
+          cmd /c 'call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && cl /nologo /W4 /WX /TC /std:c11 /I include tests\abi\layout_probe.c /Fe:artifacts\abi\layout-probe.exe'
+          & artifacts/abi/layout-probe.exe | Set-Content -Encoding ascii artifacts/abi/layout.json
+          $dll = Get-ChildItem build/abi/artifacts/bin -Recurse -Filter fac_lpr_engine.dll | Select-Object -First 1
+          if (-not $dll) { throw 'fac_lpr_engine.dll not found' }
+          cmd /c "call `"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat`" && dumpbin /exports `"$($dll.FullName)`" > artifacts\abi\symbols.txt"
+          python scripts/abi-compatibility.py capture --header include/fac_lpr/fac_lpr_engine.h --layout-json artifacts/abi/layout.json --symbols-file artifacts/abi/symbols.txt --output artifacts/abi/current.json
+          python scripts/abi-compatibility.py check --baseline abi/baseline-v1.json --current artifacts/abi/current.json --report artifacts/abi/report.json
