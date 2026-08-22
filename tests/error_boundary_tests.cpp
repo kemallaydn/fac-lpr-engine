@@ -1,3 +1,4 @@
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/c_api/error_boundary.hpp>
 
 #include <gtest/gtest.h>
