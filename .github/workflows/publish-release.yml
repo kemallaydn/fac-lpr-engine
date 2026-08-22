@@ -1,91 +1,89 @@
 name: publish-release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows: [production-readiness]
+    types: [completed]
 
 permissions:
   contents: write
   actions: read
 
 concurrency:
-  group: publish-release-${{ github.ref_name }}
+  group: publish-release-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
 jobs:
   publish:
+    if: ${{ github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' }}
     runs-on: [self-hosted, macOS, ARM64, fac-lpr]
-    timeout-minutes: 100
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
-      HEAD_SHA: ${{ github.sha }}
-      TAG: ${{ github.ref_name }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      READINESS_RUN: ${{ github.event.workflow_run.id }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+          fetch-tags: true
 
-      - name: Validate semantic tag and changelog
-        run: |
-          set -euo pipefail
-          mkdir -p release-input release-assets
-          python3 scripts/validate-release-tag.py \
-            --tag "$TAG" \
-            --notes-out release-input/release-notes.md
-
-      - name: Wait for production readiness and release artifacts
+      - name: Download and validate production readiness report
         shell: bash
         run: |
           set -euo pipefail
-          wait_for_workflow() {
-            workflow="$1"
-            for attempt in $(seq 1 180); do
-              json=$(gh run list --repo "$REPO" --workflow "$workflow" --commit "$HEAD_SHA" --limit 20 \
-                --json databaseId,status,conclusion,createdAt 2>/dev/null || echo '[]')
-              row=$(printf '%s' "$json" | python3 -c 'import json,sys; rows=json.load(sys.stdin); rows.sort(key=lambda r:r.get("createdAt", ""), reverse=True); print(json.dumps(rows[0]) if rows else "")')
-              if [ -n "$row" ]; then
-                run_id=$(printf '%s' "$row" | python3 -c 'import json,sys; print(json.load(sys.stdin)["databaseId"])')
-                status=$(printf '%s' "$row" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
-                conclusion=$(printf '%s' "$row" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("conclusion") or "")')
-                if [ "$status" = "completed" ]; then
-                  if [ "$conclusion" != "success" ]; then
-                    echo "$workflow gate failed with conclusion=$conclusion" >&2
-                    return 1
-                  fi
-                  printf '%s' "$run_id"
-                  return 0
-                fi
-              fi
-              sleep 30
-            done
-            echo "Timed out waiting for $workflow gate" >&2
-            return 1
-          }
-
-          readiness_run=$(wait_for_workflow production-readiness.yml)
-          package_run=$(wait_for_workflow release-package.yml)
-          security_run=$(wait_for_workflow dependency-security.yml)
-          echo "READINESS_RUN=$readiness_run" >> "$GITHUB_ENV"
-          echo "PACKAGE_RUN=$package_run" >> "$GITHUB_ENV"
-          echo "SECURITY_RUN=$security_run" >> "$GITHUB_ENV"
-
-      - name: Download gated artifacts
-        run: |
-          set -euo pipefail
+          mkdir -p release-input/readiness release-input/packages release-input/security release-assets
           gh run download "$READINESS_RUN" --repo "$REPO" --dir release-input/readiness
-          gh run download "$PACKAGE_RUN" --repo "$REPO" --dir release-input/packages
-          gh run download "$SECURITY_RUN" --repo "$REPO" --dir release-input/security
           readiness_report=$(find release-input/readiness -type f -name 'production-readiness.json' | head -n 1)
           test -n "$readiness_report" && test -s "$readiness_report"
-          python3 - "$readiness_report" <<'PY'
+          VERSION=$(python3 - "$readiness_report" "$HEAD_SHA" <<'PY'
           import json, sys
           report = json.load(open(sys.argv[1], encoding='utf-8'))
           if report.get('releaseApproved') is not True:
               raise SystemExit('production readiness report did not approve release')
+          if report.get('sourceCommit') != sys.argv[2]:
+              raise SystemExit('readiness report source commit does not match workflow commit')
+          print(report['version'])
           PY
+          )
+          TAG="v$VERSION"
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          test "$(git rev-list -n 1 "$TAG")" = "$HEAD_SHA"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          cp "$readiness_report" release-assets/production-readiness.json
+
+      - name: Validate tag and generate release notes
+        run: |
+          set -euo pipefail
+          python3 scripts/validate-release-tag.py \
+            --tag "$TAG" \
+            --notes-out release-input/release-notes.md
+
+      - name: Resolve exact-commit package and security runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          successful_run() {
+            workflow="$1"
+            gh run list --repo "$REPO" --workflow "$workflow" --commit "$HEAD_SHA" --limit 20 \
+              --json databaseId,status,conclusion,createdAt | \
+              python3 -c 'import json,sys; rows=[r for r in json.load(sys.stdin) if r.get("status")=="completed" and r.get("conclusion")=="success"]; rows.sort(key=lambda r:r.get("createdAt", ""), reverse=True); print(rows[0]["databaseId"] if rows else "")'
+          }
+          package_run=$(successful_run release-package.yml)
+          security_run=$(successful_run dependency-security.yml)
+          test -n "$package_run" || { echo 'successful release-package run not found for exact commit' >&2; exit 1; }
+          test -n "$security_run" || { echo 'successful dependency-security run not found for exact commit' >&2; exit 1; }
+          echo "PACKAGE_RUN=$package_run" >> "$GITHUB_ENV"
+          echo "SECURITY_RUN=$security_run" >> "$GITHUB_ENV"
+
+      - name: Download gated package and security artifacts
+        run: |
+          set -euo pipefail
+          gh run download "$PACKAGE_RUN" --repo "$REPO" --dir release-input/packages
+          gh run download "$SECURITY_RUN" --repo "$REPO" --dir release-input/security
 
       - name: Validate and collect release assets
         shell: bash
@@ -104,7 +102,6 @@ jobs:
             -exec cp {} release-assets/ \;
           cp "$(find release-input/security -type f -name 'sbom.cyclonedx.json' | head -n 1)" release-assets/sbom.cyclonedx.json
           cp "$(find release-input/security -type f -name 'sbom.spdx.json' | head -n 1)" release-assets/sbom.spdx.json
-          cp "$(find release-input/readiness -type f -name 'production-readiness.json' | head -n 1)" release-assets/production-readiness.json
 
           rm -rf release-input/extracted
           mkdir -p release-input/extracted
