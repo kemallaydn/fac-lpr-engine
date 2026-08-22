@@ -34,6 +34,7 @@ endif()
 
 include(cmake/Sanitizers.cmake)
 include(cmake/StaticAnalysis.cmake)
+include(cmake/Coverage.cmake)
 
 if(FAC_LPR_BUILD_TESTS)
     include(CTest)
