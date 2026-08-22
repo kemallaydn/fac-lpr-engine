@@ -1,3 +1,4 @@
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/application/turkish_plate_grammar.hpp>
 
 #include <gtest/gtest.h>
@@ -68,7 +69,6 @@ TEST(TurkishPlateGrammar, HonorsCustomAllowedLetterConfiguration) {
     TurkishPlateGrammarConfig config{};
     config.allowed_letters = "AB";
     const TurkishPlateGrammar grammar{config};
-
     EXPECT_TRUE(grammar.is_valid("34 A 1234"));
     EXPECT_TRUE(grammar.is_valid("34 AB 1234"));
     EXPECT_FALSE(grammar.is_valid("34 C 1234"));
@@ -99,22 +99,17 @@ TEST(TurkishPlateGrammar, PrefixValidationSupportsBeamSearchPruning) {
 TEST(TurkishPlateGrammar, InvalidAllowedLetterConfigurationFailsFast) {
     TurkishPlateGrammarConfig duplicate_config{};
     duplicate_config.allowed_letters = "AABC";
-    EXPECT_THROW(
-        TurkishPlateGrammar{duplicate_config},
-        fac_lpr::application::ConfigurationError);
+    EXPECT_THROW(TurkishPlateGrammar{duplicate_config}, fac_lpr::application::ConfigurationError);
 
     TurkishPlateGrammarConfig non_ascii_config{};
     non_ascii_config.allowed_letters = "ABÇ";
-    EXPECT_THROW(
-        TurkishPlateGrammar{non_ascii_config},
-        fac_lpr::application::ConfigurationError);
+    EXPECT_THROW(TurkishPlateGrammar{non_ascii_config}, fac_lpr::application::ConfigurationError);
 }
 
 TEST(TurkishPlateGrammar, MaximumInputLengthIsEnforced) {
     TurkishPlateGrammarConfig config{};
     config.maximum_input_length = 8U;
     const TurkishPlateGrammar grammar{config};
-
     EXPECT_TRUE(grammar.is_valid("34A12345"));
     EXPECT_TRUE(grammar.normalize("34 A 12345").empty());
 }
