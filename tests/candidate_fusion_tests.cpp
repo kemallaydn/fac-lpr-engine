@@ -1,4 +1,5 @@
 #include <fac_lpr/application/candidate_fusion.hpp>
+#include <fac_lpr/application/error.hpp>
 
 #include <gtest/gtest.h>
 
