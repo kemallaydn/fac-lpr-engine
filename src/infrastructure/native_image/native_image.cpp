@@ -120,13 +120,27 @@ void validate_quality_config(const CropQualityConfig& config) {
 
 } // namespace
 
+NativeImageWorkspace::NativeImageWorkspace(NativeImageWorkspaceConfig config)
+    : config_(config) {
+    if (config_.max_tensor_elements == 0U || config_.max_scratch_bytes == 0U) {
+        throw application::ConfigurationError("native image workspace limits must be greater than zero");
+    }
+}
+
 std::span<float> NativeImageWorkspace::prepare_tensor(const std::size_t elements) {
+    if (elements > config_.max_tensor_elements) {
+        throw application::ResourceExhaustedError("native tensor workspace exceeds configured limit");
+    }
+    const auto previous_capacity = tensor_.capacity();
     try {
         tensor_.resize(elements);
     } catch (const std::bad_alloc&) {
         throw application::ResourceExhaustedError("cannot allocate native tensor workspace");
     } catch (const std::length_error&) {
         throw application::ResourceExhaustedError("native tensor workspace exceeds vector limits");
+    }
+    if (tensor_.capacity() > previous_capacity) {
+        ++tensor_growth_count_;
     }
     return tensor_;
 }
@@ -141,6 +155,10 @@ application::MutableImageView NativeImageWorkspace::prepare_image(
     const auto channels = pixel_bytes(format);
     const auto stride = checked_multiply(width, channels, "workspace image stride");
     const auto required = checked_multiply(stride, height, "workspace image bytes");
+    if (required > config_.max_scratch_bytes) {
+        throw application::ResourceExhaustedError("native image workspace exceeds configured scratch limit");
+    }
+    const auto previous_capacity = scratch_.capacity();
     try {
         scratch_.resize(required);
     } catch (const std::bad_alloc&) {
@@ -148,7 +166,18 @@ application::MutableImageView NativeImageWorkspace::prepare_image(
     } catch (const std::length_error&) {
         throw application::ResourceExhaustedError("native image workspace exceeds vector limits");
     }
+    if (scratch_.capacity() > previous_capacity) {
+        ++scratch_growth_count_;
+    }
     return application::MutableImageView{scratch_, width, height, stride, format};
+}
+
+NativeImageWorkspaceStats NativeImageWorkspace::stats() const noexcept {
+    return NativeImageWorkspaceStats{
+        .tensor_capacity = tensor_.capacity(),
+        .scratch_capacity = scratch_.capacity(),
+        .tensor_growth_count = tensor_growth_count_,
+        .scratch_growth_count = scratch_growth_count_};
 }
 
 application::ImageView make_crop_view(
