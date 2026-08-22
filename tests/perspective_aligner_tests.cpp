@@ -69,7 +69,7 @@ TEST(PerspectiveAligner, CancellationIsFailClosed) {
     stop_source.request_stop();
     OperationContext context{};
     context.stop_token = stop_source.get_token();
-    EXPECT_THROW(OpenCvPerspectiveAligner{}.align(source, detection_with_quad(), context), fac_lpr::application::CancelledError);
+    EXPECT_THROW((void)OpenCvPerspectiveAligner{}.align(source, detection_with_quad(), context), fac_lpr::application::CancelledError);
 }
 
 } // namespace
