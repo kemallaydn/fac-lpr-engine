@@ -1,6 +1,7 @@
 add_library(fac_lpr_application STATIC
     candidate_fusion.cpp
     confidence_calibration.cpp
+    engine_builder.cpp
     engine_diagnostics.cpp
     image_validation.cpp
     lpr_pipeline.cpp
