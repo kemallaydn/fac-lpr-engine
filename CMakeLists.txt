@@ -126,6 +126,12 @@ if(FAC_LPR_BUILD_FUZZERS)
 endif()
 
 include(GNUInstallDirs)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/onnxruntime-version.txt" FAC_LPR_PACKAGE_ONNXRUNTIME_VERSION LIMIT_COUNT 1)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/runtime-manifest.json.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/runtime-manifest.json"
+    @ONLY
+)
 install(
     TARGETS fac_lpr_engine
     EXPORT fac_lpr_engine_targets
@@ -134,6 +140,10 @@ install(
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(DIRECTORY include/fac_lpr DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/runtime-manifest.json"
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/fac-lpr-engine
+)
 install(
     EXPORT fac_lpr_engine_targets
     FILE fac_lpr_engine-targets.cmake
