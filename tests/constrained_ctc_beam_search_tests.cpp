@@ -19,8 +19,11 @@ std::size_t class_index(
         config.ctc.charset.end(),
         character);
     EXPECT_NE(iterator, config.ctc.charset.end());
-    return static_cast<std::size_t>(
+    const auto charset_index = static_cast<std::size_t>(
         std::distance(config.ctc.charset.begin(), iterator));
+    return charset_index < config.ctc.blank_index
+        ? charset_index
+        : charset_index + 1U;
 }
 
 std::vector<float> logits_for_text(
@@ -61,6 +64,7 @@ TEST(ConstrainedCtcBeamSearch, ProducesValidTurkishPlateCandidate) {
     EXPECT_EQ(result.candidates.front().text, "34A1234");
     EXPECT_TRUE(result.candidates.front().format_valid);
     EXPECT_FALSE(result.fallback_used);
+    EXPECT_EQ(result.greedy.text, "34A1234");
 }
 
 TEST(ConstrainedCtcBeamSearch, ConfusionMapCanRescueInvalidProvincePrefix) {
@@ -90,6 +94,7 @@ TEST(ConstrainedCtcBeamSearch, UsesGreedyReferenceWhenGrammarPrunesAllPaths) {
     ASSERT_EQ(result.candidates.size(), 1U);
     EXPECT_TRUE(result.fallback_used);
     EXPECT_EQ(result.greedy.text, "34Q1234");
+    EXPECT_EQ(result.candidates.front().text, "34Q1234");
     EXPECT_FALSE(result.candidates.front().format_valid);
 }
 
@@ -107,11 +112,73 @@ TEST(ConstrainedCtcBeamSearch, CandidateOrderingIsDeterministic) {
         config.ctc.charset.size() + 1U);
 
     ASSERT_EQ(first.candidates.size(), second.candidates.size());
+    EXPECT_FLOAT_EQ(first.top_margin, second.top_margin);
+    EXPECT_EQ(first.fallback_used, second.fallback_used);
     for (std::size_t index = 0U; index < first.candidates.size(); ++index) {
         EXPECT_EQ(first.candidates[index].text, second.candidates[index].text);
         EXPECT_FLOAT_EQ(
             first.candidates[index].confidence,
             second.candidates[index].confidence);
+    }
+}
+
+TEST(ConstrainedCtcBeamSearch, SupportsBlankIndexInsideClassRange) {
+    auto config = make_config();
+    config.ctc.blank_index = 2U;
+    const ConstrainedCtcBeamSearch decoder{config};
+    const auto logits = logits_for_text(config, "34A1234");
+    const auto result = decoder.decode(
+        logits,
+        7U,
+        config.ctc.charset.size() + 1U);
+
+    ASSERT_FALSE(result.candidates.empty());
+    EXPECT_EQ(result.candidates.front().text, "34A1234");
+    EXPECT_EQ(result.greedy.text, "34A1234");
+}
+
+TEST(ConstrainedCtcBeamSearch, ResultLimitBoundsReturnedCandidates) {
+    auto config = make_config();
+    config.result_limit = 1U;
+    config.classes_per_step = 2U;
+    const ConstrainedCtcBeamSearch decoder{config};
+    const auto logits = logits_for_text(config, "O4A1234");
+    const auto result = decoder.decode(
+        logits,
+        7U,
+        config.ctc.charset.size() + 1U);
+
+    EXPECT_LE(result.candidates.size(), 1U);
+}
+
+TEST(ConstrainedCtcBeamSearch, InvalidSearchConfigurationFailsFast) {
+    {
+        auto config = make_config();
+        config.beam_width = 0U;
+        EXPECT_THROW(
+            ConstrainedCtcBeamSearch{config},
+            fac_lpr::application::ConfigurationError);
+    }
+    {
+        auto config = make_config();
+        config.result_limit = config.beam_width + 1U;
+        EXPECT_THROW(
+            ConstrainedCtcBeamSearch{config},
+            fac_lpr::application::ConfigurationError);
+    }
+    {
+        auto config = make_config();
+        config.classes_per_step = 0U;
+        EXPECT_THROW(
+            ConstrainedCtcBeamSearch{config},
+            fac_lpr::application::ConfigurationError);
+    }
+    {
+        auto config = make_config();
+        config.confusion_weight = 0.0F;
+        EXPECT_THROW(
+            ConstrainedCtcBeamSearch{config},
+            fac_lpr::application::ConfigurationError);
     }
 }
 
