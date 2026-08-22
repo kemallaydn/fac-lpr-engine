@@ -31,6 +31,7 @@ extern "C" {
 #endif
 
 #define FAC_LPR_ABI_VERSION_V1 UINT32_C(1)
+#define FAC_LPR_RESULT_BUFFER_ALIGNMENT_V1 UINT32_C(4)
 #define FAC_LPR_ENGINE_CONFIG_V1_INIT \
     { (uint32_t)sizeof(fac_lpr_engine_config_v1), FAC_LPR_ABI_VERSION_V1, 0U, 0U }
 #define FAC_LPR_IMAGE_VIEW_V1_INIT \
@@ -156,10 +157,13 @@ typedef struct fac_lpr_result_v1 {
 } fac_lpr_result_v1;
 
 /*
- * All offsets in fac_lpr_result_v1 and nested records are byte offsets from
- * the beginning of the caller-owned output_buffer passed to recognize_v1.
- * Text references are raw UTF-8/ASCII byte slices and are not NUL-terminated.
- * No pointer stored inside a result buffer is engine-owned.
+ * Caller-owned v1 result buffer contract:
+ * - output_buffer must be aligned to FAC_LPR_RESULT_BUFFER_ALIGNMENT_V1 bytes.
+ * - fac_lpr_result_v1 starts at byte offset zero.
+ * - every nested offset is a byte offset from output_buffer start.
+ * - text refs are raw UTF-8/ASCII slices and are not NUL-terminated.
+ * - nested records and strings remain valid only while caller keeps the buffer.
+ * - no pointer stored inside the result buffer is engine-owned.
  */
 
 FAC_LPR_API fac_lpr_status FAC_LPR_CALL fac_lpr_engine_create_v1(
