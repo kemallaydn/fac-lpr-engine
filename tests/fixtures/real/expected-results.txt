@@ -1,0 +1,4 @@
+# Format: filename=EXPECTED_PLATE
+# Plaka metnini boşluksuz, model decoder çıktısıyla aynı biçimde yazın.
+# Örnek:
+# plate_01.jpg=34ABC123
