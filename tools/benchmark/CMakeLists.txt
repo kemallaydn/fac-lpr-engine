@@ -20,6 +20,7 @@ target_include_directories(fac-lpr-benchmark PRIVATE
 )
 target_link_libraries(fac-lpr-benchmark PRIVATE
     fac_lpr::application
+    fac_lpr::model
     fac_lpr::generic_onnx_ocr
     fac_lpr::lprnet_onnx
     fac_lpr::yolo_onnx
