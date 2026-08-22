@@ -27,7 +27,7 @@ jobs:
   linux:
     if: ${{ inputs.platform == 'linux' || inputs.platform == 'both' }}
     name: Self-hosted Linux full validation
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 60
     env:
       VCPKG_DEFAULT_TRIPLET: x64-linux
@@ -74,7 +74,7 @@ jobs:
   windows:
     if: ${{ inputs.platform == 'windows' || inputs.platform == 'both' }}
     name: Self-hosted Windows full validation
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: [self-hosted, windows, x64]
     timeout-minutes: 60
     env:
       VCPKG_DEFAULT_TRIPLET: x64-windows
