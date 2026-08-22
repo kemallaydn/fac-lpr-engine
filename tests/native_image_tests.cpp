@@ -1,8 +1,10 @@
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/infrastructure/native_image/native_image.hpp>
 
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -12,9 +14,14 @@ using fac_lpr::application::MutableImageView;
 using fac_lpr::application::PixelFormat;
 using fac_lpr::infrastructure::native_image::CropQualityConfig;
 using fac_lpr::infrastructure::native_image::NativeImageWorkspace;
+using fac_lpr::infrastructure::native_image::NativeImageWorkspaceConfig;
 using fac_lpr::infrastructure::native_image::copy_crop;
 using fac_lpr::infrastructure::native_image::evaluate_crop_quality;
 using fac_lpr::infrastructure::native_image::make_crop_view;
+
+static_assert(!std::is_copy_constructible_v<NativeImageWorkspace>);
+static_assert(!std::is_copy_assignable_v<NativeImageWorkspace>);
+static_assert(std::is_move_constructible_v<NativeImageWorkspace>);
 
 TEST(NativeImage, CropViewIsZeroCopyAndPreservesStride) {
     std::vector<std::byte> bytes(4U * 3U * 3U);
@@ -45,9 +52,55 @@ TEST(NativeImage, WorkspaceReusesTensorCapacity) {
     const auto first = workspace.prepare_tensor(1024U);
     ASSERT_EQ(first.size(), 1024U);
     const auto capacity = workspace.tensor_capacity();
+    const auto growths = workspace.stats().tensor_growth_count;
     const auto second = workspace.prepare_tensor(512U);
     EXPECT_EQ(second.size(), 512U);
     EXPECT_EQ(workspace.tensor_capacity(), capacity);
+    EXPECT_EQ(workspace.stats().tensor_growth_count, growths);
+}
+
+TEST(NativeImage, WorkspaceGrowthTelemetryShowsWarmReuse) {
+    NativeImageWorkspace workspace{};
+    (void)workspace.prepare_tensor(4096U);
+    (void)workspace.prepare_image(128U, 64U, PixelFormat::bgr8);
+    const auto warmed = workspace.stats();
+    ASSERT_GT(warmed.tensor_growth_count, 0U);
+    ASSERT_GT(warmed.scratch_growth_count, 0U);
+
+    for (int iteration = 0; iteration < 100; ++iteration) {
+        (void)workspace.prepare_tensor(4096U);
+        (void)workspace.prepare_image(128U, 64U, PixelFormat::bgr8);
+    }
+
+    const auto after = workspace.stats();
+    EXPECT_EQ(after.tensor_growth_count, warmed.tensor_growth_count);
+    EXPECT_EQ(after.scratch_growth_count, warmed.scratch_growth_count);
+    EXPECT_EQ(after.tensor_capacity, warmed.tensor_capacity);
+    EXPECT_EQ(after.scratch_capacity, warmed.scratch_capacity);
+}
+
+TEST(NativeImage, WorkspaceRejectsRequestsBeyondConfiguredBounds) {
+    NativeImageWorkspaceConfig config{};
+    config.max_tensor_elements = 16U;
+    config.max_scratch_bytes = 32U;
+    NativeImageWorkspace workspace{config};
+
+    EXPECT_THROW(
+        workspace.prepare_tensor(17U),
+        fac_lpr::application::ResourceExhaustedError);
+    EXPECT_THROW(
+        workspace.prepare_image(33U, 1U, PixelFormat::gray8),
+        fac_lpr::application::ResourceExhaustedError);
+    EXPECT_EQ(workspace.stats().tensor_growth_count, 0U);
+    EXPECT_EQ(workspace.stats().scratch_growth_count, 0U);
+}
+
+TEST(NativeImage, InvalidWorkspaceLimitsFailFast) {
+    NativeImageWorkspaceConfig config{};
+    config.max_tensor_elements = 0U;
+    EXPECT_THROW(
+        NativeImageWorkspace{config},
+        fac_lpr::application::ConfigurationError);
 }
 
 TEST(NativeImage, TinyCropHasZeroQuality) {
