@@ -66,7 +66,7 @@ for (var iteration = 0; iteration < 250; iteration++)
 
 Console.WriteLine($"P/Invoke smoke ok: {version.SemanticMajor}.{version.SemanticMinor}.{version.SemanticPatch}, ABI {version.AbiMajor}");
 
-static void Check(int status, string operation)
+void Check(int status, string operation)
 {
     if (status != StatusOk)
     {
@@ -107,7 +107,7 @@ struct ImageView
     public int PixelFormat;
 }
 
-static partial class Native
+static class Native
 {
     private const string Library = "fac_lpr_engine";
 
