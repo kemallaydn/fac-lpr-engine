@@ -11,6 +11,10 @@ project(
     LANGUAGES C CXX
 )
 
+if(APPLE)
+    add_link_options("LINKER:-no_warn_duplicate_libraries")
+endif()
+
 option(FAC_LPR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(FAC_LPR_BUILD_SHARED "Build fac_lpr_engine as a shared library" OFF)
 option(FAC_LPR_BUILD_MODEL_INSPECTOR "Build the ONNX model inspector CLI" OFF)
