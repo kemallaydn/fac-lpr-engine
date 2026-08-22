@@ -32,6 +32,7 @@ add_executable(fac_lpr_native_tests
     bounded_worker_pool_tests.cpp
     c_api_error_detail_tests.cpp
     c_api_header_smoke.c
+    c_api_thread_safety_tests.cpp
     c_api_v1_tests.cpp
     candidate_fusion_tests.cpp
     confidence_calibration_tests.cpp
