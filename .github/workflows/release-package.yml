@@ -1,0 +1,129 @@
+name: release-package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Resolve package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            echo "PACKAGE_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "PACKAGE_VERSION=0.1.0-${GITHUB_SHA::8}" >> "$GITHUB_ENV"
+          fi
+      - name: Configure shared release
+        run: >-
+          cmake -S . -B build/package-linux -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_SHARED=ON
+      - name: Build and install
+        run: |
+          set -euo pipefail
+          cmake --build build/package-linux --parallel 2
+          STAGE="${GITHUB_WORKSPACE}/build/package-stage/fac-lpr-engine-${PACKAGE_VERSION}-linux-x64"
+          cmake --install build/package-linux --prefix "$STAGE" --strip
+          if find "$STAGE" -type f -name '*.onnx' | grep -q .; then
+            echo "Model artifact leaked into release package" >&2
+            exit 4
+          fi
+      - name: Archive and checksum
+        run: |
+          set -euo pipefail
+          cd build/package-stage
+          NAME="fac-lpr-engine-${PACKAGE_VERSION}-linux-x64"
+          tar -czf "${NAME}.tar.gz" "$NAME"
+          sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fac-lpr-engine-linux-x64-${{ env.PACKAGE_VERSION }}
+          path: |
+            build/package-stage/*.tar.gz
+            build/package-stage/*.sha256
+          retention-days: 30
+
+  windows-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Resolve package version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME.StartsWith('v')) {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = "0.1.0-$($env:GITHUB_SHA.Substring(0,8))"
+          }
+          "PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Configure shared release
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/package-windows -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/build/vcpkg_installed"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DFAC_LPR_ONNXRUNTIME_ROOT="${{ github.workspace }}/build/deps/onnxruntime"
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_SHARED=ON
+      - name: Build and install
+        shell: pwsh
+        run: |
+          cmake --build build/package-windows --config Release --parallel 2
+          $stage = Join-Path $env:GITHUB_WORKSPACE "build/package-stage/fac-lpr-engine-$env:PACKAGE_VERSION-windows-x64"
+          cmake --install build/package-windows --config Release --prefix $stage
+          $models = Get-ChildItem -Path $stage -Recurse -Filter *.onnx -ErrorAction SilentlyContinue
+          if ($models) { throw 'Model artifact leaked into release package' }
+      - name: Archive and checksum
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:GITHUB_WORKSPACE 'build/package-stage'
+          $name = "fac-lpr-engine-$env:PACKAGE_VERSION-windows-x64"
+          $archive = Join-Path $root "$name.zip"
+          Compress-Archive -Path (Join-Path $root $name) -DestinationPath $archive -Force
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          "$hash  $name.zip" | Set-Content -Encoding ascii "$archive.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fac-lpr-engine-windows-x64-${{ env.PACKAGE_VERSION }}
+          path: |
+            build/package-stage/*.zip
+            build/package-stage/*.sha256
+          retention-days: 30
