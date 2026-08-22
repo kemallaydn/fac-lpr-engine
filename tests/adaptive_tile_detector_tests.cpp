@@ -48,8 +48,14 @@ TEST(AdaptiveTileDetector, SmallImageUsesOnlyFullFrame) {
     AdaptiveTileDetector detector{fake, config};
     std::vector<std::byte> bytes(80U * 60U, std::byte{0});
     const auto result = detector.detect(ImageView{bytes, 80U, 60U, 80U, PixelFormat::gray8}, OperationContext{});
-    EXPECT_EQ(fake->calls, 1U);
-    EXPECT_TRUE(result.empty());
+    ASSERT_EQ(fake->calls, 1U);
+    ASSERT_EQ(fake->shapes.size(), 1U);
+    EXPECT_EQ(fake->shapes.front(), (std::pair<std::size_t, std::size_t>{80U, 60U}));
+    ASSERT_EQ(result.size(), 1U);
+    EXPECT_FLOAT_EQ(result.front().bbox.x, 5.0F);
+    EXPECT_FLOAT_EQ(result.front().bbox.y, 6.0F);
+    EXPECT_FLOAT_EQ(result.front().bbox.width, 10.0F);
+    EXPECT_FLOAT_EQ(result.front().bbox.height, 8.0F);
 }
 
 TEST(AdaptiveTileDetector, TileCoordinatesAreTranslatedToSourceSpace) {
