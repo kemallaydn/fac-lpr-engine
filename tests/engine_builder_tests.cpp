@@ -118,7 +118,7 @@ TEST(LprEngineBuilder, ComposesPipelineFromFakeProviders) {
 TEST(LprEngineBuilder, FailsFastWhenRequiredDependencyIsMissing) {
     application::LprEngineBuilder builder;
     builder.detector(std::make_shared<FakeDetector>("fake-detector"));
-    EXPECT_THROW(builder.build(), application::ConfigurationError);
+    EXPECT_THROW((void)builder.build(), application::ConfigurationError);
 }
 
 TEST(LprEngineBuilder, RejectsDuplicateSingletonProviderRole) {
