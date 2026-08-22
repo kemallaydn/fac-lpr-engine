@@ -17,6 +17,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <utility>
 
 struct fac_lpr_engine_handle final {
     std::uint32_t abi_version{FAC_LPR_ABI_VERSION_V1};
@@ -190,19 +191,23 @@ extern "C" fac_lpr_status FAC_LPR_CALL fac_lpr_engine_create_v1(
 }
 
 extern "C" fac_lpr_status FAC_LPR_CALL fac_lpr_engine_destroy_v1(
-    fac_lpr_engine_handle* handle) {
+    fac_lpr_engine_handle** handle) {
     return invoke_c_api([&]() -> fac_lpr_status {
-        if (handle == nullptr) {
+        if (handle == nullptr || *handle == nullptr) {
             return FAC_LPR_STATUS_OK;
         }
+
+        auto* raw_handle = *handle;
         {
             std::scoped_lock lock{g_handle_mutex};
-            const auto erased = g_live_handles.erase(handle);
+            const auto erased = g_live_handles.erase(raw_handle);
             if (erased == 0U) {
-                throw fac_lpr::application::ConfigurationError("C ABI engine handle is invalid or already destroyed");
+                throw fac_lpr::application::ConfigurationError(
+                    "C ABI engine handle is invalid or already destroyed");
             }
         }
-        delete handle;
+        delete raw_handle;
+        *handle = nullptr;
         return FAC_LPR_STATUS_OK;
     });
 }
@@ -210,28 +215,49 @@ extern "C" fac_lpr_status FAC_LPR_CALL fac_lpr_engine_destroy_v1(
 extern "C" fac_lpr_status FAC_LPR_CALL fac_lpr_engine_recognize_v1(
     fac_lpr_engine_handle* handle,
     const fac_lpr_image_view_v1* image,
-    fac_lpr_result_buffer_v1* result) {
+    void* output_buffer,
+    const std::size_t output_capacity,
+    std::size_t* required_output_size) {
     return invoke_c_api([&]() -> fac_lpr_status {
-        if (result == nullptr) {
-            throw fac_lpr::application::ConfigurationError("C ABI result buffer is null");
+        if (required_output_size == nullptr) {
+            throw fac_lpr::application::ConfigurationError(
+                "C ABI required output size pointer is null");
         }
-        if (result->struct_size < sizeof(fac_lpr_result_buffer_v1) ||
-            result->abi_version != FAC_LPR_ABI_VERSION_V1) {
-            throw fac_lpr::application::ConfigurationError("C ABI result buffer struct/version is invalid");
-        }
+        *required_output_size = 0U;
 
         const auto image_view = validate_image(image);
         const auto pipeline = pipeline_for_live_handle(handle);
         if (!pipeline) {
-            throw fac_lpr::application::ConfigurationError("C ABI engine handle has no configured pipeline");
+            throw fac_lpr::application::ConfigurationError(
+                "C ABI engine handle has no configured pipeline");
         }
 
         const auto recognition = pipeline->recognize(image_view);
-        fac_lpr::c_api::write_result_buffer(recognition, result);
-        return FAC_LPR_STATUS_OK;
+        return fac_lpr::c_api::serialize_result_v1(
+            recognition,
+            output_buffer,
+            output_capacity,
+            required_output_size);
     });
 }
 
-extern "C" const char* FAC_LPR_CALL fac_lpr_last_error_v1(void) {
-    return g_last_error.c_str();
+extern "C" fac_lpr_status FAC_LPR_CALL fac_lpr_get_last_error_v1(
+    char* buffer,
+    const std::size_t buffer_capacity,
+    std::size_t* required_size) {
+    if (required_size == nullptr) {
+        return FAC_LPR_STATUS_CONFIGURATION_ERROR;
+    }
+
+    const auto needed = g_last_error.size() + 1U;
+    *required_size = needed;
+    if (buffer == nullptr || buffer_capacity < needed) {
+        return FAC_LPR_STATUS_BUFFER_TOO_SMALL;
+    }
+
+    if (!g_last_error.empty()) {
+        std::memcpy(buffer, g_last_error.data(), g_last_error.size());
+    }
+    buffer[g_last_error.size()] = '\0';
+    return FAC_LPR_STATUS_OK;
 }
