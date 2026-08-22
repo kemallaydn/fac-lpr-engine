@@ -36,7 +36,8 @@ class ConstrainedCtcBeamSearch final {
 public:
     ConstrainedCtcBeamSearch(
         ConstrainedCtcBeamSearchConfig config,
-        application::TurkishPlateGrammar grammar = {});
+        application::TurkishPlateGrammar grammar =
+            application::TurkishPlateGrammar{});
 
     [[nodiscard]] const ConstrainedCtcBeamSearchConfig& config() const noexcept {
         return config_;
