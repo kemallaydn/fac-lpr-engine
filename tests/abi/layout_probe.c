@@ -4,7 +4,7 @@
 #include <stdio.h>
 
 #define ENTRY(type, comma) \
-    printf("  \\\"%s\\\": {\\\"size\\\": %zu, \\\"align\\\": %zu}%s\\n", #type, sizeof(type), alignof(type), comma)
+    printf("  \"%s\": {\"size\": %zu, \"align\": %zu}%s\n", #type, sizeof(type), alignof(type), comma)
 
 int main(void) {
     puts("{");
