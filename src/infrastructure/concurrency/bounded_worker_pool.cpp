@@ -15,6 +15,14 @@ BoundedWorkerPool::BoundedWorkerPool(BoundedWorkerPoolConfig config)
     if (config_.queue_capacity == 0U || config_.queue_capacity > 65536U) {
         throw application::ConfigurationError("queue_capacity must be in [1,65536]");
     }
+    if (config_.estimated_task_bytes == 0U || config_.max_queue_memory_bytes == 0U) {
+        throw application::ConfigurationError("worker queue memory budget values must be greater than zero");
+    }
+    static_cast<void>(application::checked_resource_multiply(
+        config_.queue_capacity,
+        config_.estimated_task_bytes,
+        config_.max_queue_memory_bytes,
+        "worker queue memory"));
 
     (void)native_image::NativeImageWorkspace{config_.workspace};
 

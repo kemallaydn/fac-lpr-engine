@@ -1,0 +1,51 @@
+name: resource-budget
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'include/fac_lpr/application/resource_budget.hpp'
+      - 'include/fac_lpr/infrastructure/concurrency/bounded_worker_pool.hpp'
+      - 'include/fac_lpr/infrastructure/onnx/onnx_session.hpp'
+      - 'src/infrastructure/concurrency/bounded_worker_pool.cpp'
+      - 'src/infrastructure/onnx/onnx_session.cpp'
+      - 'src/c_api/result_buffer.cpp'
+      - 'tests/resource_budget_tests.cpp'
+      - 'fuzz/resource_budget_fuzz.cpp'
+      - 'fuzz/CMakeLists.txt'
+      - '.github/workflows/resource-budget.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+  VCPKG_DEFAULT_TRIPLET: arm64-osx
+
+jobs:
+  mac-arm64:
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure resource-budget test build
+        run: |
+          set -euo pipefail
+          rm -rf build/resource-budget
+          cmake -S . -B build/resource-budget -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="$PWD/build/vcpkg_installed" \
+            -DVCPKG_TARGET_TRIPLET=arm64-osx \
+            -DFAC_LPR_ONNXRUNTIME_ROOT="$PWD/build/deps/onnxruntime" \
+            -DFAC_LPR_WITH_ONNX_RUNTIME=ON \
+            -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build
+        run: cmake --build build/resource-budget --parallel 2
+      - name: Run budget and ONNX tests
+        run: |
+          set -euo pipefail
+          ctest --test-dir build/resource-budget --output-on-failure -R 'ResourceBudget|OnnxExecutionProvider'

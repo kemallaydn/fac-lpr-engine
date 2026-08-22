@@ -54,6 +54,7 @@ add_executable(fac_lpr_native_tests
     native_image_tests.cpp
     paddle_ocr_adapter_tests.cpp
     recognition_ensemble_tests.cpp
+    resource_budget_tests.cpp
     result_buffer_tests.cpp
     safe_decision_policy_tests.cpp
     startup_self_test_tests.cpp

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fac_lpr/application/resource_budget.hpp>
 #include <fac_lpr/infrastructure/native_image/native_image.hpp>
 
 #include <condition_variable>
@@ -25,6 +26,8 @@ enum class ShutdownPolicy {
 struct BoundedWorkerPoolConfig final {
     std::size_t worker_count{1U};
     std::size_t queue_capacity{8U};
+    std::size_t estimated_task_bytes{1024U};
+    std::size_t max_queue_memory_bytes{application::default_resource_budget.max_queue_memory_bytes};
     QueueFullPolicy full_policy{QueueFullPolicy::reject_newest};
     ShutdownPolicy shutdown_policy{ShutdownPolicy::drain};
     native_image::NativeImageWorkspaceConfig workspace{};

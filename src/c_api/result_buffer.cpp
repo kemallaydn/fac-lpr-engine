@@ -1,6 +1,7 @@
 #include <fac_lpr/c_api/result_buffer.hpp>
 
 #include <fac_lpr/application/error.hpp>
+#include <fac_lpr/application/resource_budget.hpp>
 #include <fac_lpr/c_api/error_boundary.hpp>
 
 #include <algorithm>
@@ -18,6 +19,7 @@ namespace fac_lpr::c_api {
 namespace {
 
 constexpr std::size_t wire_alignment = FAC_LPR_RESULT_BUFFER_ALIGNMENT_V1;
+constexpr std::size_t max_result_bytes = application::default_resource_budget.max_result_bytes;
 
 [[nodiscard]] std::uint32_t to_u32(const std::size_t value, const char* field) {
     if (value > std::numeric_limits<std::uint32_t>::max()) {
@@ -33,7 +35,11 @@ constexpr std::size_t wire_alignment = FAC_LPR_RESULT_BUFFER_ALIGNMENT_V1;
     if (count != 0U && element_size > std::numeric_limits<std::size_t>::max() / count) {
         throw application::ResourceExhaustedError(std::string{field} + " overflows size_t");
     }
-    return count * element_size;
+    const auto bytes = count * element_size;
+    if (bytes > max_result_bytes) {
+        throw application::ResourceExhaustedError(std::string{field} + " exceeds result memory budget");
+    }
+    return bytes;
 }
 
 [[nodiscard]] std::uint32_t element_offset(
@@ -115,6 +121,9 @@ public:
             throw application::ResourceExhaustedError("result buffer size overflows size_t");
         }
         const auto end = aligned + bytes;
+        if (end > max_result_bytes) {
+            throw application::ResourceExhaustedError("result buffer exceeds configured 64 MiB resource budget");
+        }
         if (end > std::numeric_limits<std::uint32_t>::max()) {
             throw application::ResourceExhaustedError("result buffer exceeds v1 32-bit offset range");
         }

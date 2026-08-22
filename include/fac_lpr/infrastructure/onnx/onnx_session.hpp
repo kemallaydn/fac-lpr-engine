@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fac_lpr/application/error.hpp>
+#include <fac_lpr/application/resource_budget.hpp>
 #include <fac_lpr/infrastructure/onnx/execution_provider.hpp>
 
 #include <onnxruntime_cxx_api.h>
@@ -42,6 +43,7 @@ struct OnnxSessionConfig final {
     int inter_op_threads{0};
     GraphOptimizationLevel optimization{GraphOptimizationLevel::ORT_ENABLE_ALL};
     OnnxExecutionProviderConfig execution_provider{};
+    std::size_t max_tensor_elements{application::default_resource_budget.max_tensor_elements};
 };
 
 class IOnnxInferenceSession {
@@ -96,6 +98,7 @@ private:
     std::vector<TensorDescriptor> inputs_{};
     std::vector<TensorDescriptor> outputs_{};
     OnnxExecutionProviderDiagnostics execution_provider_diagnostics_{};
+    std::size_t max_tensor_elements_{application::default_resource_budget.max_tensor_elements};
 };
 
 } // namespace fac_lpr::infrastructure::onnx
