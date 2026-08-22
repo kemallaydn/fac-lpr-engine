@@ -16,6 +16,7 @@ option(FAC_LPR_BUILD_BENCHMARK "Build the stage latency benchmark CLI" OFF)
 option(FAC_LPR_BUILD_TESTS "Build FAC LPR Engine tests" OFF)
 
 include(cmake/Sanitizers.cmake)
+include(cmake/StaticAnalysis.cmake)
 
 if(FAC_LPR_BUILD_TESTS)
     include(CTest)
