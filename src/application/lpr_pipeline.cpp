@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <iterator>
 #include <string>
 #include <utility>
 
@@ -38,6 +39,20 @@ void add_timing(
         .detection_index = detection_index,
         .crop_index = crop_index,
         .latency_ms = std::max(0.0, elapsed_ms(started))});
+}
+
+void record_failure(
+    LprPipelineResult& result,
+    RecognitionDecisionContext& decision_context,
+    std::string provider,
+    const EngineErrorCode code) {
+    result.degraded = true;
+    ++result.provider_failure_count;
+    result.failures.push_back(ProviderFailure{
+        .provider = std::move(provider),
+        .code = code});
+    decision_context.degraded = true;
+    ++decision_context.provider_failure_count;
 }
 
 } // namespace
@@ -83,12 +98,22 @@ LprPipelineResult LprPipeline::recognize(
          detection_index < detections.size();
          ++detection_index) {
         auto detection = detections[detection_index];
+        RecognitionDecisionContext decision_context{};
 
         const auto geometry_started = Clock::now();
-        const auto geometry = dependencies_.geometry->evaluate(detection, context);
-        detection.geometry_score = std::isfinite(geometry.score)
-            ? std::clamp(geometry.score, 0.0F, 1.0F)
-            : 0.0F;
+        try {
+            const auto geometry = dependencies_.geometry->evaluate(detection, context);
+            detection.geometry_score = std::isfinite(geometry.score)
+                ? std::clamp(geometry.score, 0.0F, 1.0F)
+                : 0.0F;
+        } catch (const ProviderError& error) {
+            detection.geometry_score = 0.0F;
+            record_failure(
+                pipeline_result,
+                decision_context,
+                "geometry",
+                error.code());
+        }
         add_timing(
             pipeline_result,
             "geometry",
@@ -98,7 +123,16 @@ LprPipelineResult LprPipeline::recognize(
         check_context(context);
 
         const auto alignment_started = Clock::now();
-        auto aligned = dependencies_.aligner->align(validated.view, detection, context);
+        std::optional<ImageBuffer> aligned{};
+        try {
+            aligned = dependencies_.aligner->align(validated.view, detection, context);
+        } catch (const ProviderError& error) {
+            record_failure(
+                pipeline_result,
+                decision_context,
+                "alignment",
+                error.code());
+        }
         add_timing(
             pipeline_result,
             "alignment",
@@ -123,7 +157,6 @@ LprPipelineResult LprPipeline::recognize(
 
         std::vector<domain::RecognitionEvidence> all_evidence{};
         std::vector<LayoutEvidence> all_layout{};
-        RecognitionDecisionContext decision_context{};
         float best_crop_quality = 0.0F;
 
         for (std::size_t crop_index = 0U; crop_index < crops.size(); ++crop_index) {
@@ -142,6 +175,9 @@ LprPipelineResult LprPipeline::recognize(
                 crop_index,
                 recognition_started);
 
+            for (const auto& failure : ensemble.failures) {
+                pipeline_result.failures.push_back(failure);
+            }
             pipeline_result.provider_failure_count += ensemble.failures.size();
             pipeline_result.degraded = pipeline_result.degraded || ensemble.degraded;
             decision_context.degraded = decision_context.degraded || ensemble.degraded;
@@ -178,10 +214,19 @@ LprPipelineResult LprPipeline::recognize(
             }
 
             const auto layout_started = Clock::now();
-            auto layout = dependencies_.layout_analyzer->analyze(
-                crop.image.view(),
-                crop_candidates,
-                context);
+            LayoutEvidence layout{};
+            try {
+                layout = dependencies_.layout_analyzer->analyze(
+                    crop.image.view(),
+                    crop_candidates,
+                    context);
+            } catch (const ProviderError& error) {
+                record_failure(
+                    pipeline_result,
+                    decision_context,
+                    "layout",
+                    error.code());
+            }
             add_timing(
                 pipeline_result,
                 "layout",
