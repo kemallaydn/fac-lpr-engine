@@ -177,6 +177,19 @@ typedef struct fac_lpr_result_v1 {
  * - no pointer stored inside the result buffer is engine-owned.
  */
 
+/*
+ * v1 thread-safety contract:
+ * - create/version calls are reentrant.
+ * - recognize may run concurrently on the same live handle.
+ * - destroy may race with recognize when each thread owns an independent raw
+ *   handle variable; recognize either snapshots the pipeline or returns a
+ *   configuration error, without dereferencing retired handle storage.
+ * - callers must serialize mutation of the same handle pointer variable and
+ *   must not mutate/free input or output buffers while a call uses them.
+ * - last-error state is thread-local and must be read on the failing thread.
+ * See docs/public-api-thread-safety.md for the normative detailed contract.
+ */
+
 FAC_LPR_API fac_lpr_status FAC_LPR_CALL fac_lpr_get_version_v1(
     fac_lpr_version_info_v1* out_version);
 
