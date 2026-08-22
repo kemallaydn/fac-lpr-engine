@@ -86,12 +86,11 @@ void GenericOnnxOcrRecognizer::validate_contract() const {
 void GenericOnnxOcrRecognizer::validate_evidence(domain::RecognitionEvidence& evidence) {
     for (auto& candidate : evidence.candidates) {
         if (candidate.text.empty() || !std::isfinite(candidate.confidence) ||
-            candidate.confidence < 0.0F || candidate.confidence > 1.0F) {
+            candidate.confidence < 0.0F || candidate.confidence > 1.0F ||
+            !std::isfinite(candidate.calibrated_confidence) ||
+            candidate.calibrated_confidence < 0.0F ||
+            candidate.calibrated_confidence > 1.0F) {
             throw application::InferenceError("ONNX OCR adapter returned malformed recognition evidence");
-        }
-        if (!std::isfinite(candidate.calibrated_confidence) ||
-            candidate.calibrated_confidence < 0.0F || candidate.calibrated_confidence > 1.0F) {
-            candidate.calibrated_confidence = candidate.confidence;
         }
     }
 }
@@ -123,6 +122,9 @@ domain::RecognitionEvidence GenericOnnxOcrRecognizer::recognize(
 
     auto outputs = session_->run(input_name_pointers, input_values, output_name_pointers);
     check_context(context);
+    if (outputs.size() != output_names_.size()) {
+        throw application::InferenceError("ONNX OCR session returned an unexpected output count");
+    }
     auto evidence = adapter_->decode(outputs, context);
     validate_evidence(evidence);
     evidence.source = metadata_.name;
