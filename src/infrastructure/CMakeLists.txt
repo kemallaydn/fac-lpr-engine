@@ -8,8 +8,6 @@ target_compile_features(fac_lpr_native_image PUBLIC cxx_std_20)
 target_include_directories(fac_lpr_native_image PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_link_libraries(fac_lpr_native_image PUBLIC fac_lpr::application)
 
-add_subdirectory(concurrency)
-
 add_library(fac_lpr_crypto STATIC crypto/sha256.cpp)
 add_library(fac_lpr::crypto ALIAS fac_lpr_crypto)
 target_compile_features(fac_lpr_crypto PUBLIC cxx_std_20)
@@ -57,6 +55,13 @@ target_compile_features(fac_lpr_crop PUBLIC cxx_std_20)
 target_include_directories(fac_lpr_crop PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_link_libraries(fac_lpr_crop PUBLIC fac_lpr::application fac_lpr::domain fac_lpr::native_image)
 
+find_package(Threads REQUIRED)
+add_library(fac_lpr_concurrency STATIC concurrency/bounded_worker_pool.cpp)
+add_library(fac_lpr::concurrency ALIAS fac_lpr_concurrency)
+target_compile_features(fac_lpr_concurrency PUBLIC cxx_std_20)
+target_include_directories(fac_lpr_concurrency PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+target_link_libraries(fac_lpr_concurrency PUBLIC fac_lpr::application fac_lpr::native_image Threads::Threads)
+
 add_library(fac_lpr_infrastructure INTERFACE)
 add_library(fac_lpr::infrastructure ALIAS fac_lpr_infrastructure)
 target_link_libraries(fac_lpr_infrastructure INTERFACE fac_lpr::application fac_lpr::domain fac_lpr::native_image fac_lpr::concurrency fac_lpr::crypto fac_lpr::model fac_lpr::paddle_adapter fac_lpr::yolo fac_lpr::lprnet fac_lpr::geometry fac_lpr::adaptive_detection fac_lpr::crop)
@@ -80,11 +85,14 @@ if(FAC_LPR_WITH_ONNX_RUNTIME)
     target_include_directories(fac_lpr_onnx_runtime PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
     target_link_libraries(fac_lpr_onnx_runtime PUBLIC fac_lpr::application onnxruntime::onnxruntime)
 
-    add_library(fac_lpr_lprnet_onnx STATIC lprnet/lprnet_onnx_contract.cpp)
+    add_library(fac_lpr_lprnet_onnx STATIC
+        lprnet/lprnet_onnx_contract.cpp
+        lprnet/lprnet_onnx_ocr_adapter.cpp
+    )
     add_library(fac_lpr::lprnet_onnx ALIAS fac_lpr_lprnet_onnx)
     target_compile_features(fac_lpr_lprnet_onnx PUBLIC cxx_std_20)
     target_include_directories(fac_lpr_lprnet_onnx PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
-    target_link_libraries(fac_lpr_lprnet_onnx PUBLIC fac_lpr::lprnet fac_lpr::onnx_runtime)
+    target_link_libraries(fac_lpr_lprnet_onnx PUBLIC fac_lpr::lprnet fac_lpr::onnx_runtime fac_lpr::generic_onnx_ocr)
 
     add_library(fac_lpr_generic_onnx_ocr STATIC onnx/generic_ocr_recognizer.cpp)
     add_library(fac_lpr::generic_onnx_ocr ALIAS fac_lpr_generic_onnx_ocr)
@@ -92,7 +100,13 @@ if(FAC_LPR_WITH_ONNX_RUNTIME)
     target_include_directories(fac_lpr_generic_onnx_ocr PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
     target_link_libraries(fac_lpr_generic_onnx_ocr PUBLIC fac_lpr::onnx_runtime fac_lpr::native_image)
 
-    target_link_libraries(fac_lpr_infrastructure INTERFACE fac_lpr::lprnet_onnx fac_lpr::generic_onnx_ocr)
+    add_library(fac_lpr_yolo_onnx STATIC yolo/yolo_pose_onnx_detector.cpp)
+    add_library(fac_lpr::yolo_onnx ALIAS fac_lpr_yolo_onnx)
+    target_compile_features(fac_lpr_yolo_onnx PUBLIC cxx_std_20)
+    target_include_directories(fac_lpr_yolo_onnx PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+    target_link_libraries(fac_lpr_yolo_onnx PUBLIC fac_lpr::yolo fac_lpr::onnx_runtime fac_lpr::native_image)
+
+    target_link_libraries(fac_lpr_infrastructure INTERFACE fac_lpr::lprnet_onnx fac_lpr::generic_onnx_ocr fac_lpr::yolo_onnx)
 endif()
 
 if(FAC_LPR_WITH_OPENCV)
