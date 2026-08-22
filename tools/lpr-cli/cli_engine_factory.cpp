@@ -1,10 +1,10 @@
 #include "cli_engine_factory.hpp"
+#include "production_activation_gate.hpp"
 
 #include <fac_lpr/application/candidate_fusion.hpp>
 #include <fac_lpr/application/confidence_calibration.hpp>
 #include <fac_lpr/application/engine_builder.hpp>
 #include <fac_lpr/application/error.hpp>
-#include <fac_lpr/application/recognition_ensemble.hpp>
 #include <fac_lpr/application/safe_decision_policy.hpp>
 #include <fac_lpr/infrastructure/crop/crop_hypothesis_generator.hpp>
 #include <fac_lpr/infrastructure/geometry/plate_geometry_evaluator.hpp>
@@ -52,6 +52,7 @@ using Contract = std::unordered_map<std::string, std::string>;
     if (!input) {
         throw application::ConfigurationError("cannot open CLI contract file");
     }
+
     Contract values;
     std::string line;
     std::size_t line_number = 0U;
@@ -77,11 +78,11 @@ using Contract = std::unordered_map<std::string, std::string>;
 }
 
 [[nodiscard]] const std::string& required(const Contract& contract, const std::string& key) {
-    const auto iterator = contract.find(key);
-    if (iterator == contract.end() || iterator->second.empty()) {
+    const auto it = contract.find(key);
+    if (it == contract.end() || it->second.empty()) {
         throw application::ConfigurationError("missing CLI contract key: " + key);
     }
-    return iterator->second;
+    return it->second;
 }
 
 [[nodiscard]] std::size_t parse_size(const Contract& contract, const std::string& key) {
@@ -114,10 +115,7 @@ using Contract = std::unordered_map<std::string, std::string>;
     const Contract& contract,
     const std::string& key) {
     const auto& text = required(contract, key);
-    if (text == "none") {
-        return std::nullopt;
-    }
-    return parse_size(contract, key);
+    return text == "none" ? std::nullopt : std::optional<std::size_t>{parse_size(contract, key)};
 }
 
 [[nodiscard]] std::array<float, 3U> parse_float3(
@@ -162,6 +160,7 @@ using Contract = std::unordered_map<std::string, std::string>;
             throw application::ConfigurationError("model path traversal is not allowed");
         }
     }
+
     std::error_code error;
     const auto canonical_root = std::filesystem::weakly_canonical(root, error);
     if (error) {
@@ -171,6 +170,7 @@ using Contract = std::unordered_map<std::string, std::string>;
     if (error || !std::filesystem::is_regular_file(canonical_model)) {
         throw application::ModelLoadError("model file is missing: " + relative);
     }
+
     auto root_it = canonical_root.begin();
     auto model_it = canonical_model.begin();
     for (; root_it != canonical_root.end(); ++root_it, ++model_it) {
@@ -185,13 +185,13 @@ using Contract = std::unordered_map<std::string, std::string>;
     const std::vector<infrastructure::onnx::TensorDescriptor>& descriptors,
     const std::string& name,
     const char* kind) {
-    const auto iterator = std::find_if(
+    const auto it = std::find_if(
         descriptors.begin(), descriptors.end(),
         [&name](const auto& descriptor) { return descriptor.name == name; });
-    if (iterator == descriptors.end()) {
+    if (it == descriptors.end()) {
         throw application::ModelLoadError(std::string{"configured "} + kind + " node is missing: " + name);
     }
-    return *iterator;
+    return *it;
 }
 
 [[nodiscard]] infrastructure::lprnet::InputColorOrder color_order(const std::string& value) {
@@ -222,6 +222,42 @@ using Contract = std::unordered_map<std::string, std::string>;
     throw application::ConfigurationError("log level must be trace, debug, info, warn or error");
 }
 
+void validate_detector_output_contract(
+    const infrastructure::onnx::TensorDescriptor& output,
+    const infrastructure::yolo::CandidateLayout layout,
+    const std::size_t expected_features,
+    const std::size_t expected_candidates) {
+    if (output.element_type != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+        output.shape.size() != 3U || output.shape[0] != 1) {
+        throw application::ModelLoadError("detector output must be float32 rank-3 batch-one");
+    }
+    const auto features_index = layout == infrastructure::yolo::CandidateLayout::features_first ? 1U : 2U;
+    const auto candidates_index = layout == infrastructure::yolo::CandidateLayout::features_first ? 2U : 1U;
+    if (output.shape[features_index] != static_cast<std::int64_t>(expected_features) ||
+        output.shape[candidates_index] != static_cast<std::int64_t>(expected_candidates)) {
+        throw application::ModelLoadError("detector output shape does not match pinned production contract");
+    }
+}
+
+void validate_ocr_output_contract(
+    const infrastructure::onnx::TensorDescriptor& output,
+    const infrastructure::lprnet::LprNetOutputLayout layout,
+    const std::size_t expected_classes,
+    const std::size_t expected_timesteps) {
+    if (output.element_type != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+        output.shape.size() != 3U || output.shape[0] != 1) {
+        throw application::ModelLoadError("OCR output must be float32 rank-3 batch-one");
+    }
+    const auto classes_index =
+        layout == infrastructure::lprnet::LprNetOutputLayout::batch_classes_timesteps ? 1U : 2U;
+    const auto timesteps_index =
+        layout == infrastructure::lprnet::LprNetOutputLayout::batch_classes_timesteps ? 2U : 1U;
+    if (output.shape[classes_index] != static_cast<std::int64_t>(expected_classes) ||
+        output.shape[timesteps_index] != static_cast<std::int64_t>(expected_timesteps)) {
+        throw application::ModelLoadError("OCR output shape does not match pinned production contract");
+    }
+}
+
 } // namespace
 
 std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
@@ -234,10 +270,8 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
 
     auto environment = std::make_shared<infrastructure::onnx::OnnxRuntimeEnvironment>(
         ort_log_level(log_level));
-    auto detector_session = std::make_shared<infrastructure::onnx::OnnxSession>(
-        environment, detector_model);
-    auto ocr_session = std::make_shared<infrastructure::onnx::OnnxSession>(
-        environment, ocr_model);
+    auto detector_session = std::make_shared<infrastructure::onnx::OnnxSession>(environment, detector_model);
+    auto ocr_session = std::make_shared<infrastructure::onnx::OnnxSession>(environment, ocr_model);
 
     infrastructure::yolo::YoloPoseOnnxDetectorConfig detector_config{};
     detector_config.provider_name = "yolo_pose_onnx";
@@ -245,9 +279,10 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
     detector_config.output_name = required(contract, "detector.output_name");
     const auto& detector_input = descriptor_named(
         detector_session->inputs(), detector_config.input_name, "detector input");
-    if (detector_input.shape.size() != 4U || detector_input.shape[0] != 1 ||
+    if (detector_input.element_type != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+        detector_input.shape.size() != 4U || detector_input.shape[0] != 1 ||
         detector_input.shape[1] != 3 || detector_input.shape[2] <= 0 || detector_input.shape[3] <= 0) {
-        throw application::ModelLoadError("detector input must be static [1,3,H,W]");
+        throw application::ModelLoadError("detector input must be static float32 [1,3,H,W]");
     }
     detector_config.input.width = static_cast<std::size_t>(detector_input.shape[3]);
     detector_config.input.height = static_cast<std::size_t>(detector_input.shape[2]);
@@ -270,6 +305,14 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
     detector_config.output.nms_iou_threshold = parse_float(contract, "detector.nms_iou_threshold");
     detector_config.output.maximum_detections = parse_size(contract, "detector.maximum_detections");
     detector_config.output.provider_name = detector_config.provider_name;
+
+    const auto& detector_output = descriptor_named(
+        detector_session->outputs(), detector_config.output_name, "detector output");
+    validate_detector_output_contract(
+        detector_output,
+        detector_config.output.layout,
+        parse_size(contract, "detector.expected_output_features"),
+        parse_size(contract, "detector.expected_output_candidates"));
 
     auto detector = std::make_shared<infrastructure::yolo::YoloPoseOnnxDetector>(
         detector_session, detector_config);
@@ -302,6 +345,14 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
     ocr_config.decoder.classes_per_step = parse_size(contract, "ocr.classes_per_step");
     ocr_config.decoder.confusion_weight = parse_float(contract, "ocr.confusion_weight");
 
+    const auto& ocr_output = descriptor_named(
+        ocr_session->outputs(), ocr_config.output_name, "OCR output");
+    validate_ocr_output_contract(
+        ocr_output,
+        ocr_config.output_layout,
+        parse_size(contract, "ocr.expected_classes"),
+        parse_size(contract, "ocr.expected_timesteps"));
+
     auto ocr_adapter = std::make_shared<infrastructure::lprnet::LprNetOnnxOcrAdapter>(ocr_config);
     auto recognizer = std::make_shared<infrastructure::onnx::GenericOnnxOcrRecognizer>(
         ocr_session, ocr_adapter);
@@ -327,7 +378,10 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
         .decision_policy(
             "safe_default",
             std::make_shared<application::SafeRecognitionDecisionPolicy>());
-    return builder.build();
+
+    auto pipeline = builder.build();
+    activate_production_pipeline(pipeline, model_directory, contract_path);
+    return pipeline;
 }
 
 } // namespace fac_lpr::cli
