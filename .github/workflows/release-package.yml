@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Restore dependencies
         run: bash scripts/bootstrap-dependencies.sh
-      - name: Resolve package version
+      - name: Resolve package version and source epoch
         shell: bash
         run: |
           set -euo pipefail
@@ -36,11 +36,13 @@ jobs:
           else
             echo "PACKAGE_VERSION=0.1.0-${GITHUB_SHA::8}" >> "$GITHUB_ENV"
           fi
+          echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"
       - name: Configure shared release
         run: >-
           cmake -S . -B build/package-linux -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=${{ github.workspace }}/cmake/ReproducibleBuild.cmake
           -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
           -DVCPKG_TARGET_TRIPLET=x64-linux
           -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
@@ -48,6 +50,8 @@ jobs:
           -DFAC_LPR_WITH_OPENCV=ON
           -DFAC_LPR_BUILD_SHARED=ON
           -DFAC_LPR_BUILD_LPR_CLI=ON
+          -DFAC_LPR_REPRODUCIBLE_BUILD=ON
+          -DFAC_LPR_BUILD_GIT_COMMIT=${{ github.sha }}
       - name: Build and install
         run: |
           set -euo pipefail
@@ -83,19 +87,29 @@ jobs:
             -DFIXTURE_DIR="${GITHUB_WORKSPACE}/tests/fixtures/real" \
             -DEXPECTATIONS_FILE="${GITHUB_WORKSPACE}/tests/fixtures/real/expected-results.txt" \
             -P "${GITHUB_WORKSPACE}/tests/real_cli_e2e.cmake"
-      - name: Archive and checksum
+      - name: Archive, checksum and provenance
         run: |
           set -euo pipefail
-          cd build/package-stage
+          ROOT="${GITHUB_WORKSPACE}/build/package-stage"
           NAME="fac-lpr-engine-${PACKAGE_VERSION}-linux-x64"
-          tar -czf "${NAME}.tar.gz" "$NAME"
-          sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+          ARCHIVE="$ROOT/${NAME}.tar.gz"
+          python3 scripts/create-reproducible-archive.py "$ROOT/$NAME" "$ARCHIVE" --epoch "$SOURCE_DATE_EPOCH"
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+          python3 scripts/generate-build-provenance.py \
+            --source-commit "$GITHUB_SHA" \
+            --source-date-epoch "$SOURCE_DATE_EPOCH" \
+            --vcpkg-baseline cmake/vcpkg-baseline.txt \
+            --onnx-version cmake/onnxruntime-version.txt \
+            --triplet x64-linux \
+            --artifact "$ARCHIVE" \
+            --output "$ARCHIVE.provenance.json"
       - uses: actions/upload-artifact@v4
         with:
           name: fac-lpr-engine-linux-x64-${{ env.PACKAGE_VERSION }}
           path: |
             build/package-stage/*.tar.gz
             build/package-stage/*.sha256
+            build/package-stage/*.provenance.json
           retention-days: 30
 
   windows-x64:
@@ -109,7 +123,7 @@ jobs:
       - name: Restore dependencies
         shell: pwsh
         run: ./scripts/bootstrap-dependencies.ps1
-      - name: Resolve package version
+      - name: Resolve package version and source epoch
         shell: pwsh
         run: |
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME.StartsWith('v')) {
@@ -118,11 +132,14 @@ jobs:
             $version = "0.1.0-$($env:GITHUB_SHA.Substring(0,8))"
           }
           "PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $epoch = git show -s --format=%ct $env:GITHUB_SHA
+          "SOURCE_DATE_EPOCH=$epoch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Configure shared release
         shell: pwsh
         run: >-
           cmake -S . -B build/package-windows -G "Visual Studio 17 2022" -A x64
           -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="${{ github.workspace }}/cmake/ReproducibleBuild.cmake"
           -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/build/vcpkg_installed"
           -DVCPKG_TARGET_TRIPLET=x64-windows
           -DFAC_LPR_ONNXRUNTIME_ROOT="${{ github.workspace }}/build/deps/onnxruntime"
@@ -130,6 +147,8 @@ jobs:
           -DFAC_LPR_WITH_OPENCV=ON
           -DFAC_LPR_BUILD_SHARED=ON
           -DFAC_LPR_BUILD_LPR_CLI=ON
+          -DFAC_LPR_REPRODUCIBLE_BUILD=ON
+          -DFAC_LPR_BUILD_GIT_COMMIT=${{ github.sha }}
       - name: Build and install
         shell: pwsh
         run: |
@@ -166,19 +185,28 @@ jobs:
             -DFIXTURE_DIR="$env:GITHUB_WORKSPACE/tests/fixtures/real" `
             -DEXPECTATIONS_FILE="$env:GITHUB_WORKSPACE/tests/fixtures/real/expected-results.txt" `
             -P "$env:GITHUB_WORKSPACE/tests/real_cli_e2e.cmake"
-      - name: Archive and checksum
+      - name: Archive, checksum and provenance
         shell: pwsh
         run: |
           $root = Join-Path $env:GITHUB_WORKSPACE 'build/package-stage'
           $name = "fac-lpr-engine-$env:PACKAGE_VERSION-windows-x64"
           $archive = Join-Path $root "$name.zip"
-          Compress-Archive -Path (Join-Path $root $name) -DestinationPath $archive -Force
+          python scripts/create-reproducible-archive.py (Join-Path $root $name) $archive --epoch $env:SOURCE_DATE_EPOCH
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
           "$hash  $name.zip" | Set-Content -Encoding ascii "$archive.sha256"
+          python scripts/generate-build-provenance.py `
+            --source-commit $env:GITHUB_SHA `
+            --source-date-epoch $env:SOURCE_DATE_EPOCH `
+            --vcpkg-baseline cmake/vcpkg-baseline.txt `
+            --onnx-version cmake/onnxruntime-version.txt `
+            --triplet x64-windows `
+            --artifact $archive `
+            --output "$archive.provenance.json"
       - uses: actions/upload-artifact@v4
         with:
           name: fac-lpr-engine-windows-x64-${{ env.PACKAGE_VERSION }}
           path: |
             build/package-stage/*.zip
             build/package-stage/*.sha256
+            build/package-stage/*.provenance.json
           retention-days: 30
