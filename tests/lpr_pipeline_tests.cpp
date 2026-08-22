@@ -1,5 +1,6 @@
 #include <fac_lpr/application/candidate_fusion.hpp>
 #include <fac_lpr/application/confidence_calibration.hpp>
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/application/lpr_pipeline.hpp>
 #include <fac_lpr/application/safe_decision_policy.hpp>
 
