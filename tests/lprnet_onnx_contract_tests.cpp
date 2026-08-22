@@ -70,14 +70,14 @@ TEST(LprNetOnnxContract, RejectsUnsupportedOrAmbiguousContracts) {
     wrong_type.element_type = ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8;
     wrong_type.shape = {1, 3, 24, 94};
     EXPECT_THROW(
-        make_lprnet_input_spec(wrong_type, rgb_unit_semantics()),
+        (void)make_lprnet_input_spec(wrong_type, rgb_unit_semantics()),
         fac_lpr::application::ModelLoadError);
 
     TensorDescriptor ambiguous{};
     ambiguous.element_type = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
     ambiguous.shape = {1, 3, 24, 3};
     EXPECT_THROW(
-        make_lprnet_input_spec(ambiguous, rgb_unit_semantics()),
+        (void)make_lprnet_input_spec(ambiguous, rgb_unit_semantics()),
         fac_lpr::application::ModelLoadError);
 }
 
@@ -87,7 +87,7 @@ TEST(LprNetOnnxContract, RequiresExplicitValidPreprocessSemantics) {
     input.shape = {1, 3, 24, 94};
     LprNetPreprocessSemantics unspecified{};
     EXPECT_THROW(
-        make_lprnet_input_spec(input, unspecified),
+        (void)make_lprnet_input_spec(input, unspecified),
         fac_lpr::application::ConfigurationError);
 }
 
