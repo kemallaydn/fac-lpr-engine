@@ -165,6 +165,7 @@ set_target_properties(fac_lpr_geometry PROPERTIES EXPORT_NAME geometry)
 set_target_properties(fac_lpr_adaptive_detection PROPERTIES EXPORT_NAME adaptive_detection)
 set_target_properties(fac_lpr_crop PROPERTIES EXPORT_NAME crop)
 set_target_properties(fac_lpr_concurrency PROPERTIES EXPORT_NAME concurrency)
+set_target_properties(fac_lpr_json_config PROPERTIES EXPORT_NAME json_config)
 set_target_properties(fac_lpr_infrastructure PROPERTIES EXPORT_NAME infrastructure)
 
 set(FAC_LPR_EXPORT_TARGETS
@@ -181,6 +182,7 @@ set(FAC_LPR_EXPORT_TARGETS
     fac_lpr_adaptive_detection
     fac_lpr_crop
     fac_lpr_concurrency
+    fac_lpr_json_config
     fac_lpr_infrastructure
 )
 
