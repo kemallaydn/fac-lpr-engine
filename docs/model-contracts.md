@@ -1,8 +1,6 @@
 # Production model contracts
 
-This document records metadata inspected from the production ONNX artifacts without committing the model binaries to the repository.
-
-The values below were produced with `fac-lpr-model-info` and the model SHA-256 digests were calculated independently. Model-specific parser/preprocessor implementations must use these inspected contracts rather than guessed tensor dimensions.
+This document records the authoritative production ONNX contracts. Tensor metadata comes from `fac-lpr-model-info` / artifact inspection; model-specific preprocessing and decoder semantics must come from the corresponding training/export contract and must never be inferred from tensor dimensions alone.
 
 ## `best.onnx`
 
@@ -29,9 +27,20 @@ input  images   float32 [1, 3, 960, 960]
 output output0  float32 [1, 17, 18900]
 ```
 
-The metadata labels keypoints only as `0,1,2,3`; it does **not** define semantic corner order. Corner semantics must therefore be verified from the training/export convention or a real inference sample before hard-coding LU/RU/RD/LD meaning.
+Verified parser/preprocess contract:
+
+- input is BGR/RGB-aware native image data converted to RGB planar CHW
+- input scale: `1 / 255`
+- letterbox pad value: `114`
+- output layout: features-first
+- output features: `cx, cy, w, h`, one plate class score, then `4 x (x, y, confidence)` keypoints
+- no separate objectness slot
+
+The model metadata labels keypoints only as `0,1,2,3`. Runtime geometry does not hard-code those semantic labels: `PlateGeometryValidator` reorders the four finite points geometrically before perspective use.
 
 ## `lprnet_turkey.onnx`
+
+Active model: **V2 Mixed Epoch 7**.
 
 - SHA-256: `2d8fa236f468615ccd8b9ad6748c3e71b3d19ea53affdf5d5fee5a59719e310d`
 - File size: `1,308,628` bytes
@@ -48,11 +57,71 @@ input  input   float32 [1, 3, 40, 160]
 output output  float32 [1, 34, 24]
 ```
 
-The model metadata does **not** encode the OCR charset, CTC blank index, channel normalization convention, or class-to-character mapping. Those values must be sourced from the exporter/training configuration or verified against known samples; they must not be inferred merely from the output class count of 34.
+### Active OCR class / CTC contract
+
+Training/export charset order is exactly:
+
+```text
+0 1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P R S T U V Y Z -
+```
+
+There are 34 output classes total. The final `-` entry is **not** a literal plate character; it is the CTC blank class at `blank_index = 33`.
+
+The native decoder therefore uses the 33 real characters only:
+
+```text
+0123456789ABCDEFGHIJKLMNOPRSTUVYZ
+```
+
+and supplies `blank_index = 33` separately. The output layout is BCT (`[batch, classes, timesteps]`), therefore the active model has 34 class slots and 24 CTC timesteps.
+
+CTC decode semantics:
+
+1. for each of the 24 timesteps, select the highest-scoring class;
+2. collapse immediately repeated class indices;
+3. remove every class index `33` blank;
+4. map remaining class indices through the exact charset order above.
+
+### Active OCR preprocessing contract
+
+The training/export preprocessing is exactly:
+
+```python
+img = cv2.resize(img, (160, 40), interpolation=cv2.INTER_LINEAR)
+# Keep OpenCV BGR order. Do NOT convert BGR -> RGB.
+img = img.astype(np.float32)
+img = (img - 127.5) * 0.0078125
+img = np.transpose(img, (2, 0, 1))
+img = np.expand_dims(img, 0)
+img = np.ascontiguousarray(img, dtype=np.float32)
+```
+
+Equivalent native preprocessing contract:
+
+```text
+size          = 160 x 40
+layout        = NCHW
+color order   = BGR
+input_scale   = 1.0
+mean          = [127.5, 127.5, 127.5]
+std           = [128.0, 128.0, 128.0]
+```
+
+The native formula `((pixel * input_scale) - mean) / std` is mathematically identical to `(pixel - 127.5) * 0.0078125` because `0.0078125 = 1 / 128`.
+
+### Deprecated OCR contract
+
+The old model contract:
+
+```text
+input  [1, 3, 24, 94]
+output [1, 34, 18]
+```
+
+must **not** be used with the active V2 Mixed Epoch 7 model.
 
 ## Artifact policy
 
-- Production `.onnx` binaries remain outside git.
 - Runtime provisioning must verify SHA-256 before activating a model.
-- Model contract regression tests should fail if names, element types, ranks, dimensions, opsets, or expected digests change unexpectedly.
-- A deliberate model upgrade requires updating this document and the corresponding manifest/contract test in the same reviewed change.
+- Model contract regression tests must fail if names, element types, ranks, dimensions, class ordering, blank association, preprocessing semantics, opsets, or expected digests change unexpectedly.
+- A deliberate model upgrade requires updating this document and the corresponding manifest/contract tests in the same reviewed change.
