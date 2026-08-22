@@ -142,11 +142,24 @@ if(FAC_LPR_BUILD_FUZZERS)
 endif()
 
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/onnxruntime-version.txt" FAC_LPR_PACKAGE_ONNXRUNTIME_VERSION LIMIT_COUNT 1)
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/runtime-manifest.json.in"
     "${CMAKE_CURRENT_BINARY_DIR}/generated/runtime-manifest.json"
     @ONLY
+)
+
+set(FAC_LPR_CMAKE_PACKAGE_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/fac-lpr-engine")
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fac-lpr-engine-config.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/fac-lpr-engine-config.cmake"
+    INSTALL_DESTINATION "${FAC_LPR_CMAKE_PACKAGE_DIR}"
+)
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/fac-lpr-engine-config-version.cmake"
+    VERSION "${PROJECT_VERSION}"
+    COMPATIBILITY SameMajorVersion
 )
 
 # A static fac_lpr_engine archive keeps link-only references to its internal
@@ -215,9 +228,15 @@ install(
 )
 install(
     EXPORT fac_lpr_engine_targets
-    FILE fac_lpr_engine-targets.cmake
+    FILE fac-lpr-engine-targets.cmake
     NAMESPACE fac_lpr::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fac_lpr_engine
+    DESTINATION "${FAC_LPR_CMAKE_PACKAGE_DIR}"
+)
+install(
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/fac-lpr-engine-config.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/fac-lpr-engine-config-version.cmake"
+    DESTINATION "${FAC_LPR_CMAKE_PACKAGE_DIR}"
 )
 
 if(FAC_LPR_BUILD_TESTS)

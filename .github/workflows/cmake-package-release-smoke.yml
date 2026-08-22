@@ -1,0 +1,73 @@
+name: cmake-package-release-smoke
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'CMakeLists.txt'
+      - 'cmake/fac-lpr-engine-config.cmake.in'
+      - 'tests/consumers/cpp_cmake/**'
+      - '.github/workflows/cmake-package-release-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/bootstrap-dependencies.sh
+      - name: Install shared release package
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/pkg-linux -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="$PWD/build/vcpkg_installed" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DFAC_LPR_BUILD_SHARED=ON
+          cmake --build build/pkg-linux --parallel 2
+          cmake --install build/pkg-linux --prefix "$PWD/build/pkg-stage"
+      - name: Build external consumer from installed package
+        run: |
+          set -euo pipefail
+          cmake -S tests/consumers/cpp_cmake -B build/pkg-consumer -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$PWD/build/pkg-stage"
+          cmake --build build/pkg-consumer --parallel 2
+          LD_LIBRARY_PATH="$PWD/build/pkg-stage/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            ./build/pkg-consumer/fac_lpr_cpp_consumer
+
+  windows-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Install shared release package
+        shell: pwsh
+        run: |
+          cmake -S . -B build/pkg-windows -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:GITHUB_WORKSPACE/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_INSTALLED_DIR="$env:GITHUB_WORKSPACE/build/vcpkg_installed" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DFAC_LPR_BUILD_SHARED=ON
+          cmake --build build/pkg-windows --config Release --parallel 2
+          cmake --install build/pkg-windows --config Release --prefix "$env:GITHUB_WORKSPACE/build/pkg-stage"
+      - name: Build external consumer from installed package
+        shell: pwsh
+        run: |
+          cmake -S tests/consumers/cpp_cmake -B build/pkg-consumer -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE/build/pkg-stage"
+          cmake --build build/pkg-consumer --config Release --parallel 2
+          $env:PATH = "$env:GITHUB_WORKSPACE/build/pkg-stage/bin;$env:PATH"
+          & "$env:GITHUB_WORKSPACE/build/pkg-consumer/Release/fac_lpr_cpp_consumer.exe"
