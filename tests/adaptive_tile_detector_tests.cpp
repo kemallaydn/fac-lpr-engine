@@ -1,3 +1,4 @@
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/infrastructure/adaptive/adaptive_tile_detector.hpp>
 
 #include <gtest/gtest.h>
