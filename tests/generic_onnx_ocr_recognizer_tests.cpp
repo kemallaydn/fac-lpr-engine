@@ -27,11 +27,14 @@ public:
         EXPECT_EQ(input_values.size(), 1U);
         EXPECT_EQ(output_names.size(), 1U);
         std::vector<Ort::Value> result;
-        result.emplace_back(nullptr);
+        for (std::size_t index = 0U; index < returned_output_count; ++index) {
+            result.emplace_back(nullptr);
+        }
         return result;
     }
 
     std::size_t calls{0U};
+    std::size_t returned_output_count{1U};
 
 private:
     std::vector<infrastructure::onnx::TensorDescriptor> inputs_{};
@@ -58,10 +61,21 @@ public:
         const application::OperationContext&) override {
         EXPECT_EQ(outputs.size(), 1U);
         domain::RecognitionEvidence evidence{};
-        evidence.candidates.push_back({"34ABC123", 0.9F, 0.9F, true});
+        evidence.candidates.push_back({
+            "34ABC123",
+            0.9F,
+            invalid_calibrated_confidence ? 1.5F : 0.9F,
+            true});
         return evidence;
     }
+
+    bool invalid_calibrated_confidence{false};
 };
+
+application::ImageView image_fixture(std::vector<std::byte>& bytes) {
+    bytes.assign(12U, std::byte{1});
+    return {bytes, 2U, 2U, 6U, application::PixelFormat::bgr8};
+}
 
 TEST(GenericOnnxOcrRecognizer, DelegatesModelSpecificWorkWithoutChangingPublicProviderContract) {
     auto session = std::make_shared<FakeSession>();
@@ -70,9 +84,8 @@ TEST(GenericOnnxOcrRecognizer, DelegatesModelSpecificWorkWithoutChangingPublicPr
     EXPECT_EQ(recognizer.name(), "fake-ocr");
     EXPECT_EQ(recognizer.model_version(), "1.2.3");
 
-    std::vector<std::byte> bytes(12U, std::byte{1});
-    application::ImageView image{bytes, 2U, 2U, 6U, application::PixelFormat::bgr8};
-    const auto evidence = recognizer.recognize(image, {});
+    std::vector<std::byte> bytes;
+    const auto evidence = recognizer.recognize(image_fixture(bytes), {});
     ASSERT_EQ(evidence.candidates.size(), 1U);
     EXPECT_EQ(evidence.source, "fake-ocr");
     EXPECT_EQ(session->calls, 1U);
@@ -87,6 +100,47 @@ TEST(GenericOnnxOcrRecognizer, RejectsAdapterNodeNamesNotPresentInModel) {
         infrastructure::onnx::GenericOnnxOcrRecognizer{
             std::make_shared<FakeSession>(), std::make_shared<BadAdapter>()},
         application::ModelLoadError);
+}
+
+TEST(GenericOnnxOcrRecognizer, RejectsUnexpectedSessionOutputCountBeforeDecode) {
+    auto session = std::make_shared<FakeSession>();
+    session->returned_output_count = 0U;
+    auto adapter = std::make_shared<FakeAdapter>();
+    infrastructure::onnx::GenericOnnxOcrRecognizer recognizer{session, adapter};
+    std::vector<std::byte> bytes;
+
+    EXPECT_THROW(
+        recognizer.recognize(image_fixture(bytes), {}),
+        application::InferenceError);
+}
+
+TEST(GenericOnnxOcrRecognizer, RejectsMalformedAdapterEvidence) {
+    auto session = std::make_shared<FakeSession>();
+    auto adapter = std::make_shared<FakeAdapter>();
+    adapter->invalid_calibrated_confidence = true;
+    infrastructure::onnx::GenericOnnxOcrRecognizer recognizer{session, adapter};
+    std::vector<std::byte> bytes;
+
+    EXPECT_THROW(
+        recognizer.recognize(image_fixture(bytes), {}),
+        application::InferenceError);
+}
+
+TEST(GenericOnnxOcrRecognizer, SessionAndAdapterLifetimeAreOwnedByRaii) {
+    std::weak_ptr<FakeSession> weak_session;
+    std::weak_ptr<FakeAdapter> weak_adapter;
+    {
+        auto session = std::make_shared<FakeSession>();
+        auto adapter = std::make_shared<FakeAdapter>();
+        weak_session = session;
+        weak_adapter = adapter;
+        infrastructure::onnx::GenericOnnxOcrRecognizer recognizer{
+            std::move(session), std::move(adapter)};
+        EXPECT_FALSE(weak_session.expired());
+        EXPECT_FALSE(weak_adapter.expired());
+    }
+    EXPECT_TRUE(weak_session.expired());
+    EXPECT_TRUE(weak_adapter.expired());
 }
 
 } // namespace
