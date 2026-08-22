@@ -115,7 +115,7 @@ TEST(RecognitionEnsemble, RequiredProviderFailureIsFatal) {
     const RecognitionEnsemble ensemble{std::move(registrations)};
     std::vector<std::byte> bytes{};
     EXPECT_THROW(
-        ensemble.recognize(image_fixture(bytes), 0.5F, OperationContext{}),
+        (void)ensemble.recognize(image_fixture(bytes), 0.5F, OperationContext{}),
         fac_lpr::application::ProviderError);
 }
 
