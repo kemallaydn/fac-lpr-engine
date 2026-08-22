@@ -13,6 +13,11 @@ option(FAC_LPR_BUILD_WORKSPACE_PROBE "Build the workspace buffer reuse probe" OF
 option(FAC_LPR_BUILD_LPR_CLI "Build the offline JPG/PNG recognition CLI" OFF)
 option(FAC_LPR_BUILD_TESTS "Build FAC LPR Engine tests" OFF)
 
+if(FAC_LPR_BUILD_TESTS)
+    include(CTest)
+    enable_testing()
+endif()
+
 if(FAC_LPR_ONNXRUNTIME_ROOT)
     include(cmake/OnnxRuntimePrebuilt.cmake)
     fac_lpr_import_onnxruntime("${FAC_LPR_ONNXRUNTIME_ROOT}")
@@ -86,7 +91,5 @@ if(FAC_LPR_BUILD_LPR_CLI)
 endif()
 
 if(FAC_LPR_BUILD_TESTS)
-    include(CTest)
-    enable_testing()
     add_subdirectory(tests)
 endif()
