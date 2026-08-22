@@ -9,6 +9,7 @@ project(
 
 option(FAC_LPR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(FAC_LPR_BUILD_MODEL_INSPECTOR "Build the ONNX model inspector CLI" OFF)
+option(FAC_LPR_BUILD_WORKSPACE_PROBE "Build the workspace buffer reuse probe" OFF)
 option(FAC_LPR_BUILD_TESTS "Build FAC LPR Engine tests" OFF)
 
 if(FAC_LPR_ONNXRUNTIME_ROOT)
@@ -71,6 +72,10 @@ set_target_properties(fac_lpr_engine PROPERTIES
 
 if(FAC_LPR_BUILD_MODEL_INSPECTOR)
     add_subdirectory(tools/model-inspector)
+endif()
+
+if(FAC_LPR_BUILD_WORKSPACE_PROBE)
+    add_subdirectory(tools/workspace-probe)
 endif()
 
 if(FAC_LPR_BUILD_TESTS)
