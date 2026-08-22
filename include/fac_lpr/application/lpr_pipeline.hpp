@@ -20,6 +20,7 @@ struct PipelineStageTiming final {
 struct LprPipelineResult final {
     std::vector<domain::PlateRecognitionResult> recognitions{};
     std::vector<PipelineStageTiming> stage_timings{};
+    std::vector<ProviderFailure> failures{};
     double total_latency_ms{0.0};
     std::size_t provider_failure_count{0U};
     bool degraded{false};
