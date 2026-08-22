@@ -3,6 +3,7 @@ add_library(fac_lpr_application STATIC
     confidence_calibration.cpp
     image_validation.cpp
     lpr_pipeline.cpp
+    multi_detector_fusion.cpp
     recognition_ensemble.cpp
     safe_decision_policy.cpp
     turkish_plate_grammar.cpp
