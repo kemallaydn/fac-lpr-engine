@@ -1,9 +1,9 @@
 # Format:
 # filename=REQUIRED_PLATE[,REQUIRED_PLATE...]|OPTIONAL_PLATE[,OPTIONAL_PLATE...]
-# Plakaları boşluksuz ve decoder çıktısıyla aynı biçimde yazın.
-# Sol taraftaki plakalar E2E testinin geçmesi için mutlaka bulunmalıdır.
-# Sağ taraftaki plakalar frame'de görünür ama kalite/mesafe nedeniyle opsiyonel kabul edilir.
-# `|` yoksa listedeki bütün plakalar required kabul edilir.
+# Write plate strings without spaces and exactly as emitted by the decoder.
+# Plates on the left are required for the E2E gate to pass.
+# Plates on the right are visible but optional because of distance or image quality.
+# If no pipe separator is present, every listed plate is required.
 
 plate_01.jpg=06BY0825
 plate_02.jpg=06ACY760|06AHU99
