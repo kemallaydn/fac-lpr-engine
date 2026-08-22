@@ -3,13 +3,14 @@
 #include <fac_lpr/application/error.hpp>
 #include <fac_lpr/c_api/error_boundary.hpp>
 
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <new>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace fac_lpr::c_api {
@@ -24,6 +25,39 @@ constexpr std::size_t wire_alignment = 4U;
     return static_cast<std::uint32_t>(value);
 }
 
+[[nodiscard]] std::size_t checked_array_bytes(
+    const std::size_t count,
+    const std::size_t element_size,
+    const char* field) {
+    if (element_size != 0U && count > std::numeric_limits<std::size_t>::max() / element_size) {
+        throw application::ResourceExhaustedError(std::string{field} + " overflows size_t");
+    }
+    return count * element_size;
+}
+
+[[nodiscard]] std::uint32_t element_offset(
+    const std::uint32_t base,
+    const std::size_t index,
+    const std::size_t element_size) {
+    const auto delta = checked_array_bytes(index, element_size, "result element offset");
+    const auto value = static_cast<std::size_t>(base) + delta;
+    return to_u32(value, "result element offset");
+}
+
+[[nodiscard]] float finite_float(const float value, const char* field) {
+    if (!std::isfinite(value)) {
+        throw application::ProviderError(std::string{field} + " must be finite");
+    }
+    return value;
+}
+
+[[nodiscard]] float probability_float(const float value, const char* field) {
+    if (!std::isfinite(value) || value < 0.0F || value > 1.0F) {
+        throw application::ProviderError(std::string{field} + " must be in [0,1]");
+    }
+    return value;
+}
+
 [[nodiscard]] float latency_to_float(const double value) {
     if (!std::isfinite(value) || value < 0.0 ||
         value > static_cast<double>(std::numeric_limits<float>::max())) {
@@ -35,12 +69,9 @@ constexpr std::size_t wire_alignment = 4U;
 [[nodiscard]] fac_lpr_recognition_status_v1 map_status(
     const domain::RecognitionStatus value) {
     switch (value) {
-        case domain::RecognitionStatus::accepted:
-            return FAC_LPR_RECOGNITION_ACCEPTED_V1;
-        case domain::RecognitionStatus::review:
-            return FAC_LPR_RECOGNITION_REVIEW_V1;
-        case domain::RecognitionStatus::rejected:
-            return FAC_LPR_RECOGNITION_REJECTED_V1;
+        case domain::RecognitionStatus::accepted: return FAC_LPR_RECOGNITION_ACCEPTED_V1;
+        case domain::RecognitionStatus::review: return FAC_LPR_RECOGNITION_REVIEW_V1;
+        case domain::RecognitionStatus::rejected: return FAC_LPR_RECOGNITION_REJECTED_V1;
     }
     throw application::InternalError("unknown recognition status");
 }
@@ -105,9 +136,7 @@ public:
         std::memcpy(bytes_ + begin, &value, sizeof(T));
     }
 
-    void write_bytes(
-        const std::uint32_t offset,
-        const std::span<const std::byte> value) {
+    void write_bytes(const std::uint32_t offset, const std::span<const std::byte> value) {
         if (bytes_ == nullptr || value.empty()) {
             return;
         }
@@ -138,19 +167,14 @@ private:
     std::size_t position_{0U};
 };
 
-[[nodiscard]] fac_lpr_text_ref_v1 append_text(
-    BufferWriter& writer,
-    const std::string_view text) {
+[[nodiscard]] fac_lpr_text_ref_v1 append_text(BufferWriter& writer, const std::string_view text) {
     if (text.empty()) {
-        return fac_lpr_text_ref_v1{0U, 0U};
+        return {0U, 0U};
     }
     const auto offset = writer.reserve(text.size());
-    writer.write_bytes(
-        offset,
-        std::span<const std::byte>{
-            reinterpret_cast<const std::byte*>(text.data()),
-            text.size()});
-    return fac_lpr_text_ref_v1{offset, to_u32(text.size(), "text length")};
+    writer.write_bytes(offset, std::span<const std::byte>{
+        reinterpret_cast<const std::byte*>(text.data()), text.size()});
+    return {offset, to_u32(text.size(), "text length")};
 }
 
 [[nodiscard]] fac_lpr_candidate_v1 serialize_candidate(
@@ -160,8 +184,10 @@ private:
         .struct_size = static_cast<std::uint32_t>(sizeof(fac_lpr_candidate_v1)),
         .abi_version = FAC_LPR_ABI_VERSION_V1,
         .text = append_text(writer, candidate.text),
-        .confidence = candidate.confidence,
-        .calibrated_confidence = candidate.calibrated_confidence,
+        .confidence = probability_float(candidate.confidence, "candidate confidence"),
+        .calibrated_confidence = probability_float(
+            candidate.calibrated_confidence,
+            "candidate calibrated confidence"),
         .format_valid = candidate.format_valid ? 1U : 0U,
         .reserved_zero = 0U};
 }
@@ -172,17 +198,12 @@ private:
     if (candidates.empty()) {
         return 0U;
     }
-    const auto bytes = candidates.size() * sizeof(fac_lpr_candidate_v1);
-    if (candidates.size() >
-        std::numeric_limits<std::size_t>::max() / sizeof(fac_lpr_candidate_v1)) {
-        throw application::ResourceExhaustedError("candidate array size overflows size_t");
-    }
+    const auto bytes = checked_array_bytes(
+        candidates.size(), sizeof(fac_lpr_candidate_v1), "candidate array size");
     const auto offset = writer.reserve(bytes);
     for (std::size_t index = 0U; index < candidates.size(); ++index) {
         const auto wire = serialize_candidate(writer, candidates[index]);
-        writer.write(
-            offset + static_cast<std::uint32_t>(index * sizeof(fac_lpr_candidate_v1)),
-            wire);
+        writer.write(element_offset(offset, index, sizeof(fac_lpr_candidate_v1)), wire);
     }
     return offset;
 }
@@ -193,11 +214,9 @@ private:
     if (evidence.empty()) {
         return 0U;
     }
-    if (evidence.size() >
-        std::numeric_limits<std::size_t>::max() / sizeof(fac_lpr_evidence_v1)) {
-        throw application::ResourceExhaustedError("evidence array size overflows size_t");
-    }
-    const auto offset = writer.reserve(evidence.size() * sizeof(fac_lpr_evidence_v1));
+    const auto bytes = checked_array_bytes(
+        evidence.size(), sizeof(fac_lpr_evidence_v1), "evidence array size");
+    const auto offset = writer.reserve(bytes);
     for (std::size_t index = 0U; index < evidence.size(); ++index) {
         const auto& item = evidence[index];
         const auto candidates_offset = append_candidates(writer, item.candidates);
@@ -205,13 +224,11 @@ private:
             .struct_size = static_cast<std::uint32_t>(sizeof(fac_lpr_evidence_v1)),
             .abi_version = FAC_LPR_ABI_VERSION_V1,
             .source = append_text(writer, item.source),
-            .crop_quality = item.crop_quality,
+            .crop_quality = probability_float(item.crop_quality, "evidence crop quality"),
             .latency_ms = latency_to_float(item.latency_ms),
             .candidate_count = to_u32(item.candidates.size(), "evidence candidate count"),
             .candidates_offset = candidates_offset};
-        writer.write(
-            offset + static_cast<std::uint32_t>(index * sizeof(fac_lpr_evidence_v1)),
-            wire);
+        writer.write(element_offset(offset, index, sizeof(fac_lpr_evidence_v1)), wire);
     }
     return offset;
 }
@@ -222,16 +239,12 @@ private:
     if (reasons.empty()) {
         return 0U;
     }
-    if (reasons.size() >
-        std::numeric_limits<std::size_t>::max() / sizeof(fac_lpr_decision_reason_v1)) {
-        throw application::ResourceExhaustedError("decision reason array size overflows size_t");
-    }
-    const auto offset = writer.reserve(reasons.size() * sizeof(fac_lpr_decision_reason_v1));
+    const auto bytes = checked_array_bytes(
+        reasons.size(), sizeof(fac_lpr_decision_reason_v1), "decision reason array size");
+    const auto offset = writer.reserve(bytes);
     for (std::size_t index = 0U; index < reasons.size(); ++index) {
         const auto wire = map_reason(reasons[index]);
-        writer.write(
-            offset + static_cast<std::uint32_t>(index * sizeof(fac_lpr_decision_reason_v1)),
-            wire);
+        writer.write(element_offset(offset, index, sizeof(fac_lpr_decision_reason_v1)), wire);
     }
     return offset;
 }
@@ -245,28 +258,31 @@ private:
     wire.status = map_status(result.status);
     wire.degraded = result.degraded ? 1U : 0U;
     wire.plate = append_text(writer, result.plate);
-    wire.confidence = result.confidence;
-    wire.detector_confidence = result.detector_confidence;
-    wire.geometry_score = result.geometry_score;
-    wire.crop_quality = result.crop_quality;
+    wire.confidence = probability_float(result.confidence, "recognition confidence");
+    wire.detector_confidence = probability_float(
+        result.detector_confidence,
+        "detector confidence");
+    wire.geometry_score = probability_float(result.geometry_score, "geometry score");
+    wire.crop_quality = probability_float(result.crop_quality, "crop quality");
     wire.total_latency_ms = latency_to_float(result.total_latency_ms);
 
     if (result.bbox.has_value()) {
         wire.has_bbox = 1U;
-        wire.bbox = fac_lpr_bbox_v1{
-            result.bbox->x,
-            result.bbox->y,
-            result.bbox->width,
-            result.bbox->height};
+        wire.bbox = {
+            finite_float(result.bbox->x, "bbox x"),
+            finite_float(result.bbox->y, "bbox y"),
+            finite_float(result.bbox->width, "bbox width"),
+            finite_float(result.bbox->height, "bbox height")};
     }
     if (result.quadrilateral.has_value()) {
         wire.has_quadrilateral = 1U;
         for (std::size_t index = 0U; index < 4U; ++index) {
-            wire.quadrilateral.points[index] = fac_lpr_point_v1{
-                result.quadrilateral->points[index].x,
-                result.quadrilateral->points[index].y};
-            wire.quadrilateral.confidences[index] =
-                result.quadrilateral->confidences[index];
+            wire.quadrilateral.points[index] = {
+                finite_float(result.quadrilateral->points[index].x, "quadrilateral x"),
+                finite_float(result.quadrilateral->points[index].y, "quadrilateral y")};
+            wire.quadrilateral.confidences[index] = probability_float(
+                result.quadrilateral->confidences[index],
+                "quadrilateral confidence");
         }
     }
 
@@ -291,17 +307,15 @@ private:
 
     std::uint32_t recognitions_offset = 0U;
     if (!result.recognitions.empty()) {
-        if (result.recognitions.size() >
-            std::numeric_limits<std::size_t>::max() / sizeof(fac_lpr_plate_result_v1)) {
-            throw application::ResourceExhaustedError("recognition array size overflows size_t");
-        }
-        recognitions_offset = writer.reserve(
-            result.recognitions.size() * sizeof(fac_lpr_plate_result_v1));
+        const auto bytes = checked_array_bytes(
+            result.recognitions.size(),
+            sizeof(fac_lpr_plate_result_v1),
+            "recognition array size");
+        recognitions_offset = writer.reserve(bytes);
         for (std::size_t index = 0U; index < result.recognitions.size(); ++index) {
             const auto plate = serialize_plate(writer, result.recognitions[index]);
             writer.write(
-                recognitions_offset +
-                    static_cast<std::uint32_t>(index * sizeof(fac_lpr_plate_result_v1)),
+                element_offset(recognitions_offset, index, sizeof(fac_lpr_plate_result_v1)),
                 plate);
         }
     }
@@ -338,10 +352,7 @@ fac_lpr_status serialize_result_v1(
             return FAC_LPR_STATUS_BUFFER_TOO_SMALL;
         }
         const auto written = serialize_impl(result, output_buffer, output_capacity);
-        if (written != required) {
-            return FAC_LPR_STATUS_INTERNAL_ERROR;
-        }
-        return FAC_LPR_STATUS_OK;
+        return written == required ? FAC_LPR_STATUS_OK : FAC_LPR_STATUS_INTERNAL_ERROR;
     } catch (const application::EngineError& error) {
         return to_c_status(error.code());
     } catch (const std::bad_alloc&) {
