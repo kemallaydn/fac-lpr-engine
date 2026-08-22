@@ -2,9 +2,9 @@
 
 > **Purpose**
 >
-> This is the canonical handoff document for FAC LPR Engine. A developer or AI taking over the repository should be able to read this file, inspect current `dev` code/tests and GitHub issues, and continue without relying on chat history.
+> Canonical handoff for FAC LPR Engine. A developer or AI should be able to read this document, inspect current `dev` code/tests and live GitHub issues, and continue without previous chat history.
 >
-> **Authority rule:** current code, tests and live GitHub issue state are authoritative. If this file differs from the repository, verify the repository first and update this file.
+> **Authority:** live GitHub issue state + current `dev` code/tests override stale text. If this file differs, verify first and update it.
 
 ---
 
@@ -14,34 +14,18 @@ FAC LPR Engine is an independent, reusable, production-grade native license plat
 
 ```text
 image/frame
-   ↓
-plate detection
-   ↓
-geometry validation/alignment
-   ↓
-crop generation/enhancement
-   ↓
-OCR recognition
-   ↓
-candidate/evidence fusion
-   ↓
-recognition decision
-   ↓
-PlateRecognitionResult
+→ plate detection
+→ geometry validation/alignment
+→ crop generation/enhancement
+→ OCR recognition
+→ candidate/evidence fusion
+→ technical recognition decision
+→ PlateRecognitionResult
 ```
 
-The engine returns technical recognition evidence. It must not:
+It must not own barrier/access authorization, FAC Access business rules, Spring/backend calls, RTSP lifecycle, application database/UI state, or runtime model binaries in Git.
 
-- open/close barriers;
-- decide physical access authorization;
-- contain FAC Access business rules;
-- call the Spring/backend directly;
-- own RTSP/camera lifecycle;
-- own application DB/UI state;
-- silently convert OCR confidence into access permission;
-- embed runtime model binaries in Git.
-
-Recognition statuses are technical only:
+Technical statuses only:
 
 ```text
 ACCEPTED
@@ -49,7 +33,7 @@ REVIEW
 REJECTED
 ```
 
-`ACCEPTED` means recognition evidence is technically strong enough, not “grant access”.
+`ACCEPTED` means recognition evidence is technically strong enough, never “grant access”.
 
 ---
 
@@ -57,118 +41,140 @@ REJECTED
 
 Repository: `kemallaydn/fac-lpr-engine`
 
-Branches:
-
 - `main`: stable/release base
 - `dev`: active development
+- Draft PR #79: `FAC LPR Engine production development`, main ← dev
 
-Integration surface:
+### Sequential issue procedure
 
-- Draft PR #79 — `FAC LPR Engine production development`
-- base `main`, head `dev`
-
-### Sequential issue rule
-
-Issues must be handled numerically. For each issue:
+For each issue, in numerical order:
 
 1. read live acceptance criteria;
-2. inspect existing implementation;
+2. inspect current implementation;
 3. implement missing pieces only;
 4. add/adjust tests;
 5. perform strongest truthful validation available;
-6. post a Turkish top-level completion comment;
+6. post Turkish top-level completion comment;
 7. close with `state_reason=completed`;
-8. move to the next issue.
+8. update this checkpoint at meaningful milestones;
+9. continue.
 
-Never close an issue merely because similarly named code exists. Never invent test success.
+Never fake CI/test/model validation and never close merely because similarly named code exists.
 
 ---
 
 ## 3. Current authoritative checkpoint
 
-GitHub state was re-audited on **2026-08-22**.
+Re-audited on **2026-08-22**.
 
-### Completed
+**Issues #1 through #30 are CLOSED / completed.**
 
-**Issues #1 through #24 are closed with `state_reason=completed`.**
+Current first open sequential issue:
 
-Most recent completions in this handoff session:
+- **#31 — LPR pipeline orchestrator oluştur** — NEXT / OPEN
 
-- #22 Turkish plate grammar/normalizer
-- #23 Turkish constrained CTC beam search
-- #24 connected-component plate layout analyzer
-
-### Current next issue
-
-- **#25 — Multi-crop candidate fusion oluştur** — OPEN/NEXT
-
-Do not skip to later issues even when code already exists.
+Do not skip #31 even though later foundation code may already exist.
 
 ---
 
-## 4. Recent issue-specific audit notes
+## 4. Work completed during current handoff session
 
-### #22 Turkish grammar — completed
+### #22 Turkish plate grammar
 
-Verified/strengthened:
-
-- ASCII uppercase + whitespace/hyphen normalization;
+- ASCII uppercase/whitespace/hyphen normalization;
 - non-ASCII rejection;
-- province code 01–81, rejecting 00 and 82+;
-- configurable allowed-letter set;
-- supported 1/2/3-letter civilian plate families;
-- prefix validation suitable for beam pruning;
-- invalid ordering/group-length edge cases;
-- additional unit-test coverage.
+- province 01–81, reject 00/82+;
+- configurable allowed letters;
+- supported 1/2/3-letter civilian formats;
+- beam-pruning prefix validation;
+- expanded valid/invalid/boundary unit tests;
+- independent C++20 warnings-as-errors grammar smoke passed.
 
-A local independent C++20 smoke harness compiled with `-Wall -Wextra -Wpedantic -Werror` and passed critical grammar scenarios.
+### #23 constrained CTC beam search
 
-### #23 constrained CTC beam search — completed
+- configurable beam/result/top-classes;
+- Turkish prefix pruning during expansion;
+- confusion map `0/O,1/I,8/B,5/S,6/G`;
+- deterministic ordering;
+- greedy reference/fallback;
+- test helper fixed for non-terminal blank index;
+- real GCC warnings-as-errors header portability bug fixed (`explicit` grammar default construction);
+- combined grammar/greedy/beam smoke passed.
 
-Verified/strengthened:
+### #24 connected-component layout analyzer
 
-- configurable `beam_width`, `result_limit`, `classes_per_step`;
-- prefix pruning calls Turkish grammar during beam expansion;
-- confusion pairs `0/O`, `1/I`, `8/B`, `5/S`, `6/G`;
-- deterministic sorting/tie-break behavior;
-- greedy decode retained as reference/fallback;
-- configurable blank index including non-terminal blank position;
-- result/config boundary tests.
+- verified gray → CLAHE → blur → Otsu → connected-components;
+- analyzer remains OCR-independent geometric evidence only;
+- neutral evidence on unreliable component count/height/overlap;
+- added explicit heavy-perspective height-distortion test;
+- OpenCV CMake/test wiring verified;
+- current execution environment lacks OpenCV dev package, therefore no fake local OpenCV GTest pass was claimed.
 
-A real GCC warnings-as-errors portability bug was found in the public header: an `explicit TurkishPlateGrammar` constructor was used through `grammar = {}`. It was corrected to direct construction. Combined grammar + greedy CTC + beam smoke then passed under C++20 warnings-as-errors.
+### #25 multi-crop candidate fusion
 
-### #24 connected-component layout analyzer — completed
+- discovered and fixed duplicate-margin bug: same plate text within one crop was incorrectly treated as a competing candidate;
+- margin now compares only different plate texts;
+- same-crop duplicate remains one max-score vote;
+- cross-crop same plate uses probabilistic-OR consensus;
+- bounded/deterministic ordering retained;
+- independent formula smoke confirmed consistent crops can beat one extreme outlier.
 
-Verified:
+### #26 recognition ensemble
 
-- analyzer does not generate OCR and ignores candidate text for geometric evidence;
-- gray → CLAHE → blur → Otsu → connected-components pipeline;
-- component geometry filtering;
-- character-count/height consistency;
-- overlap sanity;
-- 1/2/3-letter spacing-boundary analysis;
-- bounded layout confidence;
-- unreliable cases return neutral `reliable=false` evidence;
-- overlap fixture exists;
-- added explicit heavy-perspective/height-distortion fixture that must return neutral evidence;
-- OpenCV implementation and tests are wired under `FAC_LPR_WITH_OPENCV`.
+- optional failure → degraded evidence while healthy providers continue;
+- required failure → fatal ProviderError;
+- provider weight and bounded child deadline retained;
+- invalid calibrated confidence now rejected outside `[0,1]` instead of silently clamped/falling back;
+- added disabled/zero-weight non-invocation tests;
+- provider evidence/weight smoke passed.
 
-Current execution environment did not contain OpenCV development packages, so #24 OpenCV GTest binary could not be locally linked/run. This limitation was explicitly recorded rather than represented as a pass.
+### #27 optional PaddleOCR adapter
+
+- external worker/encoder boundary retained; PaddleOCR is not a required native dependency;
+- unavailable worker produces ProviderError for ensemble degradation;
+- malformed calibrated confidence now rejected;
+- added real LRU eviction test for bounded SHA-256 cache;
+- added adapter timeout-overrun test;
+- hard interruption of an infinitely blocking external worker remains later #59 cancellation/timeout scope.
+
+### #28 generic ONNX OCR adapter
+
+- model-specific adapter remains behind generic `IPlateRecognizer` wrapper;
+- metadata/node contract validated against session descriptors;
+- added session output-count validation before decode;
+- invalid calibrated evidence now rejected, not silently repaired;
+- added RAII lifetime test using weak_ptr expiration;
+- current environment lacks provisioned ONNX Runtime dev/runtime artifact, so no fake ONNX-backed GTest pass was claimed.
+
+### #29 confidence calibration
+
+- identity when no/insufficient dataset segment;
+- exact provider+crop context overrides provider fallback;
+- runtime segment constructor path retained;
+- expanded tests for min samples, epsilon, duplicate segments, input bounds and raw 0/1;
+- independent logistic math smoke passed;
+- no unnecessary production algorithm change was made.
+
+### #30 safe recognition decision policy
+
+- technical recognition only, no access/barrier business logic;
+- fatal → reject, degraded → at most review;
+- weak detector/no valid candidate → reject;
+- weak geometry/crop/accept threshold and strong conflict → review;
+- strong consistent evidence → accept;
+- tests expanded to assert explicit explainable `RecognitionDecisionReason` values.
 
 ---
 
 ## 5. CI budget constraint
 
-This remains a hard operational rule.
+Hard operational rule: routine development stays **zero-spend** for GitHub-hosted Actions while account minutes are constrained.
 
-The GitHub account is under a zero-spend hosted Actions policy because included minutes were nearly exhausted.
-
-- routine hosted Actions must not be enabled automatically;
-- `foundation-build` and `dependency-restore` remain manual / `workflow_dispatch`;
-- do not restore expensive push/PR matrices without explicit user approval;
-- use local/free/self-hosted validation where possible;
-- a workflow that fails with zero executed steps may be runner/account allocation failure, not code failure;
-- full Windows/Linux matrix remains required for release readiness.
+- automatic expensive push/PR matrices must not be re-enabled without explicit approval;
+- foundation/dependency workflows remain manual (`workflow_dispatch`);
+- prefer local/free/self-hosted validation;
+- red zero-step workflow may be runner/account allocation, not code;
+- release candidate still requires full Windows/Linux validation.
 
 See `docs/ci-budget.md`.
 
@@ -186,18 +192,11 @@ See `docs/ci-budget.md`.
 - GoogleTest
 - spdlog
 
-Dependency strategy:
-
-- vcpkg manifest mode for normal C/C++ dependencies;
-- pinned vcpkg baseline;
-- official Microsoft prebuilt ONNX Runtime artifacts with checksum pinning;
-- no runtime `.onnx` binaries committed to Git.
+Dependencies: vcpkg for normal C/C++ deps, pinned baseline; official checksum-pinned Microsoft ONNX Runtime prebuilts; no runtime `.onnx` binaries in Git.
 
 ---
 
 ## 7. Architecture
-
-Dependency direction is inward:
 
 ```text
 Public API / Composition Root
@@ -209,80 +208,29 @@ Public API / Composition Root
           Domain
 ```
 
-### Domain
+Domain: standard C++ value types only, no vendor/framework/process/UI/backend dependencies.
 
-Standard C++ value types only. No OpenCV/ORT/Paddle/filesystem/network/UI/backend dependencies. RAII/value semantics.
+Application: vendor-neutral use cases/contracts including detector, aligner, crop generator, recognizer, layout analyzer, candidate fusion, confidence calibration and decision policy interfaces; also ImageView, OperationContext, config and typed errors.
 
-### Application
-
-Vendor-neutral use cases/contracts, including:
-
-- `IPlateDetector`
-- `IPlateAligner`
-- `ICropGenerator`
-- `IPlateRecognizer`
-- `IPlateLayoutAnalyzer`
-- `ICandidateFusion`
-- `IConfidenceCalibrator`
-- `IDecisionPolicy`
-
-Also owns portable `ImageView`, `OperationContext`, config and typed errors.
-
-### Infrastructure
-
-Concrete implementations using ONNX Runtime, native image kernels, OpenCV where justified, model-specific adapters and logging adapters.
-
-Vendor-specific types must not leak into Domain/Application/public ABI.
+Infrastructure: concrete ONNX/OpenCV/native-image/logging/model adapters. Vendor types never leak inward or into public ABI.
 
 ---
 
-## 8. Image hot-path rule
+## 8. Image/memory rules
 
-OpenCV is not the engine’s fundamental image type and should not dominate simple hot-path operations.
+OpenCV is not the fundamental image abstraction. Native C++ owns simple hot-path validation/crop/letterbox/sampling/color/normalization/HWC→CHW/workspace/statistics. OpenCV remains for high-value complex algorithms like homography, warpPerspective, CLAHE, thresholding and connected components.
 
-Use custom/native C++ for:
+Ownership/resource rules:
 
-- validation and checked stride arithmetic;
-- zero-copy crop views;
-- crop copy/padding/basic pixels;
-- bilinear sampling and letterbox mapping;
-- RGB/BGR/Gray handling;
-- normalization;
-- HWC → CHW direct tensor writes;
-- reusable scratch/tensor workspaces;
-- simple quality metrics.
+- RAII;
+- no raw ownership/scattered new/delete;
+- caller owns ImageView memory;
+- ImageBuffer/workspace own bounded storage;
+- no unbounded queues/caches/tensors/crops/images;
+- checked external dimension/stride arithmetic;
+- no dangling engine-owned strings through C ABI.
 
-Keep OpenCV for mature complex operations such as homography, `warpPerspective`, CLAHE, adaptive thresholding and connected components.
-
-Preferred YOLO preprocessing:
-
-```text
-ImageView
-→ letterbox coordinate mapping
-→ bilinear sampling
-→ color handling
-→ normalization
-→ direct reusable CHW tensor write
-```
-
-Do not regress to chains of temporary `cv::Mat`s without measured justification.
-
----
-
-## 9. Ownership/resource rules
-
-- no raw ownership;
-- no scattered `new/delete` lifecycle;
-- RAII by default;
-- caller-owned image data remains caller-owned;
-- `ImageView` is non-owning;
-- `ImageBuffer` owns storage;
-- reusable workspaces own bounded scratch capacity;
-- no unbounded queues/caches/tensor/image/crop growth;
-- externally controlled dimensions/strides require checked arithmetic;
-- no dangling engine-owned `char*` through C ABI.
-
-Strided view required extent:
+Strided extent:
 
 ```text
 (height - 1) * stride + packed_row_bytes
@@ -290,37 +238,19 @@ Strided view required extent:
 
 ---
 
-## 10. Error/logging/privacy
+## 9. Error/privacy/model rules
 
-No C++ exception may cross a C ABI boundary.
+No C++ exception crosses C ABI. Typed errors include configuration/model-load/inference/invalid-image/provider/cancelled/timeout/resource-exhausted/internal.
 
-Typed errors include configuration, model-load, inference, invalid-image, provider, cancelled, timeout, resource-exhausted and internal errors.
+Sensitive images/crops/full plate text/secrets are not logged by default.
 
-Central C boundary:
+Expected runtime models: `best.onnx`, `lprnet_turkey.onnx`.
 
-```text
-include/fac_lpr/c_api/error_boundary.hpp
-include/fac_lpr/fac_lpr_error.h
-```
-
-Privacy defaults: do not log raw plate images, crop bytes, full plate text, secrets/tokens or unnecessary paths. Logging is best-effort and must not break recognition.
+**Never guess model contracts:** tensor names/shapes/layout/class count/keypoint order/offsets/charset/blank index/logit axes/normalization must come from inspector + real artifacts. Missing artifacts produce explicit skipped/missing validation, never fake pass.
 
 ---
 
-## 11. Model contract rule
-
-Expected external artifacts:
-
-- detector: `best.onnx`
-- OCR: `lprnet_turkey.onnx`
-
-**Never guess model contracts.** Do not assume tensor names, shapes, layout, class count, YOLO keypoint order/offsets, LPRNet charset/blank index/logit axes or normalization constants.
-
-Use model inspector + real artifacts. Missing real artifacts must produce explicit skipped/artifact-missing validation, never fake pass.
-
----
-
-## 12. Target pipeline
+## 10. Target recognition pipeline
 
 ```text
 Image
@@ -337,51 +267,31 @@ Alignment/crop hypotheses
 ↓
 Primary OCR candidates
 ↓
-Turkish grammar/constrained CTC
+Turkish constrained search
 ↓
 Layout analysis
 ↓
 Multi-crop fusion
 ↘ optional secondary recognizers
 ↓
-Provider calibration
+Provider calibration / cross-source evidence
 ↓
-Cross-source evidence fusion
-↓
-Recognition decision
+Safe technical recognition decision
 ↓
 PlateRecognitionResult
 ```
 
-Required behavior: deterministic ordering, preserved evidence, fail-closed defaults, strong disagreement → review, explicit degraded provider state and eventual stage latency metadata.
+Deterministic ordering, evidence preservation, explicit degradation and fail-closed behavior are required.
 
 ---
 
-## 13. Turkish plate rules
+## 11. Canonical roadmap
 
-- province `01–81`, reject `00`/`82+`;
-- ASCII uppercase normalization;
-- configurable legal letter set;
-- supported 1/2/3-letter civilian format families;
-- prefix validation for constrained decoding;
-- confusion handling remains in candidate search rather than detector logic;
-- double-row/square normalization remains a crop strategy.
-
----
-
-## 14. Canonical roadmap
-
-Roadmap is GitHub issues #1–#78. Accidental #80 is not product work.
+Roadmap is issues #1–#78. Accidental #80 is not roadmap work.
 
 ```text
-#1–#24                                      CLOSED
-#25 Multi-crop candidate fusion             NEXT / OPEN
-#26 Recognition ensemble / evidence fusion
-#27 Optional PaddleOCR provider
-#28 Generic ONNX OCR adapter
-#29 Confidence calibration infrastructure
-#30 Safe technical recognition policy
-#31 Pipeline orchestrator
+#1–#30                                      CLOSED
+#31 LPR pipeline orchestrator               NEXT / OPEN
 #32 Model manifest/checksum/lifecycle
 #33 Reusable inference workspace
 #34 Bounded worker pool/concurrency
@@ -433,74 +343,51 @@ Roadmap is GitHub issues #1–#78. Accidental #80 is not product work.
 
 ---
 
-## 15. Immediate continuation: issue #25
+## 12. Immediate continuation: #31 LPR pipeline orchestrator
 
-GitHub acceptance criteria:
+Live issue acceptance criteria must be read before implementation.
 
-- one abnormally high-confidence crop must not blindly override several consistent crops;
-- returned candidate count is configurable/bounded;
-- fusion is deterministic and unit-testable.
+Target responsibility is expected to compose the already-built vendor-neutral stages rather than reimplement them:
 
-Scope:
+```text
+detection
+→ geometry/alignment
+→ crop generation
+→ recognition ensemble
+→ layout evidence
+→ candidate fusion
+→ decision policy
+```
 
-- source weight;
-- recognition confidence;
-- crop quality;
-- candidate margin;
-- layout bonus;
-- duplicate plate vote accumulation.
+Requirements from architecture:
 
-Audit existing `candidate_fusion` implementation and tests before changing code. Close only after truthful validation, then update this checkpoint to #26.
+- depend on application interfaces, not concrete provider classes;
+- preserve partial-failure/degraded evidence;
+- propagate operation context/deadline;
+- produce per-stage/total latency metadata where issue requires it;
+- return structured `PlateRecognitionResult`;
+- no access-control business logic;
+- no vendor-specific types leaking into the orchestrator contract.
 
----
-
-## 16. Production v1 definition
-
-Do not call the project production v1 until #78 is truthfully satisfied, including Windows/Linux clean builds, unit/integration/real-model/golden tests, sanitizer/static/fuzz, memory/performance, ABI compatibility, packaged smoke, consumers, SBOM/licenses/provenance/checksums and runbook/readiness gates.
-
----
-
-## 17. Guardrails
-
-Do not:
-
-- re-enable expensive automatic hosted CI without approval;
-- guess ONNX contracts;
-- commit runtime models/sensitive datasets;
-- add access/barrier business logic;
-- make OpenCV the Domain/Application image type;
-- regress fused preprocess without evidence;
-- create ONNX sessions per frame;
-- add raw ownership/unbounded queues/caches/workspaces;
-- expose exceptions through C ABI;
-- log sensitive plate content by default;
-- close issues out of order;
-- claim real-model validation without models;
-- fabricate tests/CI;
-- treat #80 as roadmap work.
-
-Do:
-
-- keep this file synchronized with live GitHub state;
-- treat issue acceptance criteria as executable requirements;
-- write tests with implementation;
-- prefer deterministic/config-driven code;
-- preserve vendor independence/evidence/explainability;
-- validate external sizes before allocation;
-- benchmark optimizations;
-- use real model inspector output when artifacts exist;
-- prefer free/local/self-hosted validation while hosted budget is constrained;
-- comment/close completed issues in Turkish and sequentially.
+Audit current code before creating new abstractions; do not duplicate existing provider responsibilities.
 
 ---
 
-## 18. Handoff checkpoint
+## 13. Production v1 guardrails
+
+Do not call production v1 until #78 truthfully passes clean multi-platform build, unit/integration/real-model/golden tests, sanitizer/static/fuzz, memory/performance, ABI, packaged/consumer smoke, security/SBOM/licenses/provenance/checksums and readiness/runbook gates.
+
+Never re-enable expensive hosted CI without approval, guess ONNX contracts, commit models/sensitive data, add access rules, expose exceptions, use raw ownership/unbounded resources, log sensitive plate data by default, close out of order or fabricate validation.
+
+---
+
+## 14. Handoff checkpoint
 
 ```text
 checkpoint date: 2026-08-22
-closed issues: #1 through #24
-last closed issue: #24 connected-component plate layout analyzer
-next issue to audit/close: #25 multi-crop candidate fusion
+closed issues: #1 through #30
+last closed issue: #30 safe recognition decision policy
+next issue to audit/close: #31 LPR pipeline orchestrator
 active development branch: dev
 active draft PR: #79
 GitHub Actions mode: manual / zero-spend
@@ -508,4 +395,4 @@ runtime ONNX models committed to Git: NO
 production v1 ready: NO
 ```
 
-**Resume at #25. Audit against live acceptance criteria, validate truthfully, close sequentially, then continue to #26.**
+**Resume at #31. Inspect live acceptance criteria and current code first, implement missing orchestration only, validate truthfully, comment/close sequentially.**
