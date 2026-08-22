@@ -37,6 +37,7 @@ if(FAC_LPR_WITH_ONNX_RUNTIME)
         concrete_onnx_provider_tests.cpp
         generic_onnx_ocr_recognizer_tests.cpp
         lprnet_onnx_contract_tests.cpp
+        provider_stage_timing_tests.cpp
     )
     target_link_libraries(fac_lpr_native_tests PRIVATE
         fac_lpr::generic_onnx_ocr
