@@ -1,0 +1,42 @@
+name: csharp-pinvoke-smoke
+
+on:
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore native dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Build and install shared native library
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/pinvoke-linux -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="${GITHUB_WORKSPACE}/build/vcpkg_installed" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DFAC_LPR_BUILD_SHARED=ON
+          cmake --build build/pinvoke-linux --parallel 2
+          cmake --install build/pinvoke-linux --prefix "${GITHUB_WORKSPACE}/build/pinvoke-stage" --strip
+      - name: Build C# sample
+        run: dotnet build examples/csharp/FacLprCAbiSmoke.csproj -c Release --nologo
+      - name: Load installed SO through PInvoke
+        run: |
+          export LD_LIBRARY_PATH="${GITHUB_WORKSPACE}/build/pinvoke-stage/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          dotnet run --project examples/csharp/FacLprCAbiSmoke.csproj -c Release --no-build
