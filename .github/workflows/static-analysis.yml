@@ -1,0 +1,51 @@
+name: static-analysis
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-analysis-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+  VCPKG_DEFAULT_TRIPLET: x64-linux
+  VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite
+
+jobs:
+  linux:
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require analysis tools
+        run: |
+          command -v clang >/dev/null
+          command -v clang++ >/dev/null
+          command -v clang-tidy >/dev/null
+          command -v cppcheck >/dev/null
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure with clang-tidy gate
+        run: >-
+          cmake -S . -B build/static-analysis -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_LPR_CLI=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+          -DFAC_LPR_ENABLE_CLANG_TIDY=ON
+      - name: Build with clang-tidy
+        run: cmake --build build/static-analysis --parallel 2
+      - name: Run cppcheck
+        run: bash scripts/run-static-analysis.sh build/static-analysis
