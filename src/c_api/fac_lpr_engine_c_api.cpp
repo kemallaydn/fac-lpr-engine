@@ -148,6 +148,26 @@ void validate_config(const fac_lpr_engine_config_v1* config) {
 
 } // namespace
 
+extern "C" fac_lpr_status FAC_LPR_CALL fac_lpr_get_version_v1(
+    fac_lpr_version_info_v1* out_version) {
+    return invoke_c_api([&]() -> fac_lpr_status {
+        if (out_version == nullptr) {
+            throw fac_lpr::application::ConfigurationError("C ABI version output pointer is null");
+        }
+        if (out_version->struct_size < sizeof(fac_lpr_version_info_v1)) {
+            throw fac_lpr::application::ConfigurationError("C ABI version info struct is too small");
+        }
+        if (out_version->abi_version != FAC_LPR_ABI_VERSION_V1) {
+            throw fac_lpr::application::ConfigurationError("unsupported version query ABI");
+        }
+        out_version->semantic_major = FAC_LPR_ENGINE_VERSION_MAJOR;
+        out_version->semantic_minor = FAC_LPR_ENGINE_VERSION_MINOR;
+        out_version->semantic_patch = FAC_LPR_ENGINE_VERSION_PATCH;
+        out_version->abi_major = FAC_LPR_ABI_VERSION_V1;
+        return FAC_LPR_STATUS_OK;
+    });
+}
+
 extern "C" fac_lpr_status FAC_LPR_CALL fac_lpr_engine_create_v1(
     const fac_lpr_engine_config_v1* config,
     fac_lpr_engine_handle** out_handle) {
