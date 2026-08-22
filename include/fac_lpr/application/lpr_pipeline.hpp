@@ -37,7 +37,7 @@ struct LprPipelineDependencies final {
     std::shared_ptr<IPlateLayoutAnalyzer> layout_analyzer{};
     std::shared_ptr<ICandidateFusion> candidate_fusion{};
     std::shared_ptr<IDecisionPolicy> decision_policy{};
-    std::shared_ptr<EngineDiagnostics> diagnostics{};
+    std::shared_ptr<EngineDiagnostics> diagnostics{std::make_shared<EngineDiagnostics>()};
 };
 
 class LprPipeline final {
