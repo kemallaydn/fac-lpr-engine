@@ -3,7 +3,18 @@ import argparse
 import json
 from pathlib import Path
 
-REQUIRED_GATES = ['ci-pr','dependency-security','performance-regression','abi-compatibility','resource-budget','cmake-package-smoke']
+REQUIRED_GATES = [
+    'ci-pr',
+    'mac-arm64-validation',
+    'dependency-security',
+    'fuzz',
+    'memory-stress',
+    'performance-regression',
+    'abi-compatibility',
+    'resource-budget',
+    'cmake-package-smoke',
+    'release-package',
+]
 REQUIRED_ARTIFACT_TOKENS = ['checksum','provenance','sbom','third-party','package-smoke']
 
 
