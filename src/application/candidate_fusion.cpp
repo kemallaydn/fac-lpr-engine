@@ -44,18 +44,19 @@ struct Aggregate final {
         return 0.0F;
     }
 
-    const auto candidate_confidence = effective_confidence(
-        evidence.candidates[candidate_index]);
-    float highest_other = 0.0F;
+    const auto& candidate = evidence.candidates[candidate_index];
+    const auto candidate_confidence = effective_confidence(candidate);
+    float highest_competing = 0.0F;
     for (std::size_t index = 0U; index < evidence.candidates.size(); ++index) {
-        if (index == candidate_index) {
+        if (index == candidate_index ||
+            evidence.candidates[index].text == candidate.text) {
             continue;
         }
-        highest_other = std::max(
-            highest_other,
+        highest_competing = std::max(
+            highest_competing,
             effective_confidence(evidence.candidates[index]));
     }
-    return clamp01(candidate_confidence - highest_other);
+    return clamp01(candidate_confidence - highest_competing);
 }
 
 } // namespace
