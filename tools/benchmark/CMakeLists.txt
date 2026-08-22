@@ -10,6 +10,7 @@ find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs)
 add_executable(fac-lpr-benchmark
     runner.cpp
     ../lpr-cli/cli_engine_factory.cpp
+    ../lpr-cli/production_activation_gate.cpp
 )
 
 target_compile_features(fac-lpr-benchmark PRIVATE cxx_std_20)
