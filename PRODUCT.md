@@ -19,7 +19,7 @@ image/frame
 → PlateRecognitionResult
 ```
 
-The engine does **not** own barrier/access authorization, FAC Access business rules, backend/database/UI state, RTSP lifecycle, or runtime model binaries in Git.
+The engine does **not** own barrier/access authorization, FAC Access business rules, backend/database/UI state, RTSP lifecycle, or model-training lifecycle.
 
 Technical statuses only:
 
@@ -65,9 +65,9 @@ Re-audited on **2026-08-22**.
 
 Current first open sequential issue:
 
-- **#37 — lpr-cli offline recognition aracı oluştur — OPEN / PARTIALLY IMPLEMENTED / BLOCKED ON REAL PROVIDER COMPOSITION**
+- **#37 — lpr-cli offline recognition aracı oluştur — OPEN / IMPLEMENTATION COMPLETE ENOUGH FOR REAL RUNTIME VALIDATION**
 
-#37 acceptance requires real `JPG/PNG -> PlateRecognitionResult`. The CLI shell now exists, but current `fac_lpr_engine_create_v1()` intentionally creates a lifecycle shell without a production pipeline. Repository currently has YOLO preprocess/parser and ONNX primitives, but no production concrete `IPlateDetector` composition. Do not close #37 until real provider composition produces a truthful result.
+#37 acceptance requires real `JPG/PNG -> PlateRecognitionResult` execution. The previous provider-composition blocker is resolved: concrete YOLO ONNX detector, LPRNet ONNX OCR adapter and CLI-specific real `LprPipeline` composition now exist. The active V2 Mixed Epoch 7 LPRNet charset/blank/preprocess/output contract is also resolved and regression-tested. Do not close #37 until a real JPG/PNG is executed with the real ONNX artifacts and produces a truthful runtime result.
 
 ---
 
@@ -199,7 +199,7 @@ Nested values use buffer-relative offsets/counts. Text uses `fac_lpr_text_ref_v1
 
 ---
 
-## 5. #37 current partial implementation
+## 5. #37 current implementation
 
 Optional build target:
 
@@ -208,20 +208,114 @@ FAC_LPR_BUILD_LPR_CLI=ON
 → fac-lpr-cli
 ```
 
-Current shell supports:
+CLI supports:
 
 - JPG/PNG path input via OpenCV `imgcodecs`;
 - `--json`;
 - `--debug-evidence`;
-- `--model-dir <path>` surface;
-- `--config <path>` surface;
-- `--log-level trace|debug|info|warn|error|off`;
-- public C ABI create/recognize/destroy flow;
-- two-call caller-owned result buffer;
-- human and JSON result decoding;
-- explicit process error codes and C ABI last-error printing.
+- `--model-dir <path>`;
+- `--config <path>`;
+- `--log-level trace|debug|info|warn|error`;
+- real application `LprPipeline` execution;
+- human and JSON result output;
+- explicit process error handling.
 
-**Blocker:** model/config options cannot yet construct the production detector/recognizer pipeline because concrete provider composition is missing. The CLI must not fabricate recognition. Keep #37 open until a real image with real runtime model composition produces `PlateRecognitionResult`.
+Real CLI composition now wires:
+
+```text
+best.onnx
+→ OnnxSession
+→ YoloPoseOnnxDetector
+→ PlateGeometryEvaluatorAdapter
+→ OpenCvPerspectiveAligner
+→ CropHypothesisGenerator
+→ lprnet_turkey.onnx / OnnxSession
+→ LprNetOnnxOcrAdapter
+→ GenericOnnxOcrRecognizer
+→ RecognitionEnsemble
+→ IdentityConfidenceCalibrator
+→ ConnectedComponentPlateLayoutAnalyzer
+→ WeightedMultiCropCandidateFusion
+→ SafeRecognitionDecisionPolicy
+→ LprPipeline
+```
+
+Concrete provider tests use fake ONNX sessions to validate explicit model contracts without requiring production artifacts.
+
+### Active detector contract
+
+`best.onnx`:
+
+```text
+input  images   float32 [1,3,960,960]
+output output0  float32 [1,17,18900]
+```
+
+- input scale `1/255`;
+- pad `114`;
+- RGB CHW tensor;
+- features-first output;
+- 4 bbox values;
+- one plate class score;
+- no separate objectness;
+- 4 keypoints × `(x,y,confidence)`;
+- geometry layer reorders corner points and does not assume model keypoint semantic order.
+
+### Active OCR contract
+
+`lprnet_turkey.onnx` active model: **V2 Mixed Epoch 7**.
+
+```text
+input  input   float32 [1,3,40,160]
+output output  float32 [1,34,24]
+layout: BCT (batch, classes, timesteps)
+```
+
+Exact training CHARS order:
+
+```text
+0 1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P R S T U V Y Z -
+```
+
+The final `-` is not a real character. Native decoder charset is:
+
+```text
+0123456789ABCDEFGHIJKLMNOPRSTUVYZ
+```
+
+with `blank_index=33`, 34 total classes and 24 timesteps.
+
+Training preprocessing:
+
+```text
+cv2.resize(..., (160,40), INTER_LINEAR)
+keep BGR order
+float32
+(img - 127.5) * 0.0078125
+HWC -> CHW
+add batch
+contiguous float32
+```
+
+Equivalent native normalization:
+
+```text
+color_order = BGR
+input_scale = 1.0
+mean = [127.5,127.5,127.5]
+std = [128,128,128]
+```
+
+Regression tests lock BGR/normalization semantics, exact 33-character + blank-33 CTC mapping and `[1,34,24]` BCT adapter decoding.
+
+Deprecated and forbidden for this active model:
+
+```text
+input  [1,3,24,94]
+output [1,34,18]
+```
+
+Current #37 remaining work is **runtime acceptance only**: execute a real JPG/PNG with the real ONNX artifacts and verify real `PlateRecognitionResult`/CLI behavior. No model-semantic or provider-composition blocker remains.
 
 ---
 
@@ -290,7 +384,7 @@ Domain uses standard C++ value types only. Application owns vendor-neutral contr
 - no C++ exception across C ABI;
 - no engine-owned result strings across C ABI;
 - sensitive images/crops/full plate text/secrets are not logged by default;
-- runtime `.onnx` models are not committed to Git.
+- intended release policy is to provision runtime `.onnx` artifacts with checksum verification rather than ship arbitrary mutable model files in source history.
 
 Strided image extent:
 
@@ -298,7 +392,9 @@ Strided image extent:
 (height - 1) * stride + packed_row_bytes
 ```
 
-Expected runtime models currently include `best.onnx` and `lprnet_turkey.onnx`. Never guess tensor names/shapes/layout/class count/keypoint order/charset/blank index/normalization; inspect real artifacts.
+Expected runtime models currently include `best.onnx` and `lprnet_turkey.onnx`. Never guess tensor names/shapes/layout/class count/keypoint order/charset/blank index/normalization; use the authoritative model/training contract and regression tests.
+
+**Current repository reality:** `dev/models` currently contains `best.onnx` and `lprnet_turkey.onnx`, despite the intended external-artifact policy documented earlier. Do not silently claim they are absent. Artifact cleanup/provisioning must be handled deliberately under the later model/test artifact provisioning and release-hardening work.
 
 ---
 
@@ -308,7 +404,7 @@ Roadmap issues are #1–#78. Accidental #80 is not roadmap work.
 
 ```text
 #1–#36                                      CLOSED
-#37 Offline lpr-cli                         OPEN / BLOCKED ON REAL COMPOSITION
+#37 Offline lpr-cli                         OPEN / real runtime acceptance pending
 #38 Golden dataset regression
 #39 Multi-detector fusion
 #40 Long-run memory stress
@@ -367,12 +463,12 @@ checkpoint date: 2026-08-22
 closed issues: #1 through #36
 last closed issue: #36 C ABI result buffer/ownership
 current issue: #37 offline lpr-cli
-#37 state: OPEN / partial CLI shell implemented / real provider composition missing
+#37 state: OPEN / providers+composition+active model contract implemented / real JPG+ONNX runtime acceptance pending
 active development branch: dev
 active draft PR: #79
 GitHub-hosted Actions included minutes: exhausted for current period
-runtime ONNX models committed to Git: NO
+runtime ONNX models committed to dev/models: YES (current reality; intended policy differs)
 production v1 ready: NO
 ```
 
-**Resume at #37. Do not close it until a real JPG/PNG produces a real `PlateRecognitionResult` through actual engine/provider composition.**
+**Resume at #37. Do not close it until a real JPG/PNG produces a real `PlateRecognitionResult` through the actual ONNX/OpenCV pipeline.**
