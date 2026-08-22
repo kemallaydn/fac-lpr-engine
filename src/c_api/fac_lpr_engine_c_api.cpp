@@ -6,9 +6,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <new>
+#include <span>
+#include <string>
 #include <unordered_set>
 
 struct fac_lpr_engine_handle final {
@@ -20,6 +23,26 @@ namespace {
 
 std::mutex g_handle_mutex{};
 std::unordered_set<fac_lpr_engine_handle*> g_live_handles{};
+
+[[nodiscard]] std::size_t checked_multiply(
+    const std::size_t left,
+    const std::size_t right,
+    const char* field) {
+    if (left != 0U && right > std::numeric_limits<std::size_t>::max() / left) {
+        throw fac_lpr::application::InvalidImageError(std::string{field} + " overflows size_t");
+    }
+    return left * right;
+}
+
+[[nodiscard]] std::size_t checked_add(
+    const std::size_t left,
+    const std::size_t right,
+    const char* field) {
+    if (right > std::numeric_limits<std::size_t>::max() - left) {
+        throw fac_lpr::application::InvalidImageError(std::string{field} + " overflows size_t");
+    }
+    return left + right;
+}
 
 void validate_config(const fac_lpr_engine_config_v1* config) {
     if (config == nullptr) {
@@ -65,14 +88,18 @@ void validate_config(const fac_lpr_engine_config_v1* config) {
 
     const auto format = to_pixel_format(image->pixel_format);
     const auto channels = fac_lpr::application::pixel_format_channels(format);
-    const auto packed_row = static_cast<std::size_t>(image->width) * channels;
-    if (image->stride_bytes < packed_row) {
+    const auto packed_row = checked_multiply(
+        static_cast<std::size_t>(image->width),
+        channels,
+        "C ABI packed row");
+    if (static_cast<std::size_t>(image->stride_bytes) < packed_row) {
         throw fac_lpr::application::InvalidImageError("C ABI image stride is too small");
     }
-    const auto required =
-        (static_cast<std::size_t>(image->height) - 1U) *
-            static_cast<std::size_t>(image->stride_bytes) +
-        packed_row;
+    const auto tail = checked_multiply(
+        static_cast<std::size_t>(image->height) - 1U,
+        static_cast<std::size_t>(image->stride_bytes),
+        "C ABI image tail");
+    const auto required = checked_add(tail, packed_row, "C ABI image extent");
     if (required > image->data_size) {
         throw fac_lpr::application::InvalidImageError("C ABI image buffer is too small");
     }
@@ -87,9 +114,13 @@ void validate_config(const fac_lpr_engine_config_v1* config) {
         format};
 }
 
-[[nodiscard]] bool is_live_handle(fac_lpr_engine_handle* handle) {
+[[nodiscard]] std::shared_ptr<fac_lpr::application::LprPipeline> pipeline_for_live_handle(
+    fac_lpr_engine_handle* handle) {
     std::scoped_lock lock{g_handle_mutex};
-    return g_live_handles.contains(handle);
+    if (handle == nullptr || !g_live_handles.contains(handle)) {
+        throw fac_lpr::application::ConfigurationError("C ABI engine handle is null or invalid");
+    }
+    return handle->pipeline;
 }
 
 } // namespace
@@ -125,15 +156,13 @@ extern "C" fac_lpr_status FAC_LPR_CALL fac_lpr_engine_recognize_v1(
             throw fac_lpr::application::ConfigurationError("C ABI required_output_size pointer is null");
         }
         *required_output_size = 0U;
-        if (handle == nullptr || !is_live_handle(handle)) {
-            throw fac_lpr::application::ConfigurationError("C ABI engine handle is null or invalid");
-        }
+        const auto pipeline = pipeline_for_live_handle(handle);
         (void)validate_image(image);
         if (output_capacity > 0U && output_buffer == nullptr) {
             throw fac_lpr::application::ConfigurationError("C ABI output buffer is null with non-zero capacity");
         }
 
-        if (!handle->pipeline) {
+        if (!pipeline) {
             throw fac_lpr::application::ConfigurationError(
                 "C ABI engine composition is not configured yet");
         }
