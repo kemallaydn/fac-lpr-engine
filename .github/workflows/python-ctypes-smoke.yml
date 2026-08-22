@@ -1,0 +1,58 @@
+name: python-ctypes-smoke
+
+on:
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Build and install shared library
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/ctypes-linux -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="${GITHUB_WORKSPACE}/build/vcpkg_installed" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DFAC_LPR_BUILD_SHARED=ON
+          cmake --build build/ctypes-linux --parallel 2
+          cmake --install build/ctypes-linux --prefix "${GITHUB_WORKSPACE}/build/ctypes-stage" --strip
+      - name: Load installed SO through ctypes
+        run: python3 examples/python/ctypes_consumer.py "${GITHUB_WORKSPACE}/build/ctypes-stage/lib/libfac_lpr_engine.so" --iterations 1000
+
+  windows-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Build and install shared library
+        shell: pwsh
+        run: |
+          cmake -S . -B build/ctypes-windows -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:GITHUB_WORKSPACE/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_INSTALLED_DIR="$env:GITHUB_WORKSPACE/build/vcpkg_installed" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DFAC_LPR_BUILD_SHARED=ON
+          cmake --build build/ctypes-windows --config Release --parallel 2
+          cmake --install build/ctypes-windows --config Release --prefix "$env:GITHUB_WORKSPACE/build/ctypes-stage"
+      - name: Load installed DLL through ctypes
+        shell: pwsh
+        run: python examples/python/ctypes_consumer.py "$env:GITHUB_WORKSPACE/build/ctypes-stage/bin/fac_lpr_engine.dll" --iterations 1000
