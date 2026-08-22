@@ -54,6 +54,28 @@
       }
     },
     {
+      "name": "linux-clang-asan",
+      "inherits": "base-linux",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "FAC_LPR_BUILD_TESTS": "ON",
+        "FAC_LPR_SANITIZER": "address"
+      }
+    },
+    {
+      "name": "linux-clang-tsan",
+      "inherits": "base-linux",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "FAC_LPR_BUILD_TESTS": "ON",
+        "FAC_LPR_SANITIZER": "thread"
+      }
+    },
+    {
       "name": "windows-msvc",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
@@ -65,6 +87,14 @@
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-msvc-asan",
+      "inherits": "windows-msvc",
+      "cacheVariables": {
+        "FAC_LPR_BUILD_TESTS": "ON",
+        "FAC_LPR_SANITIZER": "address"
       }
     }
   ],
@@ -86,6 +116,14 @@
       "configurePreset": "linux-clang-release"
     },
     {
+      "name": "linux-clang-asan",
+      "configurePreset": "linux-clang-asan"
+    },
+    {
+      "name": "linux-clang-tsan",
+      "configurePreset": "linux-clang-tsan"
+    },
+    {
       "name": "windows-msvc-debug",
       "configurePreset": "windows-msvc",
       "configuration": "Debug"
@@ -94,6 +132,39 @@
       "name": "windows-msvc-release",
       "configurePreset": "windows-msvc",
       "configuration": "Release"
+    },
+    {
+      "name": "windows-msvc-asan",
+      "configurePreset": "windows-msvc-asan",
+      "configuration": "Debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-clang-asan",
+      "configurePreset": "linux-clang-asan",
+      "output": {"outputOnFailure": true},
+      "environment": {
+        "ASAN_OPTIONS": "halt_on_error=1:detect_leaks=1:strict_string_checks=1:allocator_may_return_null=0",
+        "LSAN_OPTIONS": "exitcode=23"
+      }
+    },
+    {
+      "name": "linux-clang-tsan",
+      "configurePreset": "linux-clang-tsan",
+      "output": {"outputOnFailure": true},
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1:exitcode=24"
+      }
+    },
+    {
+      "name": "windows-msvc-asan",
+      "configurePreset": "windows-msvc-asan",
+      "configuration": "Debug",
+      "output": {"outputOnFailure": true},
+      "environment": {
+        "ASAN_OPTIONS": "halt_on_error=1"
+      }
     }
   ]
 }
