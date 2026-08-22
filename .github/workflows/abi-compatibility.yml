@@ -50,7 +50,7 @@ jobs:
           artifacts/abi/layout-probe > artifacts/abi/layout.json
           dylib=$(find build/abi/artifacts/lib -type f -name 'libfac_lpr_engine*.dylib' | head -n 1)
           test -n "$dylib"
-          nm -gU "$dylib" > artifacts/abi/symbols.txt
+          nm -g "$dylib" > artifacts/abi/symbols.txt
           python3 scripts/abi-compatibility.py capture \
             --header include/fac_lpr/fac_lpr_engine.h \
             --layout-json artifacts/abi/layout.json \
