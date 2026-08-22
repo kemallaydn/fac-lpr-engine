@@ -4,7 +4,9 @@
 
 #include <filesystem>
 #include <memory>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace fac_lpr::infrastructure {
 
