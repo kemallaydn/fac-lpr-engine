@@ -1,0 +1,112 @@
+name: sanitizers
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Sanitizer suite
+        required: true
+        default: linux-asan
+        type: choice
+        options:
+          - linux-asan
+          - linux-tsan
+          - windows-asan
+          - all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sanitizers-${{ github.ref }}-${{ inputs.suite }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux-asan:
+    if: ${{ inputs.suite == 'linux-asan' || inputs.suite == 'all' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 90
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite
+      ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:strict_string_checks=1:allocator_may_return_null=0
+      LSAN_OPTIONS: exitcode=23
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure ASan/LSan
+        run: >-
+          cmake -S . -B build/asan -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_BUILD_TESTS=ON
+          -DFAC_LPR_SANITIZER=address
+      - name: Build ASan/LSan
+        run: cmake --build build/asan --parallel 2
+      - name: Test ASan/LSan
+        run: ctest --test-dir build/asan --output-on-failure
+
+  linux-tsan:
+    if: ${{ inputs.suite == 'linux-tsan' || inputs.suite == 'all' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 90
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite
+      TSAN_OPTIONS: halt_on_error=1:exitcode=24
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure TSan
+        run: >-
+          cmake -S . -B build/tsan -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_BUILD_TESTS=ON
+          -DFAC_LPR_SANITIZER=thread
+      - name: Build TSan
+        run: cmake --build build/tsan --parallel 2
+      - name: Test TSan
+        run: ctest --test-dir build/tsan --output-on-failure
+
+  windows-asan:
+    if: ${{ inputs.suite == 'windows-asan' || inputs.suite == 'all' }}
+    runs-on: [self-hosted, windows, x64]
+    timeout-minutes: 90
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\\.vcpkg-binary-cache,readwrite
+      ASAN_OPTIONS: halt_on_error=1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Configure MSVC ASan
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/asan -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/build/vcpkg_installed"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DFAC_LPR_BUILD_TESTS=ON
+          -DFAC_LPR_SANITIZER=address
+      - name: Build MSVC ASan
+        shell: pwsh
+        run: cmake --build build/asan --config Debug --parallel 2
+      - name: Test MSVC ASan
+        shell: pwsh
+        run: ctest --test-dir build/asan -C Debug --output-on-failure
