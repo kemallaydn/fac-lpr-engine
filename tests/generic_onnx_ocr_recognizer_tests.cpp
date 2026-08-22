@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -72,6 +74,23 @@ public:
     bool invalid_calibrated_confidence{false};
 };
 
+class TimingSink final : public application::IStageTimingSink {
+public:
+    void record(const std::string_view stage, const double latency_ms) override {
+        stages.emplace_back(stage, latency_ms);
+    }
+
+    [[nodiscard]] bool contains(const std::string& stage) const {
+        for (const auto& [recorded, latency] : stages) {
+            (void)latency;
+            if (recorded == stage) return true;
+        }
+        return false;
+    }
+
+    std::vector<std::pair<std::string, double>> stages{};
+};
+
 application::ImageView image_fixture(std::vector<std::byte>& bytes) {
     bytes.assign(12U, std::byte{1});
     return {bytes, 2U, 2U, 6U, application::PixelFormat::bgr8};
@@ -89,6 +108,26 @@ TEST(GenericOnnxOcrRecognizer, DelegatesModelSpecificWorkWithoutChangingPublicPr
     ASSERT_EQ(evidence.candidates.size(), 1U);
     EXPECT_EQ(evidence.source, "fake-ocr");
     EXPECT_EQ(session->calls, 1U);
+}
+
+TEST(GenericOnnxOcrRecognizer, EmitsPreprocessInferenceAndDecodeTimingsWhenRequested) {
+    auto session = std::make_shared<FakeSession>();
+    auto adapter = std::make_shared<FakeAdapter>();
+    infrastructure::onnx::GenericOnnxOcrRecognizer recognizer{session, adapter};
+    TimingSink sink{};
+    application::OperationContext context{};
+    context.timing_sink = &sink;
+    std::vector<std::byte> bytes;
+
+    (void)recognizer.recognize(image_fixture(bytes), context);
+
+    EXPECT_TRUE(sink.contains("recognizer.preprocess"));
+    EXPECT_TRUE(sink.contains("recognizer.inference"));
+    EXPECT_TRUE(sink.contains("recognizer.decode"));
+    for (const auto& [stage, latency] : sink.stages) {
+        (void)stage;
+        EXPECT_GE(latency, 0.0);
+    }
 }
 
 TEST(GenericOnnxOcrRecognizer, RejectsAdapterNodeNamesNotPresentInModel) {
