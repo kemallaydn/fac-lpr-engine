@@ -1,10 +1,10 @@
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/infrastructure/concurrency/bounded_worker_pool.hpp>
 
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <future>
 #include <mutex>
 #include <set>
@@ -22,7 +22,7 @@ TEST(BoundedWorkerPool, RejectNewestKeepsQueueBounded) {
     config.worker_count = 1U;
     config.queue_capacity = 1U;
     config.full_policy = QueueFullPolicy::reject_newest;
-    const BoundedWorkerPool pool{config};
+    BoundedWorkerPool pool{config};
 
     std::promise<void> started{};
     auto started_future = started.get_future();
