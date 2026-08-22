@@ -1,0 +1,29 @@
+{
+  "abi_major": 1,
+  "symbols": [
+    "fac_lpr_get_version_v1",
+    "fac_lpr_engine_create_v1",
+    "fac_lpr_engine_recognize_v1",
+    "fac_lpr_engine_destroy_v1",
+    "fac_lpr_get_last_error_v1"
+  ],
+  "structs": {
+    "fac_lpr_version_info_v1": {"size": 24},
+    "fac_lpr_engine_config_v1": {"size": 16},
+    "fac_lpr_text_ref_v1": {"size": 8},
+    "fac_lpr_point_v1": {"size": 8},
+    "fac_lpr_bbox_v1": {"size": 16},
+    "fac_lpr_quadrilateral_v1": {"size": 48},
+    "fac_lpr_candidate_v1": {"size": 32},
+    "fac_lpr_evidence_v1": {"size": 32},
+    "fac_lpr_plate_result_v1": {"size": 140},
+    "fac_lpr_result_v1": {"size": 32}
+  },
+  "functions": {
+    "fac_lpr_get_version_v1": "fac_lpr_status(fac_lpr_version_info_v1*)",
+    "fac_lpr_engine_create_v1": "fac_lpr_status(const fac_lpr_engine_config_v1*,fac_lpr_engine_handle**)",
+    "fac_lpr_engine_recognize_v1": "fac_lpr_status(fac_lpr_engine_handle*,const fac_lpr_image_view_v1*,void*,size_t,size_t*)",
+    "fac_lpr_engine_destroy_v1": "fac_lpr_status(fac_lpr_engine_handle**)",
+    "fac_lpr_get_last_error_v1": "fac_lpr_status(char*,size_t,size_t*)"
+  }
+}
