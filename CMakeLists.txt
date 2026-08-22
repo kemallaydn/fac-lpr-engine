@@ -10,6 +10,7 @@ project(
 option(FAC_LPR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(FAC_LPR_BUILD_MODEL_INSPECTOR "Build the ONNX model inspector CLI" OFF)
 option(FAC_LPR_BUILD_WORKSPACE_PROBE "Build the workspace buffer reuse probe" OFF)
+option(FAC_LPR_BUILD_LPR_CLI "Build the offline JPG/PNG recognition CLI" OFF)
 option(FAC_LPR_BUILD_TESTS "Build FAC LPR Engine tests" OFF)
 
 if(FAC_LPR_ONNXRUNTIME_ROOT)
@@ -78,6 +79,10 @@ endif()
 
 if(FAC_LPR_BUILD_WORKSPACE_PROBE)
     add_subdirectory(tools/workspace-probe)
+endif()
+
+if(FAC_LPR_BUILD_LPR_CLI)
+    add_subdirectory(tools/lpr-cli)
 endif()
 
 if(FAC_LPR_BUILD_TESTS)
