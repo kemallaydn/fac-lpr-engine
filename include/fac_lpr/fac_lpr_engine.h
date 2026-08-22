@@ -36,6 +36,8 @@ extern "C" {
     { (uint32_t)sizeof(fac_lpr_engine_config_v1), FAC_LPR_ABI_VERSION_V1, 0U, 0U }
 #define FAC_LPR_IMAGE_VIEW_V1_INIT \
     { (uint32_t)sizeof(fac_lpr_image_view_v1), FAC_LPR_ABI_VERSION_V1, NULL, 0U, 0U, 0U, 0U, FAC_LPR_PIXEL_FORMAT_BGR8 }
+#define FAC_LPR_VERSION_INFO_V1_INIT \
+    { (uint32_t)sizeof(fac_lpr_version_info_v1), FAC_LPR_ABI_VERSION_V1, 0U, 0U, 0U, 0U }
 
 typedef struct fac_lpr_engine_handle fac_lpr_engine_handle;
 
@@ -61,6 +63,15 @@ typedef uint32_t fac_lpr_decision_reason_v1;
 #define FAC_LPR_REASON_CANDIDATE_CONFIDENCE_BELOW_REVIEW_V1 UINT32_C(7)
 #define FAC_LPR_REASON_CANDIDATE_CONFIDENCE_BELOW_ACCEPT_V1 UINT32_C(8)
 #define FAC_LPR_REASON_CONFLICTING_STRONG_CANDIDATES_V1 UINT32_C(9)
+
+typedef struct fac_lpr_version_info_v1 {
+    uint32_t struct_size;
+    uint32_t abi_version;
+    uint32_t semantic_major;
+    uint32_t semantic_minor;
+    uint32_t semantic_patch;
+    uint32_t abi_major;
+} fac_lpr_version_info_v1;
 
 typedef struct fac_lpr_engine_config_v1 {
     uint32_t struct_size;
@@ -165,6 +176,9 @@ typedef struct fac_lpr_result_v1 {
  * - nested records and strings remain valid only while caller keeps the buffer.
  * - no pointer stored inside the result buffer is engine-owned.
  */
+
+FAC_LPR_API fac_lpr_status FAC_LPR_CALL fac_lpr_get_version_v1(
+    fac_lpr_version_info_v1* out_version);
 
 FAC_LPR_API fac_lpr_status FAC_LPR_CALL fac_lpr_engine_create_v1(
     const fac_lpr_engine_config_v1* config,
