@@ -1,0 +1,119 @@
+name: benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Self-hosted platform
+        required: true
+        default: linux
+        type: choice
+        options:
+          - linux
+          - windows
+      iterations:
+        description: Measured benchmark iterations
+        required: true
+        default: '100'
+        type: string
+      warmup:
+        description: Warm-up iterations excluded from metrics
+        required: true
+        default: '10'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-${{ github.ref }}-${{ inputs.platform }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux:
+    if: ${{ inputs.platform == 'linux' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 90
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure benchmark
+        run: >-
+          cmake -S . -B build/benchmark -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_BENCHMARK=ON
+      - name: Build benchmark
+        run: cmake --build build/benchmark --target fac-lpr-benchmark --parallel 2
+      - name: Run benchmark
+        run: >-
+          build/benchmark/artifacts/bin/fac-lpr-benchmark
+          tests/fixtures/real/plate_01.jpg
+          --model-dir models
+          --config docs/lpr-cli-contract.example
+          --warmup ${{ inputs.warmup }}
+          --iterations ${{ inputs.iterations }}
+          --report build/benchmark/artifacts/reports/benchmark-linux.json
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-linux
+          path: build/benchmark/artifacts/reports/benchmark-linux.json
+          if-no-files-found: error
+
+  windows:
+    if: ${{ inputs.platform == 'windows' }}
+    runs-on: [self-hosted, windows, x64]
+    timeout-minutes: 90
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\\.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Configure benchmark
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/benchmark -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/build/vcpkg_installed"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DFAC_LPR_ONNXRUNTIME_ROOT="${{ github.workspace }}/build/deps/onnxruntime"
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_BENCHMARK=ON
+      - name: Build benchmark
+        shell: pwsh
+        run: cmake --build build/benchmark --config Release --target fac-lpr-benchmark --parallel 2
+      - name: Run benchmark
+        shell: pwsh
+        run: >-
+          ./build/benchmark/artifacts/bin/Release/fac-lpr-benchmark.exe
+          tests/fixtures/real/plate_01.jpg
+          --model-dir models
+          --config docs/lpr-cli-contract.example
+          --warmup ${{ inputs.warmup }}
+          --iterations ${{ inputs.iterations }}
+          --report build/benchmark/artifacts/reports/benchmark-windows.json
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-windows
+          path: build/benchmark/artifacts/reports/benchmark-windows.json
+          if-no-files-found: error
