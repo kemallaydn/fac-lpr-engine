@@ -9,7 +9,11 @@
 
 # Runtime model files, relative to --model-dir.
 detector.model=best.onnx
+detector.sha256=22a9a65f6b0ef12baaba5e96d41b25fb9e475332229bd99b1c387f3345aea53d
+detector.size_bytes=12972328
 ocr.model=lprnet_turkey.onnx
+ocr.sha256=2d8fa236f468615ccd8b9ad6748c3e71b3d19ea53affdf5d5fee5a59719e310d
+ocr.size_bytes=1308628
 
 # YOLO pose detector contract: best.onnx
 # images float32 [1,3,960,960] -> output0 float32 [1,17,18900]
