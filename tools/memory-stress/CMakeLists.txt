@@ -8,7 +8,7 @@ endif()
 find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs)
 
 add_executable(fac-lpr-memory-stress
-    main.cpp
+    runner.cpp
     ../lpr-cli/cli_engine_factory.cpp
 )
 
