@@ -47,7 +47,7 @@ TEST(ConnectedComponentLayoutAnalyzer, ProducesReliableEvidenceForGroupedCompone
     const ImageView image{bytes, width, height, width, PixelFormat::gray8};
     ConnectedComponentLayoutConfig config{};
     config.minimum_confidence = 0.20F;
-    const ConnectedComponentPlateLayoutAnalyzer analyzer{config};
+    ConnectedComponentPlateLayoutAnalyzer analyzer{config};
     const auto evidence = analyzer.analyze(image, {}, OperationContext{});
     EXPECT_TRUE(evidence.reliable);
     ASSERT_TRUE(evidence.character_count.has_value());
@@ -99,7 +99,7 @@ TEST(ConnectedComponentLayoutAnalyzer, PerspectiveLikeHeightDistortionReturnsNeu
     ConnectedComponentLayoutConfig config{};
     config.minimum_component_height_ratio = 0.25F;
     config.maximum_height_coefficient_of_variation = 0.20F;
-    const ConnectedComponentPlateLayoutAnalyzer analyzer{config};
+    ConnectedComponentPlateLayoutAnalyzer analyzer{config};
     const auto evidence = analyzer.analyze(image, {}, OperationContext{});
     EXPECT_FALSE(evidence.reliable);
     EXPECT_FLOAT_EQ(evidence.confidence, 0.0F);
@@ -118,7 +118,7 @@ TEST(ConnectedComponentLayoutAnalyzer, OverlappingXComponentsAreNotTrusted) {
     ConnectedComponentLayoutConfig config{};
     config.minimum_component_height_ratio = 0.20F;
     config.maximum_height_coefficient_of_variation = 0.60F;
-    const ConnectedComponentPlateLayoutAnalyzer analyzer{config};
+    ConnectedComponentPlateLayoutAnalyzer analyzer{config};
     const auto evidence = analyzer.analyze(image, {}, OperationContext{});
     EXPECT_FALSE(evidence.reliable);
 }
