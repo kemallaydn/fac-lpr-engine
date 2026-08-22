@@ -103,7 +103,7 @@ TEST(YoloPoseOnnxDetector, RejectsConfiguredInputShapeThatDoesNotMatchModel) {
     config.output_name = "output0";
     config.input = {.width = 2U, .height = 2U, .channels = 3U};
     EXPECT_THROW(
-        infrastructure::yolo::YoloPoseOnnxDetector{session, config},
+        (infrastructure::yolo::YoloPoseOnnxDetector{session, config}),
         application::ModelLoadError);
 }
 
