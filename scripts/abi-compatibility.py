@@ -14,6 +14,7 @@ PROTOTYPE = re.compile(
 def normalize_space(text: str) -> str:
     text = re.sub(r'\s+', ' ', text.strip())
     text = re.sub(r'\s*\*\s*', '* ', text)
+    text = re.sub(r'\*\s+\*\s*', '** ', text)
     text = re.sub(r'\*\s+([A-Za-z_])', r'* \1', text)
     text = re.sub(r'\s*,\s*', ', ', text)
     return text.strip()
@@ -35,7 +36,7 @@ def parse_signatures(header: Path) -> dict[str, str]:
 def parse_symbols(path: Path) -> list[str]:
     names = set()
     for line in path.read_text(encoding='utf-8', errors='replace').splitlines():
-        for match in re.finditer(r'\b(fac_lpr_[A-Za-z0-9_]+)\b', line):
+        for match in re.finditer(r'(?<![A-Za-z0-9])_?(fac_lpr_[A-Za-z0-9_]+)\b', line):
             names.add(match.group(1))
     return sorted(names)
 
