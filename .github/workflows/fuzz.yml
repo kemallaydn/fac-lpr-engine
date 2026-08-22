@@ -39,6 +39,7 @@ jobs:
           -DCMAKE_OSX_ARCHITECTURES=arm64
           -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang
           -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++
+          -DFAC_LPR_SANITIZER=address-undefined
           -DFAC_LPR_BUILD_FUZZERS=ON
           -DFAC_LPR_WARNINGS_AS_ERRORS=ON
 
