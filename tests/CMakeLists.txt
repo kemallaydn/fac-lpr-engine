@@ -1,6 +1,31 @@
 find_package(GTest CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
+# Keep test translation units self-contained. A test that names one of the
+# public FAC LPR exception types must include error.hpp directly instead of
+# relying on transitive includes from an implementation header.
+file(GLOB _fac_lpr_cpp_test_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+set(_fac_lpr_missing_error_includes "")
+foreach(_test_source IN LISTS _fac_lpr_cpp_test_sources)
+    file(READ "${_test_source}" _test_contents)
+    string(REGEX MATCH
+        "(ConfigurationError|ModelLoadError|InferenceError|ProviderError|TimeoutError|CancelledError|InvalidImageError|ResourceExhaustedError|InternalError)"
+        _uses_fac_lpr_error
+        "${_test_contents}")
+    if(_uses_fac_lpr_error)
+        string(FIND "${_test_contents}" "#include <fac_lpr/application/error.hpp>" _error_include_position)
+        if(_error_include_position EQUAL -1)
+            get_filename_component(_test_name "${_test_source}" NAME)
+            list(APPEND _fac_lpr_missing_error_includes "${_test_name}")
+        endif()
+    endif()
+endforeach()
+if(_fac_lpr_missing_error_includes)
+    list(JOIN _fac_lpr_missing_error_includes ", " _missing_error_include_list)
+    message(FATAL_ERROR
+        "Tests naming FAC LPR exception types must include <fac_lpr/application/error.hpp> directly. Missing: ${_missing_error_include_list}")
+endif()
+
 add_executable(fac_lpr_native_tests
     adaptive_tile_detector_tests.cpp
     bounded_worker_pool_tests.cpp
