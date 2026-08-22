@@ -44,7 +44,9 @@ void validate_evidence(
     for (auto& candidate : evidence.candidates) {
         if (candidate.text.empty() || !std::isfinite(candidate.confidence) ||
             candidate.confidence < 0.0F || candidate.confidence > 1.0F ||
-            !std::isfinite(candidate.calibrated_confidence)) {
+            !std::isfinite(candidate.calibrated_confidence) ||
+            candidate.calibrated_confidence < 0.0F ||
+            candidate.calibrated_confidence > 1.0F) {
             throw ProviderError("recognizer returned invalid candidate evidence");
         }
         candidate.calibrated_confidence = effective_provider_confidence(
