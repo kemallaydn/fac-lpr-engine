@@ -23,6 +23,11 @@ struct NativeImageWorkspaceStats final {
 class NativeImageWorkspace final {
 public:
     explicit NativeImageWorkspace(NativeImageWorkspaceConfig config = {});
+    NativeImageWorkspace(const NativeImageWorkspace&) = delete;
+    NativeImageWorkspace& operator=(const NativeImageWorkspace&) = delete;
+    NativeImageWorkspace(NativeImageWorkspace&&) noexcept = default;
+    NativeImageWorkspace& operator=(NativeImageWorkspace&&) noexcept = default;
+    ~NativeImageWorkspace() = default;
 
     [[nodiscard]] std::span<float> prepare_tensor(std::size_t elements);
     [[nodiscard]] application::MutableImageView prepare_image(
