@@ -8,6 +8,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <span>
 #include <string>
