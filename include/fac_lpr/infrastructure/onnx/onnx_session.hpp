@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fac_lpr/application/error.hpp>
+#include <fac_lpr/infrastructure/onnx/execution_provider.hpp>
 
 #include <onnxruntime_cxx_api.h>
 
@@ -40,6 +41,7 @@ struct OnnxSessionConfig final {
     int intra_op_threads{0};
     int inter_op_threads{0};
     GraphOptimizationLevel optimization{GraphOptimizationLevel::ORT_ENABLE_ALL};
+    OnnxExecutionProviderConfig execution_provider{};
 };
 
 class IOnnxInferenceSession {
@@ -72,6 +74,9 @@ public:
     [[nodiscard]] const std::vector<TensorDescriptor>& inputs() const noexcept override { return inputs_; }
     [[nodiscard]] const std::vector<TensorDescriptor>& outputs() const noexcept override { return outputs_; }
     [[nodiscard]] const std::filesystem::path& model_path() const noexcept { return model_path_; }
+    [[nodiscard]] const OnnxExecutionProviderDiagnostics& execution_provider_diagnostics() const noexcept {
+        return execution_provider_diagnostics_;
+    }
 
     [[nodiscard]] std::vector<Ort::Value> run(
         std::span<const char* const> input_names,
@@ -79,7 +84,9 @@ public:
         std::span<const char* const> output_names) override;
 
 private:
-    [[nodiscard]] static Ort::SessionOptions build_options(const OnnxSessionConfig& config);
+    [[nodiscard]] static Ort::SessionOptions build_options(
+        const OnnxSessionConfig& config,
+        OnnxExecutionProviderDiagnostics& diagnostics);
     [[nodiscard]] static std::vector<TensorDescriptor> inspect_inputs(Ort::Session& session);
     [[nodiscard]] static std::vector<TensorDescriptor> inspect_outputs(Ort::Session& session);
 
@@ -88,6 +95,7 @@ private:
     Ort::Session session_{nullptr};
     std::vector<TensorDescriptor> inputs_{};
     std::vector<TensorDescriptor> outputs_{};
+    OnnxExecutionProviderDiagnostics execution_provider_diagnostics_{};
 };
 
 } // namespace fac_lpr::infrastructure::onnx
