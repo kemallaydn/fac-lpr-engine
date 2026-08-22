@@ -1,4 +1,5 @@
 #include <fac_lpr/application/confidence_calibration.hpp>
+#include <fac_lpr/application/error.hpp>
 
 #include <gtest/gtest.h>
 
