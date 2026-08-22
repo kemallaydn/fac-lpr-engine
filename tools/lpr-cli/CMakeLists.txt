@@ -17,6 +17,7 @@ target_compile_features(fac-lpr-cli PRIVATE cxx_std_20)
 target_include_directories(fac-lpr-cli PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(fac-lpr-cli PRIVATE
     fac_lpr::application
+    fac_lpr::model
     fac_lpr::generic_onnx_ocr
     fac_lpr::lprnet_onnx
     fac_lpr::yolo_onnx
