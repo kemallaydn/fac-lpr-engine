@@ -36,6 +36,14 @@ void EngineDiagnostics::record_stage_latency(const std::string_view stage, const
     accumulator.max_ms = std::max(accumulator.max_ms, latency_ms);
 }
 
+void EngineDiagnostics::set_readiness(
+    const ReadinessState state,
+    std::vector<StartupCheckSnapshot> checks) {
+    std::scoped_lock lock{mutex_};
+    readiness_ = state;
+    startup_checks_ = std::move(checks);
+}
+
 void EngineDiagnostics::set_providers(std::vector<DiagnosticProviderInfo> providers) {
     std::scoped_lock lock{mutex_};
     providers_ = std::move(providers);
@@ -69,6 +77,8 @@ EngineDiagnosticsSnapshot EngineDiagnostics::snapshot() const {
     result.provider_failures = provider_failures_.load(std::memory_order_relaxed);
 
     std::scoped_lock lock{mutex_};
+    result.readiness = readiness_;
+    result.startup_checks = startup_checks_;
     result.providers = providers_;
     result.models = models_;
     result.worker_queue = worker_queue_;
