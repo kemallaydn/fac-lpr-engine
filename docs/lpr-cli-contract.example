@@ -1,0 +1,47 @@
+# FAC LPR CLI explicit model contract template
+#
+# IMPORTANT: values marked <INSPECTOR_VALUE> MUST come from the real model
+# artifact / model inspector. Do not guess them. This template is intentionally
+# not runnable until those fields are replaced.
+
+# Runtime model files, relative to --model-dir.
+detector.model=best.onnx
+ocr.model=lprnet_turkey.onnx
+
+# YOLO pose detector contract.
+detector.input_name=<INSPECTOR_VALUE>
+detector.output_name=<INSPECTOR_VALUE>
+detector.input_scale=<INSPECTOR_VALUE>
+detector.pad_value=<INSPECTOR_VALUE>
+detector.output_layout=<features_first_or_candidates_first>
+detector.box_offset=<INSPECTOR_VALUE>
+detector.objectness_offset=<INSPECTOR_VALUE_or_none>
+detector.class_score_offset=<INSPECTOR_VALUE>
+detector.class_count=<INSPECTOR_VALUE>
+detector.keypoint_offset=<INSPECTOR_VALUE>
+detector.keypoint_count=<INSPECTOR_VALUE>
+detector.keypoint_stride=<INSPECTOR_VALUE>
+detector.keypoint_x_offset=<INSPECTOR_VALUE>
+detector.keypoint_y_offset=<INSPECTOR_VALUE>
+detector.keypoint_confidence_offset=<INSPECTOR_VALUE_or_none>
+detector.confidence_threshold=0.50
+detector.nms_iou_threshold=0.45
+detector.maximum_detections=32
+
+# LPRNet OCR contract.
+ocr.model_version=<MODEL_VERSION>
+ocr.input_name=<INSPECTOR_VALUE>
+ocr.output_name=<INSPECTOR_VALUE>
+ocr.output_layout=<bct_or_btc>
+ocr.charset=<EXACT_CHARSET_WITHOUT_BLANK>
+ocr.blank_index=<INSPECTOR_OR_TRAINING_CONTRACT_VALUE>
+ocr.color_order=<gray_or_rgb_or_bgr>
+ocr.input_scale=<TRAINING_CONTRACT_VALUE>
+ocr.mean=<R,G,B_or_channel_values>
+ocr.std=<R,G,B_or_channel_values>
+ocr.maximum_timesteps=<SAFE_BOUND_FROM_MODEL_CONTRACT>
+ocr.maximum_classes=<SAFE_BOUND_FROM_MODEL_CONTRACT>
+ocr.beam_width=16
+ocr.result_limit=5
+ocr.classes_per_step=6
+ocr.confusion_weight=0.15
