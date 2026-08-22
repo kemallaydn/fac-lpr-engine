@@ -21,6 +21,7 @@ target_include_directories(fac-lpr-memory-stress PRIVATE
 target_link_libraries(fac-lpr-memory-stress PRIVATE
     fac_lpr::engine
     fac_lpr::application
+    fac_lpr::model
     fac_lpr::generic_onnx_ocr
     fac_lpr::lprnet_onnx
     fac_lpr::yolo_onnx
