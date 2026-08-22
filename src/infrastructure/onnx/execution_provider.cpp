@@ -48,9 +48,7 @@ struct OptionPointers final {
     return pointers;
 }
 
-void append_cuda(
-    Ort::SessionOptions& options,
-    const OptionPointers& pointers) {
+void append_cuda(Ort::SessionOptions& options, const OptionPointers& pointers) {
     const auto& api = Ort::GetApi();
     OrtCUDAProviderOptionsV2* provider_options = nullptr;
     Ort::ThrowOnError(api.CreateCUDAProviderOptions(&provider_options));
@@ -70,9 +68,7 @@ void append_cuda(
     api.ReleaseCUDAProviderOptions(provider_options);
 }
 
-void append_tensorrt(
-    Ort::SessionOptions& options,
-    const OptionPointers& pointers) {
+void append_tensorrt(Ort::SessionOptions& options, const OptionPointers& pointers) {
     const auto& api = Ort::GetApi();
     OrtTensorRTProviderOptionsV2* provider_options = nullptr;
     Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&provider_options));
@@ -92,9 +88,7 @@ void append_tensorrt(
     api.ReleaseTensorRTProviderOptions(provider_options);
 }
 
-void append_directml(
-    Ort::SessionOptions& options,
-    const OptionPointers& pointers) {
+void append_directml(Ort::SessionOptions& options, const OptionPointers& pointers) {
     Ort::ThrowOnError(Ort::GetApi().SessionOptionsAppendExecutionProvider(
         options,
         "DML",
@@ -172,11 +166,6 @@ OnnxExecutionProviderDiagnostics OnnxExecutionProviderStrategy::configure(
     } catch (const application::EngineError&) {
         throw;
     } catch (const Ort::Exception& exception) {
-        if (config.fallback_policy == OnnxProviderFallbackPolicy::fallback_to_cpu) {
-            diagnostics.active = OnnxExecutionProvider::cpu;
-            diagnostics.fallback_used = true;
-            return diagnostics;
-        }
         throw application::ConfigurationError(
             std::string{"failed to configure ONNX execution provider '"} +
             to_string(config.provider) + "': " + exception.what());
