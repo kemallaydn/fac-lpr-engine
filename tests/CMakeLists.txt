@@ -12,6 +12,7 @@ add_executable(fac_lpr_native_tests
     geometry_validator_tests.cpp
     image_validation_tests.cpp
     logging_tests.cpp
+    lpr_pipeline_tests.cpp
     lprnet_preprocessor_tests.cpp
     native_image_tests.cpp
     paddle_ocr_adapter_tests.cpp
