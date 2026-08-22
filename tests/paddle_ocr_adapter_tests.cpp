@@ -106,7 +106,7 @@ TEST(PaddleOcrAdapter, UnavailableWorkerFailsAsProviderErrorForEnsembleDegradati
     infrastructure::paddle::PaddleOcrAdapter adapter{{}, encoder, worker};
     std::vector<std::byte> bytes;
     const auto image = fixture(bytes);
-    EXPECT_THROW(adapter.recognize(image, {}), application::ProviderError);
+    EXPECT_THROW((void)adapter.recognize(image, {}), application::ProviderError);
 }
 
 TEST(PaddleOcrAdapter, MalformedResponseFailsSafely) {
@@ -116,7 +116,7 @@ TEST(PaddleOcrAdapter, MalformedResponseFailsSafely) {
     infrastructure::paddle::PaddleOcrAdapter adapter{{}, encoder, worker};
     std::vector<std::byte> bytes;
     const auto image = fixture(bytes);
-    EXPECT_THROW(adapter.recognize(image, {}), application::ProviderError);
+    EXPECT_THROW((void)adapter.recognize(image, {}), application::ProviderError);
 }
 
 TEST(PaddleOcrAdapter, InvalidCalibratedConfidenceIsMalformedResponse) {
@@ -126,7 +126,7 @@ TEST(PaddleOcrAdapter, InvalidCalibratedConfidenceIsMalformedResponse) {
     infrastructure::paddle::PaddleOcrAdapter adapter{{}, encoder, worker};
     std::vector<std::byte> bytes;
     const auto image = fixture(bytes);
-    EXPECT_THROW(adapter.recognize(image, {}), application::ProviderError);
+    EXPECT_THROW((void)adapter.recognize(image, {}), application::ProviderError);
 }
 
 TEST(PaddleOcrAdapter, ExpiredParentDeadlineFailsBeforeWorker) {
@@ -137,7 +137,7 @@ TEST(PaddleOcrAdapter, ExpiredParentDeadlineFailsBeforeWorker) {
     const auto image = fixture(bytes);
     application::OperationContext context{};
     context.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds{1};
-    EXPECT_THROW(adapter.recognize(image, context), application::TimeoutError);
+    EXPECT_THROW((void)adapter.recognize(image, context), application::TimeoutError);
     EXPECT_EQ(worker->calls, 0U);
 }
 
@@ -151,7 +151,7 @@ TEST(PaddleOcrAdapter, ProviderTimeoutFailsSafelyAfterSlowWorkerReturns) {
     std::vector<std::byte> bytes;
     const auto image = fixture(bytes);
 
-    EXPECT_THROW(adapter.recognize(image, {}), application::TimeoutError);
+    EXPECT_THROW((void)adapter.recognize(image, {}), application::TimeoutError);
     EXPECT_EQ(worker->calls, 1U);
 }
 
