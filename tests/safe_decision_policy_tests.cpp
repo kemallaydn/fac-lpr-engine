@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <vector>
 
 namespace {
@@ -27,14 +28,22 @@ domain::RecognitionEvidence good_evidence() {
     return evidence;
 }
 
+bool has_reason(
+    const domain::PlateRecognitionResult& result,
+    const domain::RecognitionDecisionReason reason) {
+    return std::find(
+        result.decision_reasons.begin(),
+        result.decision_reasons.end(),
+        reason) != result.decision_reasons.end();
+}
+
 TEST(SafeDecisionPolicy, AcceptsOnlyStrongConsistentTechnicalEvidence) {
     const std::vector evidence{good_evidence()};
     const std::vector<domain::PlateCandidate> candidates{{"34ABC123", 0.91F, 0.91F, true}};
     const auto result = policy().decide(good_detection(), evidence, candidates, {});
     EXPECT_EQ(result.status, domain::RecognitionStatus::accepted);
     EXPECT_EQ(result.plate, "34ABC123");
-    ASSERT_FALSE(result.decision_reasons.empty());
-    EXPECT_EQ(result.decision_reasons.back(), domain::RecognitionDecisionReason::accepted_consensus);
+    EXPECT_TRUE(has_reason(result, domain::RecognitionDecisionReason::accepted_consensus));
 }
 
 TEST(SafeDecisionPolicy, StrongConflictingOcrCannotAutoAccept) {
@@ -44,6 +53,9 @@ TEST(SafeDecisionPolicy, StrongConflictingOcrCannotAutoAccept) {
         {"34ABC128", 0.82F, 0.82F, true}};
     const auto result = policy().decide(good_detection(), evidence, candidates, {});
     EXPECT_EQ(result.status, domain::RecognitionStatus::review);
+    EXPECT_TRUE(has_reason(
+        result,
+        domain::RecognitionDecisionReason::conflicting_strong_candidates));
 }
 
 TEST(SafeDecisionPolicy, DegradedProviderSetIsAtMostReview) {
@@ -55,6 +67,9 @@ TEST(SafeDecisionPolicy, DegradedProviderSetIsAtMostReview) {
     const auto result = policy().decide(good_detection(), evidence, candidates, context);
     EXPECT_EQ(result.status, domain::RecognitionStatus::review);
     EXPECT_TRUE(result.degraded);
+    EXPECT_TRUE(has_reason(
+        result,
+        domain::RecognitionDecisionReason::degraded_provider_set));
 }
 
 TEST(SafeDecisionPolicy, FatalProviderFailureRejectsFailClosed) {
@@ -64,6 +79,9 @@ TEST(SafeDecisionPolicy, FatalProviderFailureRejectsFailClosed) {
     context.fatal_provider_failure = true;
     const auto result = policy().decide(good_detection(), evidence, candidates, context);
     EXPECT_EQ(result.status, domain::RecognitionStatus::rejected);
+    EXPECT_TRUE(has_reason(
+        result,
+        domain::RecognitionDecisionReason::fatal_provider_failure));
 }
 
 TEST(SafeDecisionPolicy, WeakDetectorRejectsEvenWithStrongOcr) {
@@ -73,6 +91,36 @@ TEST(SafeDecisionPolicy, WeakDetectorRejectsEvenWithStrongOcr) {
     const std::vector<domain::PlateCandidate> candidates{{"34ABC123", 0.99F, 0.99F, true}};
     const auto result = policy().decide(detection, evidence, candidates, {});
     EXPECT_EQ(result.status, domain::RecognitionStatus::rejected);
+    EXPECT_TRUE(has_reason(
+        result,
+        domain::RecognitionDecisionReason::detector_confidence_below_minimum));
+}
+
+TEST(SafeDecisionPolicy, MissingValidCandidateRejectsWithExplainableReason) {
+    const std::vector evidence{good_evidence()};
+    const std::vector<domain::PlateCandidate> candidates{
+        {"NOT-A-VALID-PLATE", 0.99F, 0.99F, false}};
+    const auto result = policy().decide(good_detection(), evidence, candidates, {});
+    EXPECT_EQ(result.status, domain::RecognitionStatus::rejected);
+    EXPECT_TRUE(has_reason(result, domain::RecognitionDecisionReason::no_valid_candidate));
+}
+
+TEST(SafeDecisionPolicy, WeakGeometryAndCropQualityRequireReviewWithReasons) {
+    auto detection = good_detection();
+    detection.geometry_score = 0.10F;
+    auto evidence_item = good_evidence();
+    evidence_item.crop_quality = 0.10F;
+    const std::vector evidence{evidence_item};
+    const std::vector<domain::PlateCandidate> candidates{{"34ABC123", 0.95F, 0.95F, true}};
+
+    const auto result = policy().decide(detection, evidence, candidates, {});
+    EXPECT_EQ(result.status, domain::RecognitionStatus::review);
+    EXPECT_TRUE(has_reason(
+        result,
+        domain::RecognitionDecisionReason::geometry_below_minimum));
+    EXPECT_TRUE(has_reason(
+        result,
+        domain::RecognitionDecisionReason::crop_quality_below_minimum));
 }
 
 } // namespace
