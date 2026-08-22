@@ -1,0 +1,77 @@
+name: c-abi-smoke
+
+on:
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Build and install shared engine
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/c-abi-linux -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="${GITHUB_WORKSPACE}/build/vcpkg_installed" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DFAC_LPR_ONNXRUNTIME_ROOT="${GITHUB_WORKSPACE}/build/deps/onnxruntime" \
+            -DFAC_LPR_WITH_ONNX_RUNTIME=ON \
+            -DFAC_LPR_WITH_OPENCV=ON \
+            -DFAC_LPR_BUILD_SHARED=ON
+          cmake --build build/c-abi-linux --parallel 2
+          cmake --install build/c-abi-linux --prefix "${GITHUB_WORKSPACE}/build/c-abi-stage" --strip
+      - name: Compile standalone C consumer from installed package
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror \
+            tests/consumers/c_abi_smoke.c \
+            -I"${GITHUB_WORKSPACE}/build/c-abi-stage/include" \
+            -L"${GITHUB_WORKSPACE}/build/c-abi-stage/lib" \
+            -Wl,-rpath,"${GITHUB_WORKSPACE}/build/c-abi-stage/lib" \
+            -lfac_lpr_engine \
+            -o build/c-abi-consumer
+          build/c-abi-consumer
+
+  windows-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Build and install shared engine
+        shell: pwsh
+        run: |
+          cmake -S . -B build/c-abi-windows -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:GITHUB_WORKSPACE/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_INSTALLED_DIR="$env:GITHUB_WORKSPACE/build/vcpkg_installed" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DFAC_LPR_ONNXRUNTIME_ROOT="$env:GITHUB_WORKSPACE/build/deps/onnxruntime" `
+            -DFAC_LPR_WITH_ONNX_RUNTIME=ON `
+            -DFAC_LPR_WITH_OPENCV=ON `
+            -DFAC_LPR_BUILD_SHARED=ON
+          cmake --build build/c-abi-windows --config Release --parallel 2
+          cmake --install build/c-abi-windows --config Release --prefix "$env:GITHUB_WORKSPACE/build/c-abi-stage"
+      - name: Compile standalone C consumer from installed package
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cl /nologo /W4 /WX /TC /std:c11 tests\consumers\c_abi_smoke.c /I build\c-abi-stage\include /link /LIBPATH:build\c-abi-stage\lib fac_lpr_engine.lib /OUT:build\c-abi-consumer.exe
+          set PATH=%CD%\build\c-abi-stage\bin;%PATH%
+          build\c-abi-consumer.exe
