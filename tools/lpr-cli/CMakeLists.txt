@@ -47,7 +47,7 @@ set_target_properties(fac-lpr-cli PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${FAC_LPR_OUTPUT_ROOT}/bin"
 )
 
-if(BUILD_TESTING)
+if(FAC_LPR_BUILD_TESTS)
     set(FAC_LPR_REAL_FIXTURE_DIR "${PROJECT_SOURCE_DIR}/tests/fixtures/real")
     set(FAC_LPR_REAL_EXPECTATIONS "${FAC_LPR_REAL_FIXTURE_DIR}/expected-results.txt")
     set(FAC_LPR_CLI_CONTRACT "${PROJECT_SOURCE_DIR}/docs/lpr-cli-contract.example")
