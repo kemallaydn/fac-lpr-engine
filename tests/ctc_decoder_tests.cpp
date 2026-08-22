@@ -90,7 +90,7 @@ TEST(GreedyCtcDecoder, RejectsMismatchedClassCount) {
     const GreedyCtcDecoder decoder{config};
     const std::vector<float> logits(8U, 0.0F);
     EXPECT_THROW(
-        decoder.decode(logits, 2U, 4U),
+        (void)decoder.decode(logits, 2U, 4U),
         fac_lpr::application::InferenceError);
 }
 
@@ -102,7 +102,7 @@ TEST(GreedyCtcDecoder, RejectsNonFiniteLogits) {
     std::vector<float> logits{0.0F, 1.0F};
     logits[0] = std::numeric_limits<float>::quiet_NaN();
     EXPECT_THROW(
-        decoder.decode(logits, 1U, 2U),
+        (void)decoder.decode(logits, 1U, 2U),
         fac_lpr::application::InferenceError);
 }
 
