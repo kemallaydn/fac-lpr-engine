@@ -3,7 +3,7 @@ import argparse
 import re
 from pathlib import Path
 
-SEMVER = re.compile(r'^v(?P<version>0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$')
+SEMVER = re.compile(r'^v(?P<version>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$')
 PROJECT_VERSION = re.compile(r'project\s*\(.*?VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)', re.S | re.I)
 
 
