@@ -1,3 +1,4 @@
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/infrastructure/crypto/sha256.hpp>
 #include <fac_lpr/infrastructure/lprnet/lprnet_onnx_contract.hpp>
 
