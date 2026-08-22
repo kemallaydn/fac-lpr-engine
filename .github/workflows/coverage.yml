@@ -1,0 +1,65 @@
+name: coverage
+
+on:
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+  FAC_LPR_COVERAGE_LINE_MIN: '75'
+  FAC_LPR_COVERAGE_BRANCH_MIN: '65'
+
+jobs:
+  critical-core:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Install coverage reporter
+        run: python3 -m pip install --disable-pip-version-check 'gcovr==8.2'
+      - name: Configure coverage build
+        run: >-
+          cmake -S . -B build/coverage -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=gcc
+          -DCMAKE_CXX_COMPILER=g++
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_BUILD_TESTS=ON
+          -DFAC_LPR_ENABLE_COVERAGE=ON
+      - name: Build and test
+        run: |
+          cmake --build build/coverage --parallel 2
+          ctest --test-dir build/coverage --output-on-failure
+      - name: Generate reports and enforce critical-module thresholds
+        run: |
+          mkdir -p build/coverage-report
+          gcovr \
+            --root . \
+            --filter 'src/domain/' \
+            --filter 'src/application/' \
+            --exclude '.*/generated/.*' \
+            --exclude '.*/third[_-]party/.*' \
+            --exclude '.*/tests/.*' \
+            --gcov-executable gcov \
+            --html-details build/coverage-report/index.html \
+            --xml-pretty build/coverage-report/coverage.xml \
+            --json-pretty build/coverage-report/coverage.json \
+            --print-summary \
+            --fail-under-line "$FAC_LPR_COVERAGE_LINE_MIN" \
+            --fail-under-branch "$FAC_LPR_COVERAGE_BRANCH_MIN"
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fac-lpr-coverage
+          path: build/coverage-report
+          retention-days: 30
