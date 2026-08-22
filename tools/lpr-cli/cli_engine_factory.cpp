@@ -2,6 +2,7 @@
 
 #include <fac_lpr/application/candidate_fusion.hpp>
 #include <fac_lpr/application/confidence_calibration.hpp>
+#include <fac_lpr/application/engine_builder.hpp>
 #include <fac_lpr/application/error.hpp>
 #include <fac_lpr/application/recognition_ensemble.hpp>
 #include <fac_lpr/application/safe_decision_policy.hpp>
@@ -304,29 +305,29 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
     auto ocr_adapter = std::make_shared<infrastructure::lprnet::LprNetOnnxOcrAdapter>(ocr_config);
     auto recognizer = std::make_shared<infrastructure::onnx::GenericOnnxOcrRecognizer>(
         ocr_session, ocr_adapter);
-    auto ensemble = std::make_shared<application::RecognitionEnsemble>(
-        std::vector<application::RecognizerRegistration>{
-            application::RecognizerRegistration{
-                .provider = recognizer,
-                .weight = 1.0F,
-                .timeout = std::chrono::milliseconds{1000},
-                .required = true,
-                .enabled = true}});
 
-    application::LprPipelineDependencies dependencies{};
-    dependencies.detector = std::move(detector);
-    dependencies.geometry = std::make_shared<infrastructure::geometry::PlateGeometryEvaluatorAdapter>();
-    dependencies.aligner = std::make_shared<infrastructure::opencv::OpenCvPerspectiveAligner>();
-    dependencies.crop_generator = std::make_shared<infrastructure::crop::CropHypothesisGenerator>();
-    dependencies.recognition_ensemble = std::move(ensemble);
-    dependencies.calibrator = std::make_shared<application::IdentityConfidenceCalibrator>();
-    dependencies.layout_analyzer =
-        std::make_shared<infrastructure::opencv::ConnectedComponentPlateLayoutAnalyzer>();
-    dependencies.candidate_fusion =
-        std::make_shared<application::WeightedMultiCropCandidateFusion>();
-    dependencies.decision_policy =
-        std::make_shared<application::SafeRecognitionDecisionPolicy>();
-    return std::make_shared<application::LprPipeline>(std::move(dependencies));
+    application::LprEngineBuilder builder{};
+    builder.detector(std::move(detector))
+        .geometry("plate_geometry", std::make_shared<infrastructure::geometry::PlateGeometryEvaluatorAdapter>())
+        .aligner("opencv_perspective", std::make_shared<infrastructure::opencv::OpenCvPerspectiveAligner>())
+        .crop_generator(std::make_shared<infrastructure::crop::CropHypothesisGenerator>())
+        .recognizer(application::RecognizerRegistration{
+            .provider = std::move(recognizer),
+            .weight = 1.0F,
+            .timeout = std::chrono::milliseconds{1000},
+            .required = true,
+            .enabled = true})
+        .calibrator("identity", std::make_shared<application::IdentityConfidenceCalibrator>())
+        .layout_analyzer(
+            "connected_components",
+            std::make_shared<infrastructure::opencv::ConnectedComponentPlateLayoutAnalyzer>())
+        .candidate_fusion(
+            "weighted_multi_crop",
+            std::make_shared<application::WeightedMultiCropCandidateFusion>())
+        .decision_policy(
+            "safe_default",
+            std::make_shared<application::SafeRecognitionDecisionPolicy>());
+    return builder.build();
 }
 
 } // namespace fac_lpr::cli
