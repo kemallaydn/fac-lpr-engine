@@ -1,0 +1,128 @@
+name: memory-stress
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Self-hosted platform
+        required: true
+        default: linux
+        type: choice
+        options:
+          - linux
+          - windows
+      profile:
+        description: Recognition loop profile
+        required: true
+        default: 10k
+        type: choice
+        options:
+          - 10k
+          - 100k
+          - 1m
+
+permissions:
+  contents: read
+
+concurrency:
+  group: memory-stress-${{ github.ref }}-${{ inputs.platform }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux:
+    if: ${{ inputs.platform == 'linux' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 240
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure
+        run: >-
+          cmake -S . -B build/memory-stress -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_MEMORY_STRESS=ON
+      - name: Build memory stress harness
+        run: cmake --build build/memory-stress --target fac-lpr-memory-stress --parallel 2
+      - name: Run memory stress
+        run: >-
+          build/memory-stress/artifacts/bin/fac-lpr-memory-stress
+          tests/fixtures/real/plate_01.jpg
+          --model-dir models
+          --config docs/lpr-cli-contract.example
+          --profile ${{ inputs.profile }}
+          --warmup 100
+          --sample-every 1000
+          --handle-cycles 10000
+          --lifecycle-cycles 100
+          --max-loop-growth-mib 128
+          --max-lifecycle-growth-mib 256
+          --report build/memory-stress/artifacts/reports/memory-stress-${{ inputs.profile }}-linux.json
+      - name: Upload memory report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-stress-${{ inputs.profile }}-linux
+          path: build/memory-stress/artifacts/reports/*.json
+          if-no-files-found: error
+
+  windows:
+    if: ${{ inputs.platform == 'windows' }}
+    runs-on: [self-hosted, windows, x64]
+    timeout-minutes: 240
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\\.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/memory-stress -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/build/vcpkg_installed"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DFAC_LPR_ONNXRUNTIME_ROOT="${{ github.workspace }}/build/deps/onnxruntime"
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_MEMORY_STRESS=ON
+      - name: Build memory stress harness
+        shell: pwsh
+        run: cmake --build build/memory-stress --config Release --target fac-lpr-memory-stress --parallel 2
+      - name: Run memory stress
+        shell: pwsh
+        run: >-
+          ./build/memory-stress/artifacts/bin/Release/fac-lpr-memory-stress.exe
+          tests/fixtures/real/plate_01.jpg
+          --model-dir models
+          --config docs/lpr-cli-contract.example
+          --profile ${{ inputs.profile }}
+          --warmup 100
+          --sample-every 1000
+          --handle-cycles 10000
+          --lifecycle-cycles 100
+          --max-loop-growth-mib 128
+          --max-lifecycle-growth-mib 256
+          --report build/memory-stress/artifacts/reports/memory-stress-${{ inputs.profile }}-windows.json
+      - name: Upload memory report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-stress-${{ inputs.profile }}-windows
+          path: build/memory-stress/artifacts/reports/*.json
+          if-no-files-found: error
