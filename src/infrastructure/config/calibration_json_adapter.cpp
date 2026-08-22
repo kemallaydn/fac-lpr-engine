@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
 
 namespace fac_lpr::infrastructure {
 namespace {
@@ -47,8 +48,6 @@ LoadedCalibration parse(const Json& root) {
         });
     }
 
-    // Construction performs the canonical runtime validation, including
-    // positive slope, finite parameters and minimum-sample configuration.
     (void)application::LogisticConfidenceCalibrator{loaded.config, loaded.segments};
     return loaded;
 }
