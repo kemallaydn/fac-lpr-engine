@@ -8,8 +8,22 @@
 
 namespace fac_lpr::infrastructure::native_image {
 
+struct NativeImageWorkspaceConfig final {
+    std::size_t max_tensor_elements{16U * 1024U * 1024U};
+    std::size_t max_scratch_bytes{128U * 1024U * 1024U};
+};
+
+struct NativeImageWorkspaceStats final {
+    std::size_t tensor_capacity{0U};
+    std::size_t scratch_capacity{0U};
+    std::size_t tensor_growth_count{0U};
+    std::size_t scratch_growth_count{0U};
+};
+
 class NativeImageWorkspace final {
 public:
+    explicit NativeImageWorkspace(NativeImageWorkspaceConfig config = {});
+
     [[nodiscard]] std::span<float> prepare_tensor(std::size_t elements);
     [[nodiscard]] application::MutableImageView prepare_image(
         std::size_t width,
@@ -18,10 +32,14 @@ public:
 
     [[nodiscard]] std::size_t tensor_capacity() const noexcept { return tensor_.capacity(); }
     [[nodiscard]] std::size_t scratch_capacity() const noexcept { return scratch_.capacity(); }
+    [[nodiscard]] NativeImageWorkspaceStats stats() const noexcept;
 
 private:
+    NativeImageWorkspaceConfig config_{};
     std::vector<float> tensor_{};
     std::vector<std::byte> scratch_{};
+    std::size_t tensor_growth_count_{0U};
+    std::size_t scratch_growth_count_{0U};
 };
 
 [[nodiscard]] application::ImageView make_crop_view(
