@@ -12,16 +12,15 @@ foreach(required_path CLI_PATH MODEL_DIR CONTRACT_PATH FIXTURE_DIR EXPECTATIONS_
     endif()
 endforeach()
 
-file(STRINGS "${EXPECTATIONS_FILE}" expectation_lines)
+# Read only fixture rows. Keeping comments out of the CMake list entirely avoids
+# locale/encoding surprises while parsing human-readable metadata comments.
+file(STRINGS "${EXPECTATIONS_FILE}" expectation_lines REGEX "^[A-Za-z0-9_.-]+=")
 set(executed_count 0)
 set(optional_hit_count 0)
 set(optional_miss_count 0)
 
 foreach(raw_line IN LISTS expectation_lines)
     string(STRIP "${raw_line}" line)
-    if(line STREQUAL "" OR line MATCHES "^#")
-        continue()
-    endif()
 
     string(FIND "${line}" "=" equals_index)
     if(equals_index LESS 1)
