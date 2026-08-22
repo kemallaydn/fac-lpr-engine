@@ -4,7 +4,7 @@ project(
     fac_lpr_engine
     VERSION 0.1.0
     DESCRIPTION "Reusable production-grade license plate recognition engine"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 option(FAC_LPR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
@@ -23,6 +23,7 @@ add_subdirectory(src/infrastructure)
 
 add_library(fac_lpr_engine STATIC
     src/fac_lpr_engine.cpp
+    src/c_api/fac_lpr_engine_c_api.cpp
 )
 
 add_library(fac_lpr::engine ALIAS fac_lpr_engine)
