@@ -1,5 +1,5 @@
 # filename	expected_status	required_plates	optional_plates
-# required_plates/optional_plates: comma-separated, boşluk yok.
+# required_plates/optional_plates: comma-separated with no spaces.
 # expected_status: ANY | ACCEPTED | REVIEW | REJECTED
 plate_01.jpg	ANY	06BY0825	
 plate_02.jpg	ANY	06ACY760	06AHU99
