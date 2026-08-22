@@ -1,3 +1,4 @@
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/infrastructure/opencv/crop_enhancers.hpp>
 
 #include <gtest/gtest.h>
@@ -53,7 +54,6 @@ TEST(CropEnhancers, StrategiesAreQualityGated) {
     const ClaheCropEnhancer clahe{};
     const SharpenCropEnhancer sharpen{};
     const AdaptiveThresholdCropEnhancer threshold{};
-
     EXPECT_TRUE(clahe.should_apply(low_quality()));
     EXPECT_TRUE(sharpen.should_apply(low_quality()));
     EXPECT_TRUE(threshold.should_apply(low_quality()));
@@ -75,11 +75,7 @@ TEST(CropEnhancers, ClaheProducesOwnedOutputWithoutMutatingInput) {
     auto bytes = make_bgr_fixture();
     const auto before = bytes;
     const ImageView input{bytes, 32U, 16U, 96U, PixelFormat::bgr8};
-    const auto output = ClaheCropEnhancer{}.enhance(
-        input,
-        low_quality(),
-        OperationContext{});
-
+    const auto output = ClaheCropEnhancer{}.enhance(input, low_quality(), OperationContext{});
     ASSERT_TRUE(output.has_value());
     EXPECT_EQ(bytes, before);
     EXPECT_EQ(output->width, input.width);
@@ -92,11 +88,7 @@ TEST(CropEnhancers, SharpenProducesOwnedOutputWithoutMutatingInput) {
     auto bytes = make_bgr_fixture();
     const auto before = bytes;
     const ImageView input{bytes, 32U, 16U, 96U, PixelFormat::bgr8};
-    const auto output = SharpenCropEnhancer{}.enhance(
-        input,
-        low_quality(),
-        OperationContext{});
-
+    const auto output = SharpenCropEnhancer{}.enhance(input, low_quality(), OperationContext{});
     ASSERT_TRUE(output.has_value());
     EXPECT_EQ(bytes, before);
     EXPECT_EQ(output->format, PixelFormat::bgr8);
@@ -107,11 +99,7 @@ TEST(CropEnhancers, AdaptiveThresholdReturnsSeparateGrayCrop) {
     auto bytes = make_bgr_fixture();
     const auto before = bytes;
     const ImageView input{bytes, 32U, 16U, 96U, PixelFormat::bgr8};
-    const auto output = AdaptiveThresholdCropEnhancer{}.enhance(
-        input,
-        low_quality(),
-        OperationContext{});
-
+    const auto output = AdaptiveThresholdCropEnhancer{}.enhance(input, low_quality(), OperationContext{});
     ASSERT_TRUE(output.has_value());
     EXPECT_EQ(bytes, before);
     EXPECT_EQ(output->format, PixelFormat::gray8);
@@ -122,15 +110,11 @@ TEST(CropEnhancers, AdaptiveThresholdReturnsSeparateGrayCrop) {
 TEST(CropEnhancers, InvalidConfigurationFailsFast) {
     SharpenEnhancerConfig sharpen{};
     sharpen.sigma = 0.0;
-    EXPECT_THROW(
-        SharpenCropEnhancer{sharpen},
-        fac_lpr::application::ConfigurationError);
+    EXPECT_THROW(SharpenCropEnhancer{sharpen}, fac_lpr::application::ConfigurationError);
 
     AdaptiveThresholdEnhancerConfig threshold{};
     threshold.block_size = 4;
-    EXPECT_THROW(
-        AdaptiveThresholdCropEnhancer{threshold},
-        fac_lpr::application::ConfigurationError);
+    EXPECT_THROW(AdaptiveThresholdCropEnhancer{threshold}, fac_lpr::application::ConfigurationError);
 }
 
 } // namespace
