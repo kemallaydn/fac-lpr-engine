@@ -13,18 +13,27 @@ on:
 permissions:
   contents: read
 
+env:
+  VCPKG_DISABLE_METRICS: '1'
+  VCPKG_DEFAULT_TRIPLET: arm64-osx
+
 jobs:
   mac-arm64:
     runs-on: [self-hosted, macOS, ARM64, fac-lpr]
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
       - name: Build and install release package
         run: |
           set -euo pipefail
           rm -rf build/cmake-package build/cmake-package-stage build/cmake-consumer
           cmake -S . -B build/cmake-package -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="$PWD/build/vcpkg_installed" \
+            -DVCPKG_TARGET_TRIPLET=arm64-osx \
             -DFAC_LPR_BUILD_SHARED=ON
           cmake --build build/cmake-package --parallel 2
           cmake --install build/cmake-package --prefix "$PWD/build/cmake-package-stage"
