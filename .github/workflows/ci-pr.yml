@@ -1,0 +1,168 @@
+name: ci-pr
+
+on:
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    name: Linux ${{ matrix.compiler }} build-test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .vcpkg-binary-cache
+            .cache/onnxruntime
+          key: ci-linux-${{ matrix.compiler }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-baseline.txt', 'cmake/onnxruntime-version.txt', 'cmake/onnxruntime-linux-x64.sha256') }}
+          restore-keys: ci-linux-${{ matrix.compiler }}-
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure
+        run: >-
+          cmake -S . -B build/ci-${{ matrix.compiler }} -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=${{ matrix.compiler == 'gcc' && 'gcc' || 'clang' }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.compiler == 'gcc' && 'g++' || 'clang++' }}
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_LPR_CLI=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build
+        run: cmake --build build/ci-${{ matrix.compiler }} --parallel 2
+      - name: Test
+        run: ctest --test-dir build/ci-${{ matrix.compiler }} --output-on-failure --output-junit artifacts/reports/ctest-${{ matrix.compiler }}.xml
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-linux-${{ matrix.compiler }}-reports
+          path: |
+            build/ci-${{ matrix.compiler }}/Testing/
+            build/ci-${{ matrix.compiler }}/artifacts/reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+  windows:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    name: Windows MSVC build-test
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\\.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .vcpkg-binary-cache
+            .cache/onnxruntime
+          key: ci-windows-msvc-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-baseline.txt', 'cmake/onnxruntime-version.txt', 'cmake/onnxruntime-win-x64.sha256') }}
+          restore-keys: ci-windows-msvc-
+      - name: Restore dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/ci-msvc -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/build/vcpkg_installed"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DFAC_LPR_ONNXRUNTIME_ROOT="${{ github.workspace }}/build/deps/onnxruntime"
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_LPR_CLI=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build
+        shell: pwsh
+        run: cmake --build build/ci-msvc --config Release --parallel 2
+      - name: Test
+        shell: pwsh
+        run: ctest --test-dir build/ci-msvc -C Release --output-on-failure --output-junit artifacts/reports/ctest-msvc.xml
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-windows-msvc-reports
+          path: |
+            build/ci-msvc/Testing/
+            build/ci-msvc/artifacts/reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+  static-analysis:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    name: Static analysis gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install analyzers
+        run: sudo apt-get update && sudo apt-get install -y clang clang-tidy cppcheck ninja-build
+      - name: Configure
+        run: cmake -S . -B build/ci-static -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DFAC_LPR_ENABLE_CLANG_TIDY=ON
+      - name: Build with clang-tidy
+        run: cmake --build build/ci-static --parallel 2
+      - name: cppcheck
+        run: bash scripts/run-static-analysis.sh build/ci-static
+
+  sanitizer:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    name: Linux ASan/LSan gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:abort_on_error=1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build/ci-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DFAC_LPR_SANITIZER=address -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build
+        run: cmake --build build/ci-asan --parallel 2
+      - name: Test
+        run: ctest --test-dir build/ci-asan --output-on-failure
+
+  required-gate:
+    if: ${{ always() && vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    name: Required CI gate
+    runs-on: ubuntu-24.04
+    needs: [linux, windows, static-analysis, sanitizer]
+    steps:
+      - name: Require every platform/quality job
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS_JSON"
+          test "${{ needs.linux.result }}" = "success"
+          test "${{ needs.windows.result }}" = "success"
+          test "${{ needs.static-analysis.result }}" = "success"
+          test "${{ needs.sanitizer.result }}" = "success"
