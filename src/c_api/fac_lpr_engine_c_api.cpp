@@ -198,15 +198,15 @@ extern "C" fac_lpr_status FAC_LPR_CALL fac_lpr_engine_destroy_v1(
         }
 
         auto* raw_handle = *handle;
+        bool was_live = false;
         {
             std::scoped_lock lock{g_handle_mutex};
-            const auto erased = g_live_handles.erase(raw_handle);
-            if (erased == 0U) {
-                throw fac_lpr::application::ConfigurationError(
-                    "C ABI engine handle is invalid or already destroyed");
-            }
+            was_live = g_live_handles.erase(raw_handle) != 0U;
         }
-        delete raw_handle;
+
+        if (was_live) {
+            delete raw_handle;
+        }
         *handle = nullptr;
         return FAC_LPR_STATUS_OK;
     });
@@ -225,8 +225,8 @@ extern "C" fac_lpr_status FAC_LPR_CALL fac_lpr_engine_recognize_v1(
         }
         *required_output_size = 0U;
 
-        const auto image_view = validate_image(image);
         const auto pipeline = pipeline_for_live_handle(handle);
+        const auto image_view = validate_image(image);
         if (!pipeline) {
             throw fac_lpr::application::ConfigurationError(
                 "C ABI engine handle has no configured pipeline");
