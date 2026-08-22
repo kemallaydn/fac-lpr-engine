@@ -13,6 +13,5 @@ WarningsAsErrors: >-
   performance-*,
   portability-*
 HeaderFilterRegex: '^(?!.*(?:build|\.tools|vcpkg_installed|models|tests/fixtures)/).*(?:include/fac_lpr|src|tools|tests)/.*$'
-AnalyzeTemporaryDtors: false
 FormatStyle: none
 ---
