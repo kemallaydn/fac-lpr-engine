@@ -21,6 +21,7 @@ add_executable(fac_lpr_native_tests
     native_image_tests.cpp
     paddle_ocr_adapter_tests.cpp
     recognition_ensemble_tests.cpp
+    result_buffer_tests.cpp
     safe_decision_policy_tests.cpp
     turkish_plate_grammar_tests.cpp
     yolo_pose_parser_tests.cpp
