@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <new>
 #include <set>
+#include <stdexcept>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -70,7 +72,15 @@ namespace {
         throw application::ModelLoadError("model file exceeds configured size limit");
     }
 
-    std::vector<std::byte> bytes(expected_size);
+    std::vector<std::byte> bytes{};
+    try {
+        bytes.resize(expected_size);
+    } catch (const std::bad_alloc&) {
+        throw application::ResourceExhaustedError("cannot allocate model verification buffer");
+    } catch (const std::length_error&) {
+        throw application::ResourceExhaustedError("model verification buffer exceeds vector limits");
+    }
+
     stream.seekg(0, std::ios::beg);
     if (!stream.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) {
         throw application::ModelLoadError("cannot read complete model file");
@@ -119,7 +129,12 @@ ModelLifecycleManager::ModelLifecycleManager(ModelManifest manifest)
 std::vector<ActiveModelInfo> ModelLifecycleManager::validate_and_activate() const {
     std::error_code error{};
     const auto canonical_root = std::filesystem::weakly_canonical(manifest_.root_directory, error);
-    if (error || canonical_root.empty() || !std::filesystem::is_directory(canonical_root)) {
+    if (error || canonical_root.empty()) {
+        throw application::ModelLoadError("model root directory is unavailable");
+    }
+    error.clear();
+    const auto root_is_directory = std::filesystem::is_directory(canonical_root, error);
+    if (error || !root_is_directory) {
         throw application::ModelLoadError("model root directory is unavailable");
     }
 
@@ -153,7 +168,8 @@ std::vector<ActiveModelInfo> ModelLifecycleManager::validate_and_activate() cons
             .version = entry.version,
             .resolved_path = candidate,
             .sha256 = actual_hash,
-            .size_bytes = entry.size_bytes});
+            .size_bytes = entry.size_bytes,
+            .integrity_verified = true});
     }
 
     return validated;
