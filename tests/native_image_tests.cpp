@@ -86,10 +86,10 @@ TEST(NativeImage, WorkspaceRejectsRequestsBeyondConfiguredBounds) {
     NativeImageWorkspace workspace{config};
 
     EXPECT_THROW(
-        workspace.prepare_tensor(17U),
+        (void)workspace.prepare_tensor(17U),
         fac_lpr::application::ResourceExhaustedError);
     EXPECT_THROW(
-        workspace.prepare_image(33U, 1U, PixelFormat::gray8),
+        (void)workspace.prepare_image(33U, 1U, PixelFormat::gray8),
         fac_lpr::application::ResourceExhaustedError);
     EXPECT_EQ(workspace.stats().tensor_growth_count, 0U);
     EXPECT_EQ(workspace.stats().scratch_growth_count, 0U);
