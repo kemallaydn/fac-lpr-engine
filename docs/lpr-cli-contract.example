@@ -1,46 +1,53 @@
 # FAC LPR CLI explicit model contract template
 #
-# IMPORTANT: values marked <INSPECTOR_VALUE> MUST come from the real model
-# artifact / model inspector. Do not guess them. This template is intentionally
-# not runnable until those fields are replaced.
+# Detector values below are verified from docs/model-contracts.md and the
+# completed #11/#12 production-contract audits. OCR values that remain marked
+# <TRAINING_CONTRACT_VALUE> are intentionally unresolved and MUST come from the
+# original LPRNet exporter/training configuration or a known-sample contract
+# verification. Do not guess them.
 
 # Runtime model files, relative to --model-dir.
 detector.model=best.onnx
 ocr.model=lprnet_turkey.onnx
 
-# YOLO pose detector contract.
-detector.input_name=<INSPECTOR_VALUE>
-detector.output_name=<INSPECTOR_VALUE>
-detector.input_scale=<INSPECTOR_VALUE>
-detector.pad_value=<INSPECTOR_VALUE>
-detector.output_layout=<features_first_or_candidates_first>
-detector.box_offset=<INSPECTOR_VALUE>
-detector.objectness_offset=<INSPECTOR_VALUE_or_none>
-detector.class_score_offset=<INSPECTOR_VALUE>
-detector.class_count=<INSPECTOR_VALUE>
-detector.keypoint_offset=<INSPECTOR_VALUE>
-detector.keypoint_count=<INSPECTOR_VALUE>
-detector.keypoint_stride=<INSPECTOR_VALUE>
-detector.keypoint_x_offset=<INSPECTOR_VALUE>
-detector.keypoint_y_offset=<INSPECTOR_VALUE>
-detector.keypoint_confidence_offset=<INSPECTOR_VALUE_or_none>
+# YOLO pose detector contract: best.onnx
+# images float32 [1,3,960,960] -> output0 float32 [1,17,18900]
+# 17 features = cx,cy,w,h + one plate class score + 4 keypoints x (x,y,confidence).
+detector.input_name=images
+detector.output_name=output0
+detector.input_scale=0.00392156862745098
+detector.pad_value=114
+detector.output_layout=features_first
+detector.box_offset=0
+detector.objectness_offset=none
+detector.class_score_offset=4
+detector.class_count=1
+detector.keypoint_offset=5
+detector.keypoint_count=4
+detector.keypoint_stride=3
+detector.keypoint_x_offset=0
+detector.keypoint_y_offset=1
+detector.keypoint_confidence_offset=2
 detector.confidence_threshold=0.50
 detector.nms_iou_threshold=0.45
 detector.maximum_detections=32
 
-# LPRNet OCR contract.
-ocr.model_version=<MODEL_VERSION>
-ocr.input_name=<INSPECTOR_VALUE>
-ocr.output_name=<INSPECTOR_VALUE>
-ocr.output_layout=<bct_or_btc>
-ocr.charset=<EXACT_CHARSET_WITHOUT_BLANK>
-ocr.blank_index=<INSPECTOR_OR_TRAINING_CONTRACT_VALUE>
-ocr.color_order=<gray_or_rgb_or_bgr>
+# LPRNet tensor metadata verified from lprnet_turkey.onnx:
+# input float32 [1,3,40,160], output float32 [1,34,24].
+# The ONNX metadata does NOT establish charset/class order, blank index,
+# preprocessing/color normalization or the semantic output axis interpretation.
+ocr.model_version=sha256-2d8fa236f468615ccd8b9ad6748c3e71b3d19ea53affdf5d5fee5a59719e310d
+ocr.input_name=input
+ocr.output_name=output
+ocr.output_layout=<TRAINING_CONTRACT_VALUE:bct_or_btc>
+ocr.charset=<TRAINING_CONTRACT_VALUE:EXACT_CHARSET_WITHOUT_BLANK>
+ocr.blank_index=<TRAINING_CONTRACT_VALUE>
+ocr.color_order=<TRAINING_CONTRACT_VALUE:gray_or_rgb_or_bgr>
 ocr.input_scale=<TRAINING_CONTRACT_VALUE>
-ocr.mean=<R,G,B_or_channel_values>
-ocr.std=<R,G,B_or_channel_values>
-ocr.maximum_timesteps=<SAFE_BOUND_FROM_MODEL_CONTRACT>
-ocr.maximum_classes=<SAFE_BOUND_FROM_MODEL_CONTRACT>
+ocr.mean=<TRAINING_CONTRACT_VALUE:three_comma_separated_values>
+ocr.std=<TRAINING_CONTRACT_VALUE:three_comma_separated_values>
+ocr.maximum_timesteps=64
+ocr.maximum_classes=64
 ocr.beam_width=16
 ocr.result_limit=5
 ocr.classes_per_step=6
