@@ -32,8 +32,17 @@ target_compile_features(fac_lpr_native_tests PRIVATE c_std_11 cxx_std_20)
 target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::engine fac_lpr::adaptive_detection fac_lpr::concurrency fac_lpr::crop fac_lpr::crypto fac_lpr::geometry fac_lpr::lprnet fac_lpr::model fac_lpr::native_image fac_lpr::paddle_adapter fac_lpr::yolo GTest::gtest_main Threads::Threads)
 
 if(FAC_LPR_WITH_ONNX_RUNTIME)
-    target_sources(fac_lpr_native_tests PRIVATE generic_onnx_ocr_recognizer_tests.cpp lprnet_onnx_contract_tests.cpp)
-    target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::generic_onnx_ocr fac_lpr::lprnet_onnx fac_lpr::onnx_runtime)
+    target_sources(fac_lpr_native_tests PRIVATE
+        concrete_onnx_provider_tests.cpp
+        generic_onnx_ocr_recognizer_tests.cpp
+        lprnet_onnx_contract_tests.cpp
+    )
+    target_link_libraries(fac_lpr_native_tests PRIVATE
+        fac_lpr::generic_onnx_ocr
+        fac_lpr::lprnet_onnx
+        fac_lpr::onnx_runtime
+        fac_lpr::yolo_onnx
+    )
     if(EXISTS "${PROJECT_SOURCE_DIR}/models/lprnet_turkey.onnx")
         target_compile_definitions(fac_lpr_native_tests PRIVATE FAC_LPR_TEST_LPRNET_MODEL_PATH="${PROJECT_SOURCE_DIR}/models/lprnet_turkey.onnx")
     endif()
