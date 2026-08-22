@@ -139,12 +139,63 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/generated/runtime-manifest.json"
     @ONLY
 )
+
+# A static fac_lpr_engine archive keeps link-only references to its internal
+# component targets. Exporting only the facade therefore produces an invalid
+# CMake package. Keep every transitive internal target in the same export set
+# and preserve the public fac_lpr::<component> target names for consumers.
+set_target_properties(fac_lpr_engine PROPERTIES EXPORT_NAME engine)
+set_target_properties(fac_lpr_domain PROPERTIES EXPORT_NAME domain)
+set_target_properties(fac_lpr_application PROPERTIES EXPORT_NAME application)
+set_target_properties(fac_lpr_native_image PROPERTIES EXPORT_NAME native_image)
+set_target_properties(fac_lpr_crypto PROPERTIES EXPORT_NAME crypto)
+set_target_properties(fac_lpr_model PROPERTIES EXPORT_NAME model)
+set_target_properties(fac_lpr_paddle_adapter PROPERTIES EXPORT_NAME paddle_adapter)
+set_target_properties(fac_lpr_yolo PROPERTIES EXPORT_NAME yolo)
+set_target_properties(fac_lpr_lprnet PROPERTIES EXPORT_NAME lprnet)
+set_target_properties(fac_lpr_geometry PROPERTIES EXPORT_NAME geometry)
+set_target_properties(fac_lpr_adaptive_detection PROPERTIES EXPORT_NAME adaptive_detection)
+set_target_properties(fac_lpr_crop PROPERTIES EXPORT_NAME crop)
+set_target_properties(fac_lpr_concurrency PROPERTIES EXPORT_NAME concurrency)
+set_target_properties(fac_lpr_infrastructure PROPERTIES EXPORT_NAME infrastructure)
+
+set(FAC_LPR_EXPORT_TARGETS
+    fac_lpr_engine
+    fac_lpr_domain
+    fac_lpr_application
+    fac_lpr_native_image
+    fac_lpr_crypto
+    fac_lpr_model
+    fac_lpr_paddle_adapter
+    fac_lpr_yolo
+    fac_lpr_lprnet
+    fac_lpr_geometry
+    fac_lpr_adaptive_detection
+    fac_lpr_crop
+    fac_lpr_concurrency
+    fac_lpr_infrastructure
+)
+
+if(FAC_LPR_WITH_ONNX_RUNTIME)
+    set_target_properties(fac_lpr_onnx_runtime PROPERTIES EXPORT_NAME onnx_runtime)
+    set_target_properties(fac_lpr_generic_onnx_ocr PROPERTIES EXPORT_NAME generic_onnx_ocr)
+    set_target_properties(fac_lpr_lprnet_onnx PROPERTIES EXPORT_NAME lprnet_onnx)
+    set_target_properties(fac_lpr_yolo_onnx PROPERTIES EXPORT_NAME yolo_onnx)
+    list(APPEND FAC_LPR_EXPORT_TARGETS
+        fac_lpr_onnx_runtime
+        fac_lpr_generic_onnx_ocr
+        fac_lpr_lprnet_onnx
+        fac_lpr_yolo_onnx
+    )
+endif()
+
 install(
-    TARGETS fac_lpr_engine
+    TARGETS ${FAC_LPR_EXPORT_TARGETS}
     EXPORT fac_lpr_engine_targets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 install(DIRECTORY include/fac_lpr DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(
