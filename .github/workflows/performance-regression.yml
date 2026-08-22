@@ -1,0 +1,113 @@
+name: performance-regression
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: performance-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+  WARMUP: '20'
+  ITERATIONS: '100'
+  REPEATS: '3'
+  LATENCY_TOLERANCE_PERCENT: '15'
+  THROUGHPUT_TOLERANCE_PERCENT: '12'
+
+jobs:
+  linux-x64:
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure benchmark
+        run: >-
+          cmake -S . -B build/perf -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_BENCHMARK=ON
+      - name: Build benchmark
+        run: cmake --build build/perf --target fac-lpr-benchmark --parallel 2
+      - name: Run repeated benchmark samples
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/perf/current
+          for run in $(seq 1 "$REPEATS"); do
+            build/perf/artifacts/bin/fac-lpr-benchmark \
+              tests/fixtures/real/plate_01.jpg \
+              --model-dir models \
+              --config docs/lpr-cli-contract.example \
+              --warmup "$WARMUP" \
+              --iterations "$ITERATIONS" \
+              --report "build/perf/current/run-${run}.json"
+          done
+      - name: Publish dev baseline snapshot
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-baseline-linux-x64-${{ github.sha }}
+          path: build/perf/current/*.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Resolve latest successful dev baseline
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id=$(gh api "/repos/${REPOSITORY}/actions/workflows/performance-regression.yml/runs?branch=dev&event=push&status=success&per_page=20" \
+            --jq '.workflow_runs[0].id')
+          if [[ -z "$run_id" || "$run_id" == "null" ]]; then
+            echo "No successful dev performance baseline exists. Run the workflow on dev first." >&2
+            exit 3
+          fi
+          artifact_id=$(gh api "/repos/${REPOSITORY}/actions/runs/${run_id}/artifacts" \
+            --jq '.artifacts[] | select(.name | startswith("performance-baseline-linux-x64-")) | .id' | head -n1)
+          if [[ -z "$artifact_id" ]]; then
+            echo "Baseline workflow has no benchmark artifact." >&2
+            exit 4
+          fi
+          mkdir -p build/perf/baseline
+          gh api "/repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > build/perf/baseline.zip
+          unzip -q build/perf/baseline.zip -d build/perf/baseline
+          echo "BASELINE_RUN_ID=${run_id}" >> "$GITHUB_ENV"
+      - name: Compare P50/P95/P99 and throughput
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/compare_benchmark.py \
+            --baseline build/perf/baseline/*.json \
+            --current build/perf/current/*.json \
+            --latency-tolerance-percent "$LATENCY_TOLERANCE_PERCENT" \
+            --throughput-tolerance-percent "$THROUGHPUT_TOLERANCE_PERCENT" \
+            --output build/perf/performance-regression.json
+      - name: Upload current benchmark and comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-regression-linux-x64-${{ github.sha }}
+          path: |
+            build/perf/current/*.json
+            build/perf/performance-regression.json
+          if-no-files-found: warn
+          retention-days: 30
