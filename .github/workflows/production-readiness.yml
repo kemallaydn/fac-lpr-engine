@@ -108,16 +108,6 @@ jobs:
             echo "$workflow=${RUNS[$workflow]}"
           done
 
-          python3 - <<'PY'
-          import json, os, subprocess
-
-          names = ['mac-arm64-validation','sanitizers','static-analysis','fuzz','memory-stress','performance-regression','abi-compatibility','resource-budget','release-package','dependency-security','cmake-package-release-smoke']
-          runs = {}
-          for name in names:
-              value = os.environ.get('RUN_' + name.upper().replace('-', '_'), '')
-          PY
-
-          # Export shell map as a simple file for the following Python collector.
           : > artifacts/readiness/runs.tsv
           for workflow in "${!RUNS[@]}"; do
             printf '%s\t%s\n' "$workflow" "${RUNS[$workflow]}" >> artifacts/readiness/runs.tsv
@@ -168,7 +158,8 @@ jobs:
         run: |
           set -euo pipefail
           test -s README.md
-          test -s docs/public-api.md
+          test -s docs/c-api-v1.md
+          test -s docs/abi-versioning.md
           test -s CHANGELOG.md
 
       - name: Produce machine-readable acceptance report
