@@ -14,6 +14,31 @@ TEST(CApiV1, PublicHeaderCompilesAsC) {
     EXPECT_EQ(fac_lpr_c_header_smoke(), 0);
 }
 
+TEST(CApiV1, RuntimeVersionQueryReportsSemanticAndAbiVersions) {
+    fac_lpr_version_info_v1 version = FAC_LPR_VERSION_INFO_V1_INIT;
+    EXPECT_EQ(fac_lpr_get_version_v1(&version), FAC_LPR_STATUS_OK);
+    EXPECT_EQ(version.semantic_major, 0U);
+    EXPECT_EQ(version.semantic_minor, 1U);
+    EXPECT_EQ(version.semantic_patch, 0U);
+    EXPECT_EQ(version.abi_major, FAC_LPR_ABI_VERSION_V1);
+
+    fac_lpr_version_info_v1 too_small = FAC_LPR_VERSION_INFO_V1_INIT;
+    too_small.struct_size = sizeof(std::uint32_t);
+    EXPECT_EQ(
+        fac_lpr_get_version_v1(&too_small),
+        FAC_LPR_STATUS_CONFIGURATION_ERROR);
+
+    fac_lpr_version_info_v1 wrong_abi = FAC_LPR_VERSION_INFO_V1_INIT;
+    wrong_abi.abi_version = 999U;
+    EXPECT_EQ(
+        fac_lpr_get_version_v1(&wrong_abi),
+        FAC_LPR_STATUS_CONFIGURATION_ERROR);
+
+    EXPECT_EQ(
+        fac_lpr_get_version_v1(nullptr),
+        FAC_LPR_STATUS_CONFIGURATION_ERROR);
+}
+
 TEST(CApiV1, CreateAndDestroyOpaqueHandleSafely) {
     fac_lpr_engine_config_v1 config = FAC_LPR_ENGINE_CONFIG_V1_INIT;
     fac_lpr_engine_handle* handle = nullptr;
