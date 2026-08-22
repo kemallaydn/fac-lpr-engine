@@ -1,0 +1,36 @@
+set(FAC_LPR_SANITIZER "none" CACHE STRING "Sanitizer mode: none, address or thread")
+set_property(CACHE FAC_LPR_SANITIZER PROPERTY STRINGS none address thread)
+string(TOLOWER "${FAC_LPR_SANITIZER}" FAC_LPR_SANITIZER)
+
+if(NOT FAC_LPR_SANITIZER MATCHES "^(none|address|thread)$")
+    message(FATAL_ERROR "FAC_LPR_SANITIZER must be one of: none, address, thread")
+endif()
+
+if(FAC_LPR_SANITIZER STREQUAL "none")
+    return()
+endif()
+
+if(MSVC)
+    if(FAC_LPR_SANITIZER STREQUAL "thread")
+        message(FATAL_ERROR "ThreadSanitizer is not supported by the MSVC toolchain")
+    endif()
+    add_compile_options(/fsanitize=address)
+    add_link_options(/fsanitize=address)
+    message(STATUS "FAC LPR sanitizer: MSVC AddressSanitizer enabled (LeakSanitizer is not available on MSVC)")
+    return()
+endif()
+
+if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+    message(FATAL_ERROR
+        "FAC_LPR_SANITIZER=${FAC_LPR_SANITIZER} requires GCC, Clang, AppleClang or MSVC AddressSanitizer")
+endif()
+
+if(FAC_LPR_SANITIZER STREQUAL "address")
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address)
+    message(STATUS "FAC LPR sanitizer: AddressSanitizer enabled; leak detection is controlled by ASAN_OPTIONS/LSAN_OPTIONS")
+elseif(FAC_LPR_SANITIZER STREQUAL "thread")
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=thread)
+    message(STATUS "FAC LPR sanitizer: ThreadSanitizer enabled")
+endif()
