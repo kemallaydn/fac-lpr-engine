@@ -1,10 +1,11 @@
-# FAC LPR CLI explicit model contract template
+# FAC LPR CLI active production model contract
 #
-# Detector values below are verified from docs/model-contracts.md and the
-# completed #11/#12 production-contract audits. OCR values that remain marked
-# <TRAINING_CONTRACT_VALUE> are intentionally unresolved and MUST come from the
-# original LPRNet exporter/training configuration or a known-sample contract
-# verification. Do not guess them.
+# Detector values are verified from docs/model-contracts.md and the completed
+# #11/#12 production-contract audits.
+#
+# OCR values below are the active lprnet_turkey.onnx V2 Mixed Epoch 7 training/
+# export contract. The legacy [1,3,24,94] -> [1,34,18] contract MUST NOT be
+# used with the active model.
 
 # Runtime model files, relative to --model-dir.
 detector.model=best.onnx
@@ -32,22 +33,36 @@ detector.confidence_threshold=0.50
 detector.nms_iou_threshold=0.45
 detector.maximum_detections=32
 
-# LPRNet tensor metadata verified from lprnet_turkey.onnx:
-# input float32 [1,3,40,160], output float32 [1,34,24].
-# The ONNX metadata does NOT establish charset/class order, blank index,
-# preprocessing/color normalization or the semantic output axis interpretation.
-ocr.model_version=sha256-2d8fa236f468615ccd8b9ad6748c3e71b3d19ea53affdf5d5fee5a59719e310d
+# Active OCR model: V2 Mixed Epoch 7
+# input float32 [1,3,40,160], output float32 [1,34,24]
+# CHARS used during training/export:
+# 0,1,2,3,4,5,6,7,8,9,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,R,S,T,U,V,Y,Z,-
+# '-' is CTC blank only and is intentionally excluded from ocr.charset below.
+ocr.model_version=V2 Mixed Epoch 7
 ocr.input_name=input
 ocr.output_name=output
-ocr.output_layout=<TRAINING_CONTRACT_VALUE:bct_or_btc>
-ocr.charset=<TRAINING_CONTRACT_VALUE:EXACT_CHARSET_WITHOUT_BLANK>
-ocr.blank_index=<TRAINING_CONTRACT_VALUE>
-ocr.color_order=<TRAINING_CONTRACT_VALUE:gray_or_rgb_or_bgr>
-ocr.input_scale=<TRAINING_CONTRACT_VALUE>
-ocr.mean=<TRAINING_CONTRACT_VALUE:three_comma_separated_values>
-ocr.std=<TRAINING_CONTRACT_VALUE:three_comma_separated_values>
-ocr.maximum_timesteps=64
-ocr.maximum_classes=64
+ocr.output_layout=bct
+ocr.charset=0123456789ABCDEFGHIJKLMNOPRSTUVYZ
+ocr.blank_index=33
+
+# Training preprocessing was:
+#   cv2.resize(image, (160, 40), interpolation=cv2.INTER_LINEAR)
+#   keep OpenCV BGR channel order
+#   img = (img - 127.5) * 0.0078125
+#   HWC -> CHW
+#   add batch dimension
+#
+# Native preprocessor computes ((pixel * input_scale) - mean) / std, therefore
+# input_scale=1, mean=127.5 and std=128 are mathematically identical to the
+# training expression above.
+ocr.color_order=bgr
+ocr.input_scale=1.0
+ocr.mean=127.5,127.5,127.5
+ocr.std=128,128,128
+
+# output=[1,34,24] => 34 class slots and 24 CTC timesteps.
+ocr.maximum_timesteps=24
+ocr.maximum_classes=34
 ocr.beam_width=16
 ocr.result_limit=5
 ocr.classes_per_step=6
