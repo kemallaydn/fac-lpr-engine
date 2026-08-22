@@ -72,6 +72,7 @@ TEST(ModelLifecycle, ValidManifestProducesDiagnosticsReadyActiveMetadata) {
     EXPECT_EQ(active[0].version, "1.2.3");
     EXPECT_EQ(active[0].sha256, abc_sha256);
     EXPECT_EQ(active[0].size_bytes, 3U);
+    EXPECT_TRUE(active[0].integrity_verified);
     EXPECT_TRUE(active[0].resolved_path.is_absolute());
     EXPECT_TRUE(std::filesystem::is_regular_file(active[0].resolved_path));
 }
