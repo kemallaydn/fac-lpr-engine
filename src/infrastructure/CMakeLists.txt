@@ -13,6 +13,12 @@ add_library(fac_lpr::crypto ALIAS fac_lpr_crypto)
 target_compile_features(fac_lpr_crypto PUBLIC cxx_std_20)
 target_include_directories(fac_lpr_crypto PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 
+add_library(fac_lpr_model STATIC model/model_lifecycle.cpp)
+add_library(fac_lpr::model ALIAS fac_lpr_model)
+target_compile_features(fac_lpr_model PUBLIC cxx_std_20)
+target_include_directories(fac_lpr_model PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+target_link_libraries(fac_lpr_model PUBLIC fac_lpr::application fac_lpr::crypto)
+
 add_library(fac_lpr_paddle_adapter STATIC paddle/paddle_ocr_adapter.cpp)
 add_library(fac_lpr::paddle_adapter ALIAS fac_lpr_paddle_adapter)
 target_compile_features(fac_lpr_paddle_adapter PUBLIC cxx_std_20)
@@ -51,7 +57,7 @@ target_link_libraries(fac_lpr_crop PUBLIC fac_lpr::application fac_lpr::domain f
 
 add_library(fac_lpr_infrastructure INTERFACE)
 add_library(fac_lpr::infrastructure ALIAS fac_lpr_infrastructure)
-target_link_libraries(fac_lpr_infrastructure INTERFACE fac_lpr::application fac_lpr::domain fac_lpr::native_image fac_lpr::crypto fac_lpr::paddle_adapter fac_lpr::yolo fac_lpr::lprnet fac_lpr::geometry fac_lpr::adaptive_detection fac_lpr::crop)
+target_link_libraries(fac_lpr_infrastructure INTERFACE fac_lpr::application fac_lpr::domain fac_lpr::native_image fac_lpr::crypto fac_lpr::model fac_lpr::paddle_adapter fac_lpr::yolo fac_lpr::lprnet fac_lpr::geometry fac_lpr::adaptive_detection fac_lpr::crop)
 
 if(FAC_LPR_WITH_SPDLOG)
     find_package(spdlog CONFIG REQUIRED)
