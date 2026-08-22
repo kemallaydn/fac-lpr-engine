@@ -49,7 +49,7 @@ set_target_properties(fac-lpr-cli PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${FAC_LPR_OUTPUT_ROOT}/bin"
 )
 
-install(TARGETS fac-lpr-cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS fac-lpr-cli RUNTIME DESTINATION bin)
 
 if(FAC_LPR_BUILD_TESTS)
     set(FAC_LPR_REAL_FIXTURE_DIR "${PROJECT_SOURCE_DIR}/tests/fixtures/real")
