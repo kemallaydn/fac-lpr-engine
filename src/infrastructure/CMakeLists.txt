@@ -85,6 +85,15 @@ if(FAC_LPR_WITH_ONNX_RUNTIME)
     target_include_directories(fac_lpr_onnx_runtime PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
     target_link_libraries(fac_lpr_onnx_runtime PUBLIC fac_lpr::application onnxruntime::onnxruntime)
 
+    # Define the generic OCR provider before targets that consume its namespaced alias.
+    # CMake treats unresolved names containing '::' as imported/alias targets and fails
+    # generation if the target does not exist at target_link_libraries() evaluation time.
+    add_library(fac_lpr_generic_onnx_ocr STATIC onnx/generic_ocr_recognizer.cpp)
+    add_library(fac_lpr::generic_onnx_ocr ALIAS fac_lpr_generic_onnx_ocr)
+    target_compile_features(fac_lpr_generic_onnx_ocr PUBLIC cxx_std_20)
+    target_include_directories(fac_lpr_generic_onnx_ocr PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+    target_link_libraries(fac_lpr_generic_onnx_ocr PUBLIC fac_lpr::onnx_runtime fac_lpr::native_image)
+
     add_library(fac_lpr_lprnet_onnx STATIC
         lprnet/lprnet_onnx_contract.cpp
         lprnet/lprnet_onnx_ocr_adapter.cpp
@@ -93,12 +102,6 @@ if(FAC_LPR_WITH_ONNX_RUNTIME)
     target_compile_features(fac_lpr_lprnet_onnx PUBLIC cxx_std_20)
     target_include_directories(fac_lpr_lprnet_onnx PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
     target_link_libraries(fac_lpr_lprnet_onnx PUBLIC fac_lpr::lprnet fac_lpr::onnx_runtime fac_lpr::generic_onnx_ocr)
-
-    add_library(fac_lpr_generic_onnx_ocr STATIC onnx/generic_ocr_recognizer.cpp)
-    add_library(fac_lpr::generic_onnx_ocr ALIAS fac_lpr_generic_onnx_ocr)
-    target_compile_features(fac_lpr_generic_onnx_ocr PUBLIC cxx_std_20)
-    target_include_directories(fac_lpr_generic_onnx_ocr PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
-    target_link_libraries(fac_lpr_generic_onnx_ocr PUBLIC fac_lpr::onnx_runtime fac_lpr::native_image)
 
     add_library(fac_lpr_yolo_onnx STATIC yolo/yolo_pose_onnx_detector.cpp)
     add_library(fac_lpr::yolo_onnx ALIAS fac_lpr_yolo_onnx)
