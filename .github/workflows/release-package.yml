@@ -47,16 +47,35 @@ jobs:
           -DFAC_LPR_WITH_ONNX_RUNTIME=ON
           -DFAC_LPR_WITH_OPENCV=ON
           -DFAC_LPR_BUILD_SHARED=ON
+          -DFAC_LPR_BUILD_LPR_CLI=ON
       - name: Build and install
         run: |
           set -euo pipefail
           cmake --build build/package-linux --parallel 2
           STAGE="${GITHUB_WORKSPACE}/build/package-stage/fac-lpr-engine-${PACKAGE_VERSION}-linux-x64"
           cmake --install build/package-linux --prefix "$STAGE" --strip
+          mkdir -p "$STAGE/lib"
+          cp -a build/deps/onnxruntime/lib/libonnxruntime.so* "$STAGE/lib/"
+          find build/vcpkg_installed/x64-linux/lib -maxdepth 1 -type f -name 'libopencv_*.so*' -exec cp -a {} "$STAGE/lib/" \; || true
           if find "$STAGE" -type f -name '*.onnx' | grep -q .; then
             echo "Model artifact leaked into release package" >&2
             exit 4
           fi
+      - name: Smoke packaged artifact with provisioned models and sample image
+        run: |
+          set -euo pipefail
+          STAGE="${GITHUB_WORKSPACE}/build/package-stage/fac-lpr-engine-${PACKAGE_VERSION}-linux-x64"
+          test -f "$STAGE/include/fac_lpr/fac_lpr_engine.h"
+          test -f "$STAGE/lib/libfac_lpr_engine.so"
+          test -x "$STAGE/bin/fac-lpr-cli"
+          export LD_LIBRARY_PATH="$STAGE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          cmake \
+            -DCLI_PATH="$STAGE/bin/fac-lpr-cli" \
+            -DMODEL_DIR="${GITHUB_WORKSPACE}/models" \
+            -DCONTRACT_PATH="${GITHUB_WORKSPACE}/docs/lpr-cli-contract.example" \
+            -DFIXTURE_DIR="${GITHUB_WORKSPACE}/tests/fixtures/real" \
+            -DEXPECTATIONS_FILE="${GITHUB_WORKSPACE}/tests/fixtures/real/expected-results.txt" \
+            -P "${GITHUB_WORKSPACE}/tests/real_cli_e2e.cmake"
       - name: Archive and checksum
         run: |
           set -euo pipefail
@@ -103,14 +122,36 @@ jobs:
           -DFAC_LPR_WITH_ONNX_RUNTIME=ON
           -DFAC_LPR_WITH_OPENCV=ON
           -DFAC_LPR_BUILD_SHARED=ON
+          -DFAC_LPR_BUILD_LPR_CLI=ON
       - name: Build and install
         shell: pwsh
         run: |
           cmake --build build/package-windows --config Release --parallel 2
           $stage = Join-Path $env:GITHUB_WORKSPACE "build/package-stage/fac-lpr-engine-$env:PACKAGE_VERSION-windows-x64"
           cmake --install build/package-windows --config Release --prefix $stage
+          $bin = Join-Path $stage 'bin'
+          New-Item -ItemType Directory -Force -Path $bin | Out-Null
+          $ort = Join-Path $env:GITHUB_WORKSPACE 'build/deps/onnxruntime/bin/onnxruntime.dll'
+          if (-not (Test-Path $ort)) { $ort = Join-Path $env:GITHUB_WORKSPACE 'build/deps/onnxruntime/lib/onnxruntime.dll' }
+          Copy-Item $ort $bin -Force
+          Get-ChildItem "$env:GITHUB_WORKSPACE/build/vcpkg_installed/x64-windows/bin" -Filter '*.dll' | Copy-Item -Destination $bin -Force
           $models = Get-ChildItem -Path $stage -Recurse -Filter *.onnx -ErrorAction SilentlyContinue
           if ($models) { throw 'Model artifact leaked into release package' }
+      - name: Smoke packaged artifact with provisioned models and sample image
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:GITHUB_WORKSPACE "build/package-stage/fac-lpr-engine-$env:PACKAGE_VERSION-windows-x64"
+          if (-not (Test-Path (Join-Path $stage 'include/fac_lpr/fac_lpr_engine.h'))) { throw 'public header missing' }
+          if (-not (Test-Path (Join-Path $stage 'bin/fac_lpr_engine.dll'))) { throw 'engine DLL missing' }
+          if (-not (Test-Path (Join-Path $stage 'bin/fac-lpr-cli.exe'))) { throw 'CLI missing' }
+          $env:PATH = "$(Join-Path $stage 'bin');$env:PATH"
+          cmake `
+            -DCLI_PATH="$(Join-Path $stage 'bin/fac-lpr-cli.exe')" `
+            -DMODEL_DIR="$env:GITHUB_WORKSPACE/models" `
+            -DCONTRACT_PATH="$env:GITHUB_WORKSPACE/docs/lpr-cli-contract.example" `
+            -DFIXTURE_DIR="$env:GITHUB_WORKSPACE/tests/fixtures/real" `
+            -DEXPECTATIONS_FILE="$env:GITHUB_WORKSPACE/tests/fixtures/real/expected-results.txt" `
+            -P "$env:GITHUB_WORKSPACE/tests/real_cli_e2e.cmake"
       - name: Archive and checksum
         shell: pwsh
         run: |
