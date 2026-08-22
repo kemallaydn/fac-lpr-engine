@@ -28,7 +28,7 @@ public:
     AtomicModelSlot& operator=(AtomicModelSlot&&) noexcept = default;
 
     [[nodiscard]] ModelPtr acquire() const noexcept {
-        return state_->active.load(std::memory_order_acquire);
+        return std::atomic_load_explicit(&state_->active, std::memory_order_acquire);
     }
 
     template <typename Loader, typename Validator>
@@ -53,12 +53,16 @@ private:
     struct State final {
         explicit State(ModelPtr initial)
             : active(std::move(initial)) {
-            if (!active.load()) {
+            if (!active) {
                 throw application::ConfigurationError("initial model/session cannot be null");
             }
         }
 
-        std::atomic<ModelPtr> active;
+        // std::atomic<std::shared_ptr<T>> is not implemented by every C++20
+        // standard library shipped on supported platforms. The standardized
+        // shared_ptr atomic free functions provide the same atomic publication
+        // semantics while remaining portable across libc++, libstdc++ and MSVC.
+        ModelPtr active;
         std::mutex reload_mutex{};
     };
 
@@ -84,7 +88,10 @@ private:
             return false;
         }
 
-        state->active.store(std::move(candidate), std::memory_order_release);
+        std::atomic_store_explicit(
+            &state->active,
+            std::move(candidate),
+            std::memory_order_release);
         return true;
     }
 
