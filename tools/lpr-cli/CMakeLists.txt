@@ -10,6 +10,7 @@ find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs)
 add_executable(fac-lpr-cli
     main.cpp
     cli_engine_factory.cpp
+    production_activation_gate.cpp
 )
 
 target_compile_features(fac-lpr-cli PRIVATE cxx_std_20)
