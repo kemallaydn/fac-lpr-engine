@@ -9,6 +9,15 @@
 #include <utility>
 
 namespace fac_lpr::infrastructure::onnx {
+namespace {
+
+using Clock = std::chrono::steady_clock;
+
+[[nodiscard]] double elapsed_ms(const Clock::time_point started) noexcept {
+    return std::chrono::duration<double, std::milli>(Clock::now() - started).count();
+}
+
+} // namespace
 
 GenericOnnxOcrRecognizer::GenericOnnxOcrRecognizer(
     std::shared_ptr<IOnnxInferenceSession> session,
@@ -100,10 +109,12 @@ domain::RecognitionEvidence GenericOnnxOcrRecognizer::recognize(
     const application::OperationContext& context) {
     check_context(context);
     const auto validated = application::validate_image(plate, image_limits_);
-    const auto started = std::chrono::steady_clock::now();
+    const auto started = Clock::now();
 
     std::scoped_lock lock{execution_mutex_};
     check_context(context);
+
+    const auto preprocess_started = Clock::now();
     auto input_values = adapter_->build_inputs(validated, workspace_, context);
     if (input_values.size() != input_names_.size()) {
         throw application::InferenceError("ONNX OCR adapter produced an unexpected input count");
@@ -119,17 +130,23 @@ domain::RecognitionEvidence GenericOnnxOcrRecognizer::recognize(
     for (const auto& name : output_names_) {
         output_name_pointers.push_back(name.c_str());
     }
+    context.record_timing("recognizer.preprocess", elapsed_ms(preprocess_started));
 
+    const auto inference_started = Clock::now();
     auto outputs = session_->run(input_name_pointers, input_values, output_name_pointers);
+    context.record_timing("recognizer.inference", elapsed_ms(inference_started));
+
     check_context(context);
+    const auto decode_started = Clock::now();
     if (outputs.size() != output_names_.size()) {
         throw application::InferenceError("ONNX OCR session returned an unexpected output count");
     }
     auto evidence = adapter_->decode(outputs, context);
     validate_evidence(evidence);
     evidence.source = metadata_.name;
-    evidence.latency_ms = std::chrono::duration<double, std::milli>(
-        std::chrono::steady_clock::now() - started).count();
+    context.record_timing("recognizer.decode", elapsed_ms(decode_started));
+
+    evidence.latency_ms = elapsed_ms(started);
     return evidence;
 }
 
