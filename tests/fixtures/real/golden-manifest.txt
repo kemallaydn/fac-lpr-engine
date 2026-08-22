@@ -1,0 +1,13 @@
+# FAC LPR golden regression manifest v1
+# Format:
+# filename|allowed_statuses|required_plates|optional_plates
+# - allowed_statuses: comma-separated ACCEPTED/REVIEW/REJECTED
+# - required_plates: comma-separated normalized plate texts; all must be found
+# - optional_plates: comma-separated normalized plate texts; misses are reported but do not fail the sample
+#
+# REVIEW is allowed initially because technical acceptance thresholds are calibrated separately.
+# Once the real-model baseline is established, this manifest can intentionally tighten statuses.
+
+plate_01.jpg|ACCEPTED,REVIEW|06BY0825|
+plate_02.jpg|ACCEPTED,REVIEW|06ACY760|06AHU99
+plate_03.jpg|ACCEPTED,REVIEW|06BH7562|
