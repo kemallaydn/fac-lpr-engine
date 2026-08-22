@@ -1,4 +1,8 @@
-# Format: filename=EXPECTED_PLATE
-# Plaka metnini boşluksuz, model decoder çıktısıyla aynı biçimde yazın.
-# Örnek:
-# plate_01.jpg=34ABC123
+# Format:
+# filename=PRIMARY_EXPECTED_PLATE[,SECONDARY_EXPECTED_PLATE,...]
+# Plakaları boşluksuz ve decoder çıktısıyla aynı biçimde yazın.
+# İlk değer primary/near-camera expected result'tır; sonraki değerler aynı frame'de görünmesi beklenen ek plakalardır.
+
+plate_01.jpg=06BY0825
+plate_02.jpg=06ACY760,06AHU99
+plate_03.jpg=06BH7562
