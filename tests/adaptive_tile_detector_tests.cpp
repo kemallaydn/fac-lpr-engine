@@ -83,7 +83,7 @@ TEST(AdaptiveTileDetector, ExcessiveTileCountFailsClosed) {
     AdaptiveTileDetector detector{fake, config};
     std::vector<std::byte> bytes(100U * 100U, std::byte{0});
     EXPECT_THROW(
-        detector.detect(ImageView{bytes, 100U, 100U, 100U, PixelFormat::gray8}, OperationContext{}),
+        (void)detector.detect(ImageView{bytes, 100U, 100U, 100U, PixelFormat::gray8}, OperationContext{}),
         fac_lpr::application::ResourceExhaustedError);
 }
 
