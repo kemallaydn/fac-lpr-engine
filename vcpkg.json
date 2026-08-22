@@ -12,6 +12,7 @@
       ]
     },
     "gtest",
+    "nlohmann-json",
     "spdlog"
   ]
 }
