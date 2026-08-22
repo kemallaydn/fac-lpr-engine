@@ -85,7 +85,7 @@ TEST(ModelLifecycle, ChecksumMismatchPreventsActivation) {
         "0000000000000000000000000000000000000000000000000000000000000000");
 
     const ModelLifecycleManager manager{std::move(manifest)};
-    EXPECT_THROW(manager.validate_and_activate(), fac_lpr::application::ModelLoadError);
+    EXPECT_THROW((void)manager.validate_and_activate(), fac_lpr::application::ModelLoadError);
 }
 
 TEST(ModelLifecycle, SizeMismatchPreventsActivation) {
@@ -93,7 +93,7 @@ TEST(ModelLifecycle, SizeMismatchPreventsActivation) {
     directory.write("detector.onnx", "abc");
 
     const ModelLifecycleManager manager{manifest_for(directory.path(), abc_sha256, 4U)};
-    EXPECT_THROW(manager.validate_and_activate(), fac_lpr::application::ModelLoadError);
+    EXPECT_THROW((void)manager.validate_and_activate(), fac_lpr::application::ModelLoadError);
 }
 
 TEST(ModelLifecycle, ParentTraversalIsRejectedBeforeFilesystemAccess) {
@@ -130,7 +130,7 @@ TEST(ModelLifecycle, ActivationIsAllOrNothingWhenAnyArtifactFails) {
         .size_bytes = 3U});
 
     const ModelLifecycleManager manager{std::move(manifest)};
-    EXPECT_THROW(manager.validate_and_activate(), fac_lpr::application::ModelLoadError);
+    EXPECT_THROW((void)manager.validate_and_activate(), fac_lpr::application::ModelLoadError);
 }
 
 TEST(ModelLifecycle, InvalidShaAndOversizedManifestEntriesFailFast) {
