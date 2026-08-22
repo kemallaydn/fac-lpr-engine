@@ -1,0 +1,22 @@
+name: evaluation-tool
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'tools/evaluation/**'
+      - '.github/workflows/evaluation-tool.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run evaluation tool tests
+        working-directory: tools/evaluation
+        run: python3 -m unittest -v test_evaluate.py
