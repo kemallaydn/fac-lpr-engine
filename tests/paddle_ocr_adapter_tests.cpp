@@ -3,9 +3,11 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -24,6 +26,8 @@ class FakeWorker final : public infrastructure::paddle::IPaddleOcrWorker {
 public:
     bool is_available{true};
     bool malformed{false};
+    bool malformed_calibrated_confidence{false};
+    std::chrono::milliseconds delay{0};
     std::size_t calls{0U};
 
     bool available() const noexcept override { return is_available; }
@@ -33,17 +37,20 @@ public:
         const application::OperationContext&) override {
         ++calls;
         EXPECT_EQ(request.content_sha256.size(), 64U);
+        if (delay > std::chrono::milliseconds::zero()) {
+            std::this_thread::sleep_for(delay);
+        }
         domain::PlateCandidate candidate{};
         candidate.text = malformed ? "" : "34ABC123";
         candidate.confidence = 0.91F;
-        candidate.calibrated_confidence = 0.91F;
+        candidate.calibrated_confidence = malformed_calibrated_confidence ? 1.5F : 0.91F;
         candidate.format_valid = true;
         return {{candidate}};
     }
 };
 
-application::ImageView fixture(std::vector<std::byte>& bytes) {
-    bytes.assign(12U, std::byte{0x2a});
+application::ImageView fixture(std::vector<std::byte>& bytes, const std::byte value = std::byte{0x2a}) {
+    bytes.assign(12U, value);
     return {bytes, 2U, 2U, 6U, application::PixelFormat::bgr8};
 }
 
@@ -72,6 +79,25 @@ TEST(PaddleOcrAdapter, UsesBoundedSha256Cache) {
     EXPECT_EQ(worker->calls, 1U);
 }
 
+TEST(PaddleOcrAdapter, CacheCapacityEvictsLeastRecentlyUsedPayload) {
+    auto encoder = std::make_shared<FakeEncoder>();
+    auto worker = std::make_shared<FakeWorker>();
+    infrastructure::paddle::PaddleOcrProviderConfig config{};
+    config.cache_capacity = 1U;
+    infrastructure::paddle::PaddleOcrAdapter adapter{config, encoder, worker};
+
+    std::vector<std::byte> first_bytes;
+    std::vector<std::byte> second_bytes;
+    const auto first_image = fixture(first_bytes, std::byte{0x2a});
+    const auto second_image = fixture(second_bytes, std::byte{0x3b});
+
+    (void)adapter.recognize(first_image, {});
+    (void)adapter.recognize(second_image, {});
+    (void)adapter.recognize(first_image, {});
+
+    EXPECT_EQ(worker->calls, 3U);
+}
+
 TEST(PaddleOcrAdapter, UnavailableWorkerFailsAsProviderErrorForEnsembleDegradation) {
     auto encoder = std::make_shared<FakeEncoder>();
     auto worker = std::make_shared<FakeWorker>();
@@ -92,6 +118,16 @@ TEST(PaddleOcrAdapter, MalformedResponseFailsSafely) {
     EXPECT_THROW(adapter.recognize(image, {}), application::ProviderError);
 }
 
+TEST(PaddleOcrAdapter, InvalidCalibratedConfidenceIsMalformedResponse) {
+    auto encoder = std::make_shared<FakeEncoder>();
+    auto worker = std::make_shared<FakeWorker>();
+    worker->malformed_calibrated_confidence = true;
+    infrastructure::paddle::PaddleOcrAdapter adapter{{}, encoder, worker};
+    std::vector<std::byte> bytes;
+    const auto image = fixture(bytes);
+    EXPECT_THROW(adapter.recognize(image, {}), application::ProviderError);
+}
+
 TEST(PaddleOcrAdapter, ExpiredParentDeadlineFailsBeforeWorker) {
     auto encoder = std::make_shared<FakeEncoder>();
     auto worker = std::make_shared<FakeWorker>();
@@ -102,6 +138,20 @@ TEST(PaddleOcrAdapter, ExpiredParentDeadlineFailsBeforeWorker) {
     context.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds{1};
     EXPECT_THROW(adapter.recognize(image, context), application::TimeoutError);
     EXPECT_EQ(worker->calls, 0U);
+}
+
+TEST(PaddleOcrAdapter, ProviderTimeoutFailsSafelyAfterSlowWorkerReturns) {
+    auto encoder = std::make_shared<FakeEncoder>();
+    auto worker = std::make_shared<FakeWorker>();
+    worker->delay = std::chrono::milliseconds{20};
+    infrastructure::paddle::PaddleOcrProviderConfig config{};
+    config.timeout = std::chrono::milliseconds{1};
+    infrastructure::paddle::PaddleOcrAdapter adapter{config, encoder, worker};
+    std::vector<std::byte> bytes;
+    const auto image = fixture(bytes);
+
+    EXPECT_THROW(adapter.recognize(image, {}), application::TimeoutError);
+    EXPECT_EQ(worker->calls, 1U);
 }
 
 } // namespace
