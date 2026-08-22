@@ -59,21 +59,16 @@ TEST(BoundedWorkerPool, DiscardShutdownDropsPendingButLetsActiveTaskFinish) {
 
     std::promise<void> started{};
     auto started_future = started.get_future();
-    std::promise<void> release{};
-    auto release_future = release.get_future().share();
 
     ASSERT_TRUE(pool.submit([&](auto&) {
         started.set_value();
-        release_future.wait();
+        std::this_thread::sleep_for(std::chrono::milliseconds{100});
     }));
     ASSERT_EQ(started_future.wait_for(std::chrono::seconds{2}), std::future_status::ready);
     ASSERT_TRUE(pool.submit([](auto&) {}));
     ASSERT_TRUE(pool.submit([](auto&) {}));
 
-    std::thread shutdown_thread{[&] { pool.shutdown(); }};
-    std::this_thread::sleep_for(std::chrono::milliseconds{20});
-    release.set_value();
-    shutdown_thread.join();
+    pool.shutdown();
 
     const auto stats = pool.stats();
     EXPECT_EQ(stats.submitted, 3U);
