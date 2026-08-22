@@ -103,6 +103,33 @@ TEST(LprNetPreprocessor, SupportsNhwcAndConfiguredBgrOrder) {
     EXPECT_NEAR(tensor.values[2], 1.0F, 1.0e-6F);
 }
 
+TEST(LprNetPreprocessor, ActiveV2MixedEpoch7ContractKeepsBgrAndMatchesTrainingNormalization) {
+    std::vector<std::byte> bytes{
+        std::byte{0}, std::byte{127}, std::byte{255}};
+    const ImageView image{bytes, 1U, 1U, 3U, PixelFormat::bgr8};
+    const auto validated = validate_image(image, PerformanceConfig{});
+
+    LprNetInputSpec spec{};
+    spec.width = 1U;
+    spec.height = 1U;
+    spec.channels = 3U;
+    spec.layout = TensorLayout::nchw;
+    spec.color_order = InputColorOrder::bgr;
+    spec.input_scale = 1.0F;
+    spec.mean = {127.5F, 127.5F, 127.5F};
+    spec.standard_deviation = {128.0F, 128.0F, 128.0F};
+
+    const LprNetPreprocessor preprocessor{spec};
+    const auto tensor = preprocessor.preprocess(validated);
+
+    ASSERT_EQ(tensor.values.size(), 3U);
+    EXPECT_NEAR(tensor.values[0], (0.0F - 127.5F) * 0.0078125F, 1.0e-7F);
+    EXPECT_NEAR(tensor.values[1], (127.0F - 127.5F) * 0.0078125F, 1.0e-7F);
+    EXPECT_NEAR(tensor.values[2], (255.0F - 127.5F) * 0.0078125F, 1.0e-7F);
+    EXPECT_LT(tensor.values[0], tensor.values[1]);
+    EXPECT_LT(tensor.values[1], tensor.values[2]);
+}
+
 TEST(LprNetPreprocessor, ReusesNativeTensorWorkspaceWithoutReallocation) {
     auto bytes = make_bgr_fixture();
     const ImageView image{bytes, 2U, 2U, 6U, PixelFormat::bgr8};
