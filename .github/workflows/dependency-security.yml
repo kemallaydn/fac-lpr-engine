@@ -1,0 +1,84 @@
+name: dependency-security
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+  VCPKG_DEFAULT_TRIPLET: arm64-osx
+
+jobs:
+  security:
+    name: SBOM and vulnerability gate macOS ARM64
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure SBOM and vulnerability tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v brew >/dev/null
+          brew list syft >/dev/null 2>&1 || brew install syft
+          brew list grype >/dev/null 2>&1 || brew install grype
+
+      - name: Restore pinned dependencies
+        shell: bash
+        run: bash scripts/bootstrap-dependencies.sh
+
+      - name: Create dependency inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/security
+          .tools/vcpkg/vcpkg list \
+            --x-install-root="${{ github.workspace }}/build/vcpkg_installed" \
+            > artifacts/security/vcpkg-inventory.txt
+          {
+            echo "onnxruntime_version=$(cat cmake/onnxruntime-version.txt)"
+            echo "onnxruntime_sha256=$(cat cmake/onnxruntime-osx-arm64.sha256)"
+          } > artifacts/security/onnxruntime-inventory.txt
+
+      - name: Generate CycloneDX and SPDX SBOMs
+        shell: bash
+        run: |
+          set -euo pipefail
+          syft dir:. -o cyclonedx-json=artifacts/security/sbom.cyclonedx.json
+          syft dir:. -o spdx-json=artifacts/security/sbom.spdx.json
+
+      - name: Scan SBOM and gate High/Critical vulnerabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          grype sbom:artifacts/security/sbom.cyclonedx.json \
+            --config security/grype.yaml \
+            --fail-on high \
+            -o json > artifacts/security/grype.json
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "Dependency security gate failed. See artifacts/security/grype.json" >&2
+            exit "$status"
+          fi
+
+      - name: Upload security provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-security-${{ runner.os }}-${{ runner.arch }}
+          path: artifacts/security/
+          if-no-files-found: warn
+          retention-days: 30
