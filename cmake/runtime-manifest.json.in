@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "name": "fac-lpr-engine",
+  "version": "@PROJECT_VERSION@",
+  "abiVersion": 1,
+  "system": "@CMAKE_SYSTEM_NAME@",
+  "processor": "@CMAKE_SYSTEM_PROCESSOR@",
+  "libraryType": "@FAC_LPR_LIBRARY_TYPE@",
+  "dependencies": {
+    "onnxRuntime": "@FAC_LPR_PACKAGE_ONNXRUNTIME_VERSION@",
+    "opencv": "external/runtime-linked"
+  },
+  "modelsIncluded": false
+}
