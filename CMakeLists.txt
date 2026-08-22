@@ -65,8 +65,9 @@ target_include_directories(fac_lpr_engine
 )
 
 target_link_libraries(fac_lpr_engine
-    PUBLIC fac_lpr::domain
-    PRIVATE fac_lpr::infrastructure
+    PRIVATE
+        fac_lpr::domain
+        fac_lpr::infrastructure
 )
 
 if(FAC_LPR_BUILD_SHARED)
