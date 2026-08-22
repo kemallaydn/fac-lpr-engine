@@ -118,7 +118,7 @@ domain::RecognitionEvidence LprNetOnnxOcrAdapter::decode(
                     data[class_index * timesteps + timestep];
             }
         }
-        logits = timestep_major;
+        logits = std::span<const float>{timestep_major.data(), timestep_major.size()};
     }
 
     const auto decoded = decoder_.decode(logits, timesteps, classes);
