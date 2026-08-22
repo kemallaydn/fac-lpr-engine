@@ -1,0 +1,111 @@
+name: mac-arm64-validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/mac-runner-trigger.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-arm64-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+  VCPKG_DEFAULT_TRIPLET: arm64-osx
+  DYLD_LIBRARY_PATH: ${{ github.workspace }}/build/deps/onnxruntime/lib
+
+jobs:
+  validate:
+    name: macOS ARM64 real-model validation
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runner preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -a
+          uname -m
+          cmake --version
+          ninja --version
+          git --version
+          xcode-select -p
+          test "$(uname -s)" = "Darwin"
+          test "$(uname -m)" = "arm64"
+
+      - name: Restore dependencies
+        shell: bash
+        run: bash scripts/bootstrap-dependencies.sh
+
+      - name: Configure Release
+        shell: bash
+        run: >-
+          cmake -S . -B build/mac-arm64-release -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=arm64-osx
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+          -DFAC_LPR_BUILD_LPR_CLI=ON
+          -DFAC_LPR_BUILD_MEMORY_STRESS=ON
+          -DFAC_LPR_BUILD_BENCHMARK=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+
+      - name: Build Release
+        shell: bash
+        run: cmake --build build/mac-arm64-release --parallel 4
+
+      - name: Native and integration tests
+        shell: bash
+        run: ctest --test-dir build/mac-arm64-release --output-on-failure
+
+      - name: Real CLI E2E
+        shell: bash
+        run: >-
+          ctest --test-dir build/mac-arm64-release
+          -R '^fac_lpr_cli_real_e2e$'
+          --output-on-failure
+
+      - name: Golden regression
+        shell: bash
+        run: >-
+          ctest --test-dir build/mac-arm64-release
+          -R '^fac_lpr_golden_regression$'
+          --output-on-failure
+
+      - name: Memory stress smoke
+        shell: bash
+        run: >-
+          ctest --test-dir build/mac-arm64-release
+          -R '^fac_lpr_memory_stress_smoke$'
+          --output-on-failure
+
+      - name: Benchmark smoke
+        shell: bash
+        run: >-
+          ctest --test-dir build/mac-arm64-release
+          -R '^fac_lpr_benchmark_smoke$'
+          --output-on-failure
+
+      - name: Upload validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-arm64-validation-reports
+          path: build/mac-arm64-release/artifacts/reports/
+          if-no-files-found: warn
+          retention-days: 14
