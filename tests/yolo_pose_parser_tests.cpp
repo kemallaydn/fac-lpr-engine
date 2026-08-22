@@ -124,7 +124,7 @@ TEST(YoloPoseParser, RejectsTensorShapeMismatch) {
     const YoloPoseOutputParser parser{YoloPoseOutputSpec{}};
     const std::vector<float> output(feature_count, 0.0F);
     const std::array<std::int64_t, 3> shape{1, static_cast<std::int64_t>(feature_count), 2};
-    EXPECT_THROW(parser.parse(output, shape, metadata()), fac_lpr::application::InferenceError);
+    EXPECT_THROW((void)parser.parse(output, shape, metadata()), fac_lpr::application::InferenceError);
 }
 
 TEST(YoloPoseParser, RejectsOverflowingFeatureContract) {
