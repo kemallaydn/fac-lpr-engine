@@ -31,7 +31,7 @@ target_compile_features(fac_lpr_lprnet PUBLIC cxx_std_20)
 target_include_directories(fac_lpr_lprnet PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_link_libraries(fac_lpr_lprnet PUBLIC fac_lpr::application fac_lpr::domain fac_lpr::native_image)
 
-add_library(fac_lpr_geometry STATIC geometry/plate_geometry_validator.cpp)
+add_library(fac_lpr_geometry STATIC geometry/plate_geometry_validator.cpp geometry/plate_geometry_evaluator.cpp)
 add_library(fac_lpr::geometry ALIAS fac_lpr_geometry)
 target_compile_features(fac_lpr_geometry PUBLIC cxx_std_20)
 target_include_directories(fac_lpr_geometry PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
