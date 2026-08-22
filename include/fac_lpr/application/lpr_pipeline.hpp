@@ -3,6 +3,7 @@
 #include <fac_lpr/application/confidence_calibration.hpp>
 #include <fac_lpr/application/engine_diagnostics.hpp>
 #include <fac_lpr/application/recognition_ensemble.hpp>
+#include <fac_lpr/application/startup_self_test.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -48,6 +49,7 @@ public:
         const ImageView& image,
         const OperationContext& context = {}) const;
 
+    [[nodiscard]] StartupSelfTestReport startup_self_test() const;
     [[nodiscard]] EngineDiagnosticsSnapshot diagnostics_snapshot() const;
     [[nodiscard]] std::shared_ptr<EngineDiagnostics> diagnostics() const noexcept;
 
