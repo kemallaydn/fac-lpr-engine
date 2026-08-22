@@ -30,13 +30,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Ensure SBOM and vulnerability tools
+      - name: Configure Homebrew PATH and security tools
         shell: bash
         run: |
           set -euo pipefail
-          command -v brew >/dev/null
+          export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+          command -v brew
           brew list syft >/dev/null 2>&1 || brew install syft
           brew list grype >/dev/null 2>&1 || brew install grype
+          command -v syft
+          command -v grype
           syft version
           grype version
 
