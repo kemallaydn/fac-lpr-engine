@@ -175,7 +175,30 @@ void emit_json(const fac_lpr::application::LprPipelineResult& result) {
     std::cout << "{\"totalLatencyMs\":" << result.total_latency_ms
               << ",\"degraded\":" << (result.degraded ? "true" : "false")
               << ",\"providerFailureCount\":" << result.provider_failure_count
-              << ",\"recognitions\":[";
+              << ",\"failures\":[";
+
+    for (std::size_t index = 0U; index < result.failures.size(); ++index) {
+        if (index != 0U) {
+            std::cout << ',';
+        }
+        const auto& failure = result.failures[index];
+        std::cout << "{\"provider\":\"" << escape_json(failure.provider)
+                  << "\",\"code\":" << static_cast<int>(failure.code) << '}';
+    }
+
+    std::cout << "],\"stageTimings\":[";
+    for (std::size_t index = 0U; index < result.stage_timings.size(); ++index) {
+        if (index != 0U) {
+            std::cout << ',';
+        }
+        const auto& timing = result.stage_timings[index];
+        std::cout << "{\"stage\":\"" << escape_json(timing.stage)
+                  << "\",\"detectionIndex\":" << timing.detection_index
+                  << ",\"cropIndex\":" << timing.crop_index
+                  << ",\"latencyMs\":" << timing.latency_ms << '}';
+    }
+
+    std::cout << "],\"recognitions\":[";
     for (std::size_t index = 0U; index < result.recognitions.size(); ++index) {
         if (index != 0U) {
             std::cout << ',';
