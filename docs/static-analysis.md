@@ -33,4 +33,4 @@ There are currently no project suppressions. A suppression must be narrow, ident
 
 ## CI
 
-`.github/workflows/static-analysis.yml` is manual-only and self-hosted. It requires Clang, clang-tidy and cppcheck on the runner, builds with clang-tidy enabled, then executes cppcheck from the same `compile_commands.json`. Any configure/build/analyzer failure fails the job.
+`.github/workflows/static-analysis.yml` runs on the dedicated self-hosted macOS ARM64 `fac-lpr` runner. It is available through `workflow_dispatch` and the repository-owned one-shot trigger path used for validation. The job ensures LLVM/clang-tidy and cppcheck are present, restores the real dependency graph, builds with clang-tidy enabled, then executes cppcheck from the same `compile_commands.json`. Any configure/build/analyzer failure fails the job.
