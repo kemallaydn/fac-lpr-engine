@@ -8,6 +8,8 @@ target_compile_features(fac_lpr_native_image PUBLIC cxx_std_20)
 target_include_directories(fac_lpr_native_image PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_link_libraries(fac_lpr_native_image PUBLIC fac_lpr::application)
 
+add_subdirectory(concurrency)
+
 add_library(fac_lpr_crypto STATIC crypto/sha256.cpp)
 add_library(fac_lpr::crypto ALIAS fac_lpr_crypto)
 target_compile_features(fac_lpr_crypto PUBLIC cxx_std_20)
@@ -57,7 +59,7 @@ target_link_libraries(fac_lpr_crop PUBLIC fac_lpr::application fac_lpr::domain f
 
 add_library(fac_lpr_infrastructure INTERFACE)
 add_library(fac_lpr::infrastructure ALIAS fac_lpr_infrastructure)
-target_link_libraries(fac_lpr_infrastructure INTERFACE fac_lpr::application fac_lpr::domain fac_lpr::native_image fac_lpr::crypto fac_lpr::model fac_lpr::paddle_adapter fac_lpr::yolo fac_lpr::lprnet fac_lpr::geometry fac_lpr::adaptive_detection fac_lpr::crop)
+target_link_libraries(fac_lpr_infrastructure INTERFACE fac_lpr::application fac_lpr::domain fac_lpr::native_image fac_lpr::concurrency fac_lpr::crypto fac_lpr::model fac_lpr::paddle_adapter fac_lpr::yolo fac_lpr::lprnet fac_lpr::geometry fac_lpr::adaptive_detection fac_lpr::crop)
 
 if(FAC_LPR_WITH_SPDLOG)
     find_package(spdlog CONFIG REQUIRED)
