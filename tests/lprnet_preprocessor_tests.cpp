@@ -1,4 +1,5 @@
 #include <fac_lpr/application/config.hpp>
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/application/image_validation.hpp>
 #include <fac_lpr/infrastructure/lprnet/lprnet_preprocessor.hpp>
 
