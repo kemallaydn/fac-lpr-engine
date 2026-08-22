@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -13,6 +14,12 @@
 
 namespace fac_lpr::infrastructure::yolo {
 namespace {
+
+using Clock = std::chrono::steady_clock;
+
+[[nodiscard]] double elapsed_ms(const Clock::time_point started) noexcept {
+    return std::chrono::duration<double, std::milli>(Clock::now() - started).count();
+}
 
 [[nodiscard]] const onnx::TensorDescriptor* find_descriptor(
     const std::vector<onnx::TensorDescriptor>& descriptors,
@@ -105,11 +112,15 @@ std::vector<domain::Detection> YoloPoseOnnxDetector::detect(
 
     std::scoped_lock lock{execution_mutex_};
     check_context(context);
+
+    const auto preprocess_started = Clock::now();
     const auto tensor = preprocessor_.preprocess(validated, workspace_);
     if (tensor.chw.size() != checked_elements(config_.input)) {
         throw application::InferenceError("YOLO preprocessor produced unexpected tensor size");
     }
+    context.record_timing("detector.preprocess", elapsed_ms(preprocess_started));
 
+    const auto inference_started = Clock::now();
     const std::array<std::int64_t, 4U> shape{
         1,
         static_cast<std::int64_t>(config_.input.channels),
@@ -127,7 +138,10 @@ std::vector<domain::Detection> YoloPoseOnnxDetector::detect(
     const std::array<const char*, 1U> output_names{config_.output_name.c_str()};
     const std::array<Ort::Value, 1U> input_values{std::move(input_value)};
     auto outputs = session_->run(input_names, input_values, output_names);
+    context.record_timing("detector.inference", elapsed_ms(inference_started));
+
     check_context(context);
+    const auto postprocess_started = Clock::now();
     if (outputs.size() != 1U || !outputs.front().IsTensor()) {
         throw application::InferenceError("YOLO ONNX session returned invalid output count/type");
     }
@@ -147,6 +161,7 @@ std::vector<domain::Detection> YoloPoseOnnxDetector::detect(
     for (auto& detection : detections) {
         detection.provider = config_.provider_name;
     }
+    context.record_timing("detector.postprocess", elapsed_ms(postprocess_started));
     return detections;
 }
 
