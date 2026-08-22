@@ -1,8 +1,10 @@
 # Format:
-# filename=PRIMARY_EXPECTED_PLATE[,SECONDARY_EXPECTED_PLATE,...]
+# filename=REQUIRED_PLATE[,REQUIRED_PLATE...]|OPTIONAL_PLATE[,OPTIONAL_PLATE...]
 # Plakaları boşluksuz ve decoder çıktısıyla aynı biçimde yazın.
-# İlk değer primary/near-camera expected result'tır; sonraki değerler aynı frame'de görünmesi beklenen ek plakalardır.
+# Sol taraftaki plakalar E2E testinin geçmesi için mutlaka bulunmalıdır.
+# Sağ taraftaki plakalar frame'de görünür ama kalite/mesafe nedeniyle opsiyonel kabul edilir.
+# `|` yoksa listedeki bütün plakalar required kabul edilir.
 
 plate_01.jpg=06BY0825
-plate_02.jpg=06ACY760,06AHU99
+plate_02.jpg=06ACY760|06AHU99
 plate_03.jpg=06BH7562
