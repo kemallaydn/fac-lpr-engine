@@ -12,6 +12,7 @@ add_executable(fac_lpr_native_tests
     constrained_ctc_beam_search_tests.cpp
     crop_hypothesis_generator_tests.cpp
     ctc_decoder_tests.cpp
+    engine_diagnostics_tests.cpp
     error_boundary_tests.cpp
     geometry_validator_tests.cpp
     image_validation_tests.cpp
