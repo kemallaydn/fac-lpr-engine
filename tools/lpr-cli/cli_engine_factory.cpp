@@ -18,9 +18,10 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -28,6 +29,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -38,7 +40,7 @@ namespace {
 using Contract = std::unordered_map<std::string, std::string>;
 
 [[nodiscard]] std::string trim(std::string value) {
-    const auto not_space = [](const unsigned char ch) { return !std::isspace(ch); };
+    const auto not_space = [](const unsigned char ch) { return std::isspace(ch) == 0; };
     value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
     value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
     return value;
@@ -211,16 +213,26 @@ using Contract = std::unordered_map<std::string, std::string>;
         "detector.output_layout must be features_first or candidates_first");
 }
 
+[[nodiscard]] OrtLoggingLevel ort_log_level(const std::string_view value) {
+    if (value == "trace") return ORT_LOGGING_LEVEL_VERBOSE;
+    if (value == "debug" || value == "info") return ORT_LOGGING_LEVEL_INFO;
+    if (value == "warn") return ORT_LOGGING_LEVEL_WARNING;
+    if (value == "error") return ORT_LOGGING_LEVEL_ERROR;
+    throw application::ConfigurationError("log level must be trace, debug, info, warn or error");
+}
+
 } // namespace
 
 std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
     const std::filesystem::path& model_directory,
-    const std::filesystem::path& contract_path) {
+    const std::filesystem::path& contract_path,
+    const std::string_view log_level) {
     const auto contract = load_contract(contract_path);
     const auto detector_model = safe_model_path(model_directory, required(contract, "detector.model"));
     const auto ocr_model = safe_model_path(model_directory, required(contract, "ocr.model"));
 
-    auto environment = std::make_shared<infrastructure::onnx::OnnxRuntimeEnvironment>();
+    auto environment = std::make_shared<infrastructure::onnx::OnnxRuntimeEnvironment>(
+        ort_log_level(log_level));
     auto detector_session = std::make_shared<infrastructure::onnx::OnnxSession>(
         environment, detector_model);
     auto ocr_session = std::make_shared<infrastructure::onnx::OnnxSession>(
