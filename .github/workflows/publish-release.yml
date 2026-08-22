@@ -16,7 +16,7 @@ concurrency:
 jobs:
   publish:
     runs-on: [self-hosted, macOS, ARM64, fac-lpr]
-    timeout-minutes: 45
+    timeout-minutes: 100
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
@@ -36,25 +36,28 @@ jobs:
             --tag "$TAG" \
             --notes-out release-input/release-notes.md
 
-      - name: Wait for required package and security gates
+      - name: Wait for production readiness and release artifacts
         shell: bash
         run: |
           set -euo pipefail
           wait_for_workflow() {
             workflow="$1"
-            for attempt in $(seq 1 60); do
-              json=$(gh run list --repo "$REPO" --workflow "$workflow" --commit "$HEAD_SHA" --limit 10 \
-                --json databaseId,status,conclusion 2>/dev/null || echo '[]')
-              run_id=$(printf '%s' "$json" | python3 -c 'import json,sys; rows=json.load(sys.stdin); print(rows[0]["databaseId"] if rows else "")')
-              status=$(printf '%s' "$json" | python3 -c 'import json,sys; rows=json.load(sys.stdin); print(rows[0]["status"] if rows else "")')
-              conclusion=$(printf '%s' "$json" | python3 -c 'import json,sys; rows=json.load(sys.stdin); print(rows[0].get("conclusion") or "" if rows else "")')
-              if [ -n "$run_id" ] && [ "$status" = "completed" ]; then
-                if [ "$conclusion" != "success" ]; then
-                  echo "$workflow gate failed with conclusion=$conclusion" >&2
-                  return 1
+            for attempt in $(seq 1 180); do
+              json=$(gh run list --repo "$REPO" --workflow "$workflow" --commit "$HEAD_SHA" --limit 20 \
+                --json databaseId,status,conclusion,createdAt 2>/dev/null || echo '[]')
+              row=$(printf '%s' "$json" | python3 -c 'import json,sys; rows=json.load(sys.stdin); rows.sort(key=lambda r:r.get("createdAt", ""), reverse=True); print(json.dumps(rows[0]) if rows else "")')
+              if [ -n "$row" ]; then
+                run_id=$(printf '%s' "$row" | python3 -c 'import json,sys; print(json.load(sys.stdin)["databaseId"])')
+                status=$(printf '%s' "$row" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+                conclusion=$(printf '%s' "$row" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("conclusion") or "")')
+                if [ "$status" = "completed" ]; then
+                  if [ "$conclusion" != "success" ]; then
+                    echo "$workflow gate failed with conclusion=$conclusion" >&2
+                    return 1
+                  fi
+                  printf '%s' "$run_id"
+                  return 0
                 fi
-                printf '%s' "$run_id"
-                return 0
               fi
               sleep 30
             done
@@ -62,16 +65,27 @@ jobs:
             return 1
           }
 
+          readiness_run=$(wait_for_workflow production-readiness.yml)
           package_run=$(wait_for_workflow release-package.yml)
           security_run=$(wait_for_workflow dependency-security.yml)
+          echo "READINESS_RUN=$readiness_run" >> "$GITHUB_ENV"
           echo "PACKAGE_RUN=$package_run" >> "$GITHUB_ENV"
           echo "SECURITY_RUN=$security_run" >> "$GITHUB_ENV"
 
       - name: Download gated artifacts
         run: |
           set -euo pipefail
+          gh run download "$READINESS_RUN" --repo "$REPO" --dir release-input/readiness
           gh run download "$PACKAGE_RUN" --repo "$REPO" --dir release-input/packages
           gh run download "$SECURITY_RUN" --repo "$REPO" --dir release-input/security
+          readiness_report=$(find release-input/readiness -type f -name 'production-readiness.json' | head -n 1)
+          test -n "$readiness_report" && test -s "$readiness_report"
+          python3 - "$readiness_report" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1], encoding='utf-8'))
+          if report.get('releaseApproved') is not True:
+              raise SystemExit('production readiness report did not approve release')
+          PY
 
       - name: Validate and collect release assets
         shell: bash
@@ -90,6 +104,7 @@ jobs:
             -exec cp {} release-assets/ \;
           cp "$(find release-input/security -type f -name 'sbom.cyclonedx.json' | head -n 1)" release-assets/sbom.cyclonedx.json
           cp "$(find release-input/security -type f -name 'sbom.spdx.json' | head -n 1)" release-assets/sbom.spdx.json
+          cp "$(find release-input/readiness -type f -name 'production-readiness.json' | head -n 1)" release-assets/production-readiness.json
 
           rm -rf release-input/extracted
           mkdir -p release-input/extracted
