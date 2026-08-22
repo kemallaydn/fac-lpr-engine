@@ -37,6 +37,7 @@ struct BoundedWorkerPoolStats final {
     std::size_t dropped{0U};
     std::size_t pending{0U};
     std::size_t active{0U};
+    std::size_t peak_pending{0U};
 };
 
 class BoundedWorkerPool final {
@@ -73,6 +74,7 @@ private:
     std::size_t failed_{0U};
     std::size_t dropped_{0U};
     std::size_t active_{0U};
+    std::size_t peak_pending_{0U};
 };
 
 } // namespace fac_lpr::infrastructure::concurrency
