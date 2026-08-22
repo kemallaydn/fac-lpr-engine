@@ -13,6 +13,11 @@
 
 namespace fac_lpr::application {
 
+struct GeometryEvidence final {
+    bool valid{false};
+    float score{0.0F};
+};
+
 struct LayoutEvidence final {
     bool reliable{false};
     std::optional<int> character_count{};
@@ -32,6 +37,14 @@ public:
     [[nodiscard]] virtual std::string_view name() const noexcept = 0;
     [[nodiscard]] virtual std::vector<domain::Detection> detect(
         const ImageView& image,
+        const OperationContext& context) = 0;
+};
+
+class IPlateGeometryEvaluator {
+public:
+    virtual ~IPlateGeometryEvaluator() = default;
+    [[nodiscard]] virtual GeometryEvidence evaluate(
+        const domain::Detection& detection,
         const OperationContext& context) = 0;
 };
 
