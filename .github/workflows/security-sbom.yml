@@ -1,0 +1,78 @@
+name: security-sbom
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/mac-security-trigger.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-sbom-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+  VCPKG_DEFAULT_TRIPLET: arm64-osx
+
+jobs:
+  macos-arm64:
+    name: SBOM and vulnerability gate macOS ARM64
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure security tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v brew >/dev/null
+          brew list syft >/dev/null 2>&1 || brew install syft
+          brew list grype >/dev/null 2>&1 || brew install grype
+          syft version
+          grype version
+
+      - name: Restore pinned dependencies
+        shell: bash
+        run: bash scripts/bootstrap-dependencies.sh
+
+      - name: Capture dependency inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/security
+          .tools/vcpkg/vcpkg list --x-install-root=build/vcpkg_installed > build/security/vcpkg-inventory.txt
+          cp cmake/onnxruntime-version.txt build/security/onnxruntime-version.txt
+          cp cmake/onnxruntime-osx-arm64.sha256 build/security/onnxruntime-osx-arm64.sha256
+
+      - name: Generate CycloneDX SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          syft "dir:${{ github.workspace }}" \
+            --exclude './.git/**' \
+            --exclude './.cache/**' \
+            -o cyclonedx-json=build/security/fac-lpr-engine.cdx.json
+
+      - name: Scan SBOM and fail on High/Critical
+        shell: bash
+        run: |
+          set -euo pipefail
+          grype "sbom:build/security/fac-lpr-engine.cdx.json" \
+            --config security/grype.yaml \
+            --fail-on high \
+            -o json > build/security/vulnerability-report.json
+
+      - name: Upload security provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fac-lpr-security-sbom-mac-arm64
+          path: build/security/
+          if-no-files-found: error
+          retention-days: 30
