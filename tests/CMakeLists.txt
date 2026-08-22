@@ -14,6 +14,7 @@ add_executable(fac_lpr_native_tests
     logging_tests.cpp
     lpr_pipeline_tests.cpp
     lprnet_preprocessor_tests.cpp
+    model_lifecycle_tests.cpp
     native_image_tests.cpp
     paddle_ocr_adapter_tests.cpp
     recognition_ensemble_tests.cpp
@@ -23,7 +24,7 @@ add_executable(fac_lpr_native_tests
     yolo_preprocessor_tests.cpp
 )
 target_compile_features(fac_lpr_native_tests PRIVATE cxx_std_20)
-target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::adaptive_detection fac_lpr::crop fac_lpr::crypto fac_lpr::geometry fac_lpr::lprnet fac_lpr::native_image fac_lpr::paddle_adapter fac_lpr::yolo GTest::gtest_main Threads::Threads)
+target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::adaptive_detection fac_lpr::crop fac_lpr::crypto fac_lpr::geometry fac_lpr::lprnet fac_lpr::model fac_lpr::native_image fac_lpr::paddle_adapter fac_lpr::yolo GTest::gtest_main Threads::Threads)
 
 if(FAC_LPR_WITH_ONNX_RUNTIME)
     target_sources(fac_lpr_native_tests PRIVATE generic_onnx_ocr_recognizer_tests.cpp lprnet_onnx_contract_tests.cpp)
