@@ -2,6 +2,7 @@
 
 #include <fac_lpr/application/error.hpp>
 
+#include <algorithm>
 #include <utility>
 
 namespace fac_lpr::infrastructure::concurrency {
@@ -15,8 +16,10 @@ BoundedWorkerPool::BoundedWorkerPool(BoundedWorkerPoolConfig config)
         throw application::ConfigurationError("queue_capacity must be in [1,65536]");
     }
 
-    workers_.reserve(config_.worker_count);
+    (void)native_image::NativeImageWorkspace{config_.workspace};
+
     try {
+        workers_.reserve(config_.worker_count);
         for (std::size_t index = 0U; index < config_.worker_count; ++index) {
             workers_.emplace_back([this] { worker_loop(); });
         }
@@ -64,6 +67,7 @@ bool BoundedWorkerPool::submit(Task task) {
 
     queue_.push_back(std::move(task));
     ++submitted_;
+    peak_pending_ = std::max(peak_pending_, queue_.size());
     lock.unlock();
     work_available_.notify_one();
     return true;
@@ -100,7 +104,8 @@ BoundedWorkerPoolStats BoundedWorkerPool::stats() const {
         .failed = failed_,
         .dropped = dropped_,
         .pending = queue_.size(),
-        .active = active_};
+        .active = active_,
+        .peak_pending = peak_pending_};
 }
 
 void BoundedWorkerPool::worker_loop() {
