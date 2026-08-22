@@ -264,4 +264,52 @@ TEST(LprPipeline, ProviderWeightIsPreservedAfterCalibration) {
         0.475F);
 }
 
+TEST(LprPipeline, RepeatedInferenceIsDeterministicForStableProviders) {
+    auto detector = std::make_shared<FakeDetector>();
+    detector->detections = {detection_fixture()};
+    auto pipeline = make_pipeline(
+        detector,
+        std::make_shared<FakeGeometry>(),
+        std::make_shared<FakeAligner>(),
+        std::make_shared<FakeLayout>(),
+        {{.provider = std::make_shared<HealthyRecognizer>(), .weight = 1.0F, .required = true}});
+
+    std::vector<std::byte> bytes{};
+    const auto view = image_fixture(bytes);
+    const auto baseline = pipeline.recognize(view);
+    ASSERT_EQ(baseline.recognitions.size(), 1U);
+
+    for (std::size_t iteration = 0U; iteration < 100U; ++iteration) {
+        const auto current = pipeline.recognize(view);
+        ASSERT_EQ(current.recognitions.size(), baseline.recognitions.size());
+        ASSERT_EQ(current.failures.size(), baseline.failures.size());
+        EXPECT_EQ(current.degraded, baseline.degraded);
+        EXPECT_EQ(current.provider_failure_count, baseline.provider_failure_count);
+
+        for (std::size_t index = 0U; index < baseline.recognitions.size(); ++index) {
+            const auto& expected = baseline.recognitions[index];
+            const auto& actual = current.recognitions[index];
+            EXPECT_EQ(actual.plate, expected.plate);
+            EXPECT_EQ(actual.status, expected.status);
+            EXPECT_EQ(actual.decision_reasons, expected.decision_reasons);
+            EXPECT_NEAR(actual.confidence, expected.confidence, 1.0e-6F);
+            EXPECT_NEAR(actual.detector_confidence, expected.detector_confidence, 1.0e-6F);
+            EXPECT_NEAR(actual.geometry_score, expected.geometry_score, 1.0e-6F);
+            EXPECT_NEAR(actual.crop_quality, expected.crop_quality, 1.0e-6F);
+            ASSERT_EQ(actual.alternatives.size(), expected.alternatives.size());
+            for (std::size_t candidate_index = 0U;
+                 candidate_index < expected.alternatives.size();
+                 ++candidate_index) {
+                EXPECT_EQ(
+                    actual.alternatives[candidate_index].text,
+                    expected.alternatives[candidate_index].text);
+                EXPECT_NEAR(
+                    actual.alternatives[candidate_index].calibrated_confidence,
+                    expected.alternatives[candidate_index].calibrated_confidence,
+                    1.0e-6F);
+            }
+        }
+    }
+}
+
 } // namespace
