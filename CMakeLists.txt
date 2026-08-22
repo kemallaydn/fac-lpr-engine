@@ -70,6 +70,12 @@ target_link_libraries(fac_lpr_engine
         fac_lpr::infrastructure
 )
 
+target_compile_definitions(fac_lpr_engine PRIVATE
+    FAC_LPR_ENGINE_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    FAC_LPR_ENGINE_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    FAC_LPR_ENGINE_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+)
+
 if(FAC_LPR_BUILD_SHARED)
     target_compile_definitions(fac_lpr_engine
         PUBLIC FAC_LPR_SHARED
