@@ -2,6 +2,11 @@ name: mac-arm64-validation
 
 on:
   workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to receive validation run evidence
+        required: false
+        type: string
   push:
     branches:
       - dev
@@ -10,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: mac-arm64-validation-${{ github.ref }}
@@ -28,6 +34,24 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Publish validation run reference
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.issue_number != '' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number('${{ inputs.issue_number }}'),
+              body: [
+                'macOS ARM64 validation started.',
+                `run_id: ${context.runId}`,
+                `sha: ${context.sha}`,
+                `run: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+              ].join('\n')
+            });
 
       - name: Configure Homebrew PATH and tools
         shell: bash
@@ -126,3 +150,22 @@ jobs:
           path: build/mac-arm64-release/artifacts/reports/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Publish validation result
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.issue_number != '' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number('${{ inputs.issue_number }}'),
+              body: [
+                'macOS ARM64 validation finished.',
+                `run_id: ${context.runId}`,
+                `sha: ${context.sha}`,
+                'job_status: ${{ job.status }}',
+                `run: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+              ].join('\n')
+            });
