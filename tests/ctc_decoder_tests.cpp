@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <string>
 #include <vector>
 
 namespace {
@@ -47,6 +48,38 @@ TEST(GreedyCtcDecoder, SupportsBlankAtArbitraryConfiguredIndex) {
     const auto logits = make_logits(winners, 3U);
     const auto result = decoder.decode(logits, winners.size(), 3U);
     EXPECT_EQ(result.text, "AB");
+}
+
+TEST(GreedyCtcDecoder, ActiveV2MixedEpoch7UsesExactly33CharactersAndBlankAt33) {
+    constexpr char active_charset[] = "0123456789ABCDEFGHIJKLMNOPRSTUVYZ";
+    const std::string charset{active_charset};
+    ASSERT_EQ(charset.size(), 33U);
+    EXPECT_EQ(charset.find('-'), std::string::npos);
+
+    GreedyCtcDecoderConfig config{};
+    config.charset.assign(charset.begin(), charset.end());
+    config.blank_index = 33U;
+    config.maximum_timesteps = 24U;
+    config.maximum_classes = 34U;
+    const GreedyCtcDecoder decoder{config};
+
+    EXPECT_EQ(decoder.class_count(), 34U);
+
+    // 34ABC123 with deliberate duplicate runs and CTC blanks.
+    const std::vector<std::size_t> winners{
+        3U, 3U, 33U,
+        4U, 33U,
+        10U, 10U, 33U,
+        11U, 33U,
+        12U, 33U,
+        1U, 33U,
+        2U, 2U, 33U,
+        3U};
+    const auto logits = make_logits(winners, 34U);
+    const auto result = decoder.decode(logits, winners.size(), 34U);
+
+    EXPECT_EQ(result.text, "34ABC123");
+    EXPECT_GT(result.confidence, 0.99F);
 }
 
 TEST(GreedyCtcDecoder, RejectsMismatchedClassCount) {
