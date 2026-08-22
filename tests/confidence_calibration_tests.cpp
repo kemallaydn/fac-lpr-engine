@@ -88,13 +88,13 @@ TEST(ConfidenceCalibration, RejectsDuplicateProviderContextSegments) {
 TEST(ConfidenceCalibration, RejectsInvalidInputs) {
     const IdentityConfidenceCalibrator calibrator{};
     EXPECT_THROW(
-        calibrator.calibrate("lprnet", std::numeric_limits<float>::quiet_NaN(), 0.5F, "raw"),
+        (void)calibrator.calibrate("lprnet", std::numeric_limits<float>::quiet_NaN(), 0.5F, "raw"),
         ProviderError);
     EXPECT_THROW(
-        calibrator.calibrate("lprnet", 0.5F, -0.1F, "raw"),
+        (void)calibrator.calibrate("lprnet", 0.5F, -0.1F, "raw"),
         ProviderError);
     EXPECT_THROW(
-        calibrator.calibrate("lprnet", 0.5F, 1.1F, "raw"),
+        (void)calibrator.calibrate("lprnet", 0.5F, 1.1F, "raw"),
         ProviderError);
 }
 
