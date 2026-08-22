@@ -95,6 +95,7 @@ jobs:
           -DFAC_LPR_WITH_SPDLOG=ON
           -DFAC_LPR_WITH_ONNX_RUNTIME=ON
           -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_SHARED=ON
           -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
           -DFAC_LPR_BUILD_TESTS=ON
       - name: Build Debug
@@ -109,3 +110,14 @@ jobs:
       - name: Test Release
         shell: pwsh
         run: ctest --test-dir build/self-hosted -C Release --output-on-failure
+      - name: Validate .NET P/Invoke consumer against Release DLL
+        shell: pwsh
+        run: |
+          $nativeBin = Join-Path $env:GITHUB_WORKSPACE 'build/self-hosted/artifacts/bin/Release'
+          $nativeDll = Join-Path $nativeBin 'fac_lpr_engine.dll'
+          if (-not (Test-Path $nativeDll)) {
+            throw "Expected Release DLL not found: $nativeDll"
+          }
+          dotnet --version
+          $env:PATH = "$nativeBin;$env:PATH"
+          dotnet run --project samples/dotnet/FacLpr.Sample/FacLpr.Sample.csproj -c Release -- --iterations 10000
