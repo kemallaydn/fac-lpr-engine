@@ -50,6 +50,7 @@ set_target_properties(fac-lpr-cli PROPERTIES
 if(FAC_LPR_BUILD_TESTS)
     set(FAC_LPR_REAL_FIXTURE_DIR "${PROJECT_SOURCE_DIR}/tests/fixtures/real")
     set(FAC_LPR_REAL_EXPECTATIONS "${FAC_LPR_REAL_FIXTURE_DIR}/expected-results.txt")
+    set(FAC_LPR_GOLDEN_MANIFEST "${FAC_LPR_REAL_FIXTURE_DIR}/golden-manifest.tsv")
     set(FAC_LPR_CLI_CONTRACT "${PROJECT_SOURCE_DIR}/docs/lpr-cli-contract.example")
     set(FAC_LPR_DETECTOR_MODEL "${PROJECT_SOURCE_DIR}/models/best.onnx")
     set(FAC_LPR_OCR_MODEL "${PROJECT_SOURCE_DIR}/models/lprnet_turkey.onnx")
@@ -57,6 +58,7 @@ if(FAC_LPR_BUILD_TESTS)
     if(EXISTS "${FAC_LPR_DETECTOR_MODEL}" AND
        EXISTS "${FAC_LPR_OCR_MODEL}" AND
        EXISTS "${FAC_LPR_REAL_EXPECTATIONS}" AND
+       EXISTS "${FAC_LPR_GOLDEN_MANIFEST}" AND
        EXISTS "${FAC_LPR_CLI_CONTRACT}")
         add_test(
             NAME fac_lpr_cli_real_e2e
@@ -72,9 +74,29 @@ if(FAC_LPR_BUILD_TESTS)
             LABELS "integration;real-model;cli"
             TIMEOUT 120
         )
-        message(STATUS "FAC LPR real CLI E2E test enabled")
+
+        add_test(
+            NAME fac_lpr_golden_regression
+            COMMAND ${CMAKE_COMMAND}
+                -DCLI_PATH=$<TARGET_FILE:fac-lpr-cli>
+                -DMODEL_DIR=${PROJECT_SOURCE_DIR}/models
+                -DCONTRACT_PATH=${FAC_LPR_CLI_CONTRACT}
+                -DFIXTURE_DIR=${FAC_LPR_REAL_FIXTURE_DIR}
+                -DMANIFEST_FILE=${FAC_LPR_GOLDEN_MANIFEST}
+                -DREPORT_PATH=${CMAKE_BINARY_DIR}/artifacts/reports/golden-regression.json
+                -DMIN_EXACT_ACCURACY_BPS=10000
+                -DMIN_CHARACTER_ACCURACY_BPS=9500
+                -DMAX_DETECTION_FAILURE_BPS=0
+                -DMAX_ALIGNMENT_FAILURE_BPS=0
+                -P ${PROJECT_SOURCE_DIR}/tests/golden_regression.cmake
+        )
+        set_tests_properties(fac_lpr_golden_regression PROPERTIES
+            LABELS "integration;real-model;golden;regression"
+            TIMEOUT 180
+        )
+        message(STATUS "FAC LPR real CLI E2E and golden regression tests enabled")
     else()
         message(STATUS
-            "FAC LPR real CLI E2E test not registered: required model/fixture/contract artifacts are missing")
+            "FAC LPR real-model tests not registered: required model/fixture/contract artifacts are missing")
     endif()
 endif()
