@@ -3,6 +3,7 @@
 #include <fac_lpr/application/error.hpp>
 #include <fac_lpr/c_api/error_boundary.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -16,7 +17,7 @@
 namespace fac_lpr::c_api {
 namespace {
 
-constexpr std::size_t wire_alignment = 4U;
+constexpr std::size_t wire_alignment = FAC_LPR_RESULT_BUFFER_ALIGNMENT_V1;
 
 [[nodiscard]] std::uint32_t to_u32(const std::size_t value, const char* field) {
     if (value > std::numeric_limits<std::uint32_t>::max()) {
@@ -29,7 +30,7 @@ constexpr std::size_t wire_alignment = 4U;
     const std::size_t count,
     const std::size_t element_size,
     const char* field) {
-    if (element_size != 0U && count > std::numeric_limits<std::size_t>::max() / element_size) {
+    if (count != 0U && element_size > std::numeric_limits<std::size_t>::max() / count) {
         throw application::ResourceExhaustedError(std::string{field} + " overflows size_t");
     }
     return count * element_size;
@@ -39,21 +40,21 @@ constexpr std::size_t wire_alignment = 4U;
     const std::uint32_t base,
     const std::size_t index,
     const std::size_t element_size) {
-    const auto delta = checked_array_bytes(index, element_size, "result element offset");
-    const auto value = static_cast<std::size_t>(base) + delta;
-    return to_u32(value, "result element offset");
+    const auto relative = checked_array_bytes(index, element_size, "wire element offset");
+    const auto total = static_cast<std::size_t>(base) + relative;
+    return to_u32(total, "wire element offset");
 }
 
 [[nodiscard]] float finite_float(const float value, const char* field) {
     if (!std::isfinite(value)) {
-        throw application::ProviderError(std::string{field} + " must be finite");
+        throw application::ProviderError(std::string{field} + " is not finite");
     }
     return value;
 }
 
 [[nodiscard]] float probability_float(const float value, const char* field) {
     if (!std::isfinite(value) || value < 0.0F || value > 1.0F) {
-        throw application::ProviderError(std::string{field} + " must be in [0,1]");
+        throw application::ProviderError(std::string{field} + " is outside [0,1]");
     }
     return value;
 }
@@ -180,16 +181,14 @@ private:
 [[nodiscard]] fac_lpr_candidate_v1 serialize_candidate(
     BufferWriter& writer,
     const domain::PlateCandidate& candidate) {
-    return fac_lpr_candidate_v1{
-        .struct_size = static_cast<std::uint32_t>(sizeof(fac_lpr_candidate_v1)),
-        .abi_version = FAC_LPR_ABI_VERSION_V1,
-        .text = append_text(writer, candidate.text),
-        .confidence = probability_float(candidate.confidence, "candidate confidence"),
-        .calibrated_confidence = probability_float(
-            candidate.calibrated_confidence,
-            "candidate calibrated confidence"),
-        .format_valid = candidate.format_valid ? 1U : 0U,
-        .reserved_zero = 0U};
+    return {
+        static_cast<std::uint32_t>(sizeof(fac_lpr_candidate_v1)),
+        FAC_LPR_ABI_VERSION_V1,
+        append_text(writer, candidate.text),
+        probability_float(candidate.confidence, "candidate confidence"),
+        probability_float(candidate.calibrated_confidence, "candidate calibrated confidence"),
+        candidate.format_valid ? 1U : 0U,
+        0U};
 }
 
 [[nodiscard]] std::uint32_t append_candidates(
@@ -198,8 +197,7 @@ private:
     if (candidates.empty()) {
         return 0U;
     }
-    const auto bytes = checked_array_bytes(
-        candidates.size(), sizeof(fac_lpr_candidate_v1), "candidate array size");
+    const auto bytes = checked_array_bytes(candidates.size(), sizeof(fac_lpr_candidate_v1), "candidate array size");
     const auto offset = writer.reserve(bytes);
     for (std::size_t index = 0U; index < candidates.size(); ++index) {
         const auto wire = serialize_candidate(writer, candidates[index]);
@@ -214,20 +212,19 @@ private:
     if (evidence.empty()) {
         return 0U;
     }
-    const auto bytes = checked_array_bytes(
-        evidence.size(), sizeof(fac_lpr_evidence_v1), "evidence array size");
+    const auto bytes = checked_array_bytes(evidence.size(), sizeof(fac_lpr_evidence_v1), "evidence array size");
     const auto offset = writer.reserve(bytes);
     for (std::size_t index = 0U; index < evidence.size(); ++index) {
         const auto& item = evidence[index];
         const auto candidates_offset = append_candidates(writer, item.candidates);
         const fac_lpr_evidence_v1 wire{
-            .struct_size = static_cast<std::uint32_t>(sizeof(fac_lpr_evidence_v1)),
-            .abi_version = FAC_LPR_ABI_VERSION_V1,
-            .source = append_text(writer, item.source),
-            .crop_quality = probability_float(item.crop_quality, "evidence crop quality"),
-            .latency_ms = latency_to_float(item.latency_ms),
-            .candidate_count = to_u32(item.candidates.size(), "evidence candidate count"),
-            .candidates_offset = candidates_offset};
+            static_cast<std::uint32_t>(sizeof(fac_lpr_evidence_v1)),
+            FAC_LPR_ABI_VERSION_V1,
+            append_text(writer, item.source),
+            probability_float(item.crop_quality, "evidence crop quality"),
+            latency_to_float(item.latency_ms),
+            to_u32(item.candidates.size(), "evidence candidate count"),
+            candidates_offset};
         writer.write(element_offset(offset, index, sizeof(fac_lpr_evidence_v1)), wire);
     }
     return offset;
@@ -239,8 +236,7 @@ private:
     if (reasons.empty()) {
         return 0U;
     }
-    const auto bytes = checked_array_bytes(
-        reasons.size(), sizeof(fac_lpr_decision_reason_v1), "decision reason array size");
+    const auto bytes = checked_array_bytes(reasons.size(), sizeof(fac_lpr_decision_reason_v1), "decision reason array size");
     const auto offset = writer.reserve(bytes);
     for (std::size_t index = 0U; index < reasons.size(); ++index) {
         const auto wire = map_reason(reasons[index]);
@@ -259,9 +255,7 @@ private:
     wire.degraded = result.degraded ? 1U : 0U;
     wire.plate = append_text(writer, result.plate);
     wire.confidence = probability_float(result.confidence, "recognition confidence");
-    wire.detector_confidence = probability_float(
-        result.detector_confidence,
-        "detector confidence");
+    wire.detector_confidence = probability_float(result.detector_confidence, "detector confidence");
     wire.geometry_score = probability_float(result.geometry_score, "geometry score");
     wire.crop_quality = probability_float(result.crop_quality, "crop quality");
     wire.total_latency_ms = latency_to_float(result.total_latency_ms);
@@ -269,10 +263,8 @@ private:
     if (result.bbox.has_value()) {
         wire.has_bbox = 1U;
         wire.bbox = {
-            finite_float(result.bbox->x, "bbox x"),
-            finite_float(result.bbox->y, "bbox y"),
-            finite_float(result.bbox->width, "bbox width"),
-            finite_float(result.bbox->height, "bbox height")};
+            finite_float(result.bbox->x, "bbox x"), finite_float(result.bbox->y, "bbox y"),
+            finite_float(result.bbox->width, "bbox width"), finite_float(result.bbox->height, "bbox height")};
     }
     if (result.quadrilateral.has_value()) {
         wire.has_quadrilateral = 1U;
@@ -281,8 +273,7 @@ private:
                 finite_float(result.quadrilateral->points[index].x, "quadrilateral x"),
                 finite_float(result.quadrilateral->points[index].y, "quadrilateral y")};
             wire.quadrilateral.confidences[index] = probability_float(
-                result.quadrilateral->confidences[index],
-                "quadrilateral confidence");
+                result.quadrilateral->confidences[index], "quadrilateral confidence");
         }
     }
 
@@ -307,28 +298,23 @@ private:
 
     std::uint32_t recognitions_offset = 0U;
     if (!result.recognitions.empty()) {
-        const auto bytes = checked_array_bytes(
-            result.recognitions.size(),
-            sizeof(fac_lpr_plate_result_v1),
-            "recognition array size");
+        const auto bytes = checked_array_bytes(result.recognitions.size(), sizeof(fac_lpr_plate_result_v1), "recognition array size");
         recognitions_offset = writer.reserve(bytes);
         for (std::size_t index = 0U; index < result.recognitions.size(); ++index) {
             const auto plate = serialize_plate(writer, result.recognitions[index]);
-            writer.write(
-                element_offset(recognitions_offset, index, sizeof(fac_lpr_plate_result_v1)),
-                plate);
+            writer.write(element_offset(recognitions_offset, index, sizeof(fac_lpr_plate_result_v1)), plate);
         }
     }
 
     const fac_lpr_result_v1 root{
-        .struct_size = static_cast<std::uint32_t>(sizeof(fac_lpr_result_v1)),
-        .abi_version = FAC_LPR_ABI_VERSION_V1,
-        .recognition_count = to_u32(result.recognitions.size(), "recognition count"),
-        .recognitions_offset = recognitions_offset,
-        .total_latency_ms = latency_to_float(result.total_latency_ms),
-        .degraded = result.degraded ? 1U : 0U,
-        .provider_failure_count = to_u32(result.provider_failure_count, "provider failure count"),
-        .reserved_zero = 0U};
+        static_cast<std::uint32_t>(sizeof(fac_lpr_result_v1)),
+        FAC_LPR_ABI_VERSION_V1,
+        to_u32(result.recognitions.size(), "recognition count"),
+        recognitions_offset,
+        latency_to_float(result.total_latency_ms),
+        result.degraded ? 1U : 0U,
+        to_u32(result.provider_failure_count, "provider failure count"),
+        0U};
     writer.write(root_offset, root);
     return writer.size();
 }
@@ -350,6 +336,9 @@ fac_lpr_status serialize_result_v1(
         *required_output_size = required;
         if (output_buffer == nullptr || output_capacity < required) {
             return FAC_LPR_STATUS_BUFFER_TOO_SMALL;
+        }
+        if ((reinterpret_cast<std::uintptr_t>(output_buffer) % wire_alignment) != 0U) {
+            return FAC_LPR_STATUS_CONFIGURATION_ERROR;
         }
         const auto written = serialize_impl(result, output_buffer, output_capacity);
         return written == required ? FAC_LPR_STATUS_OK : FAC_LPR_STATUS_INTERNAL_ERROR;
