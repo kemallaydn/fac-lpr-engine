@@ -27,6 +27,12 @@ namespace {
     return value;
 }
 
+[[nodiscard]] bool contains_parent_traversal(const std::filesystem::path& path) {
+    return std::any_of(path.begin(), path.end(), [](const std::filesystem::path& component) {
+        return component == "..";
+    });
+}
+
 [[nodiscard]] bool path_is_within(
     const std::filesystem::path& root,
     const std::filesystem::path& candidate) {
@@ -95,7 +101,7 @@ ModelLifecycleManager::ModelLifecycleManager(ModelManifest manifest)
         if (entry.relative_path.empty() || entry.relative_path.is_absolute()) {
             throw application::ConfigurationError("model path must be non-empty and relative");
         }
-        if (entry.relative_path.lexically_normal().string().starts_with("..")) {
+        if (contains_parent_traversal(entry.relative_path.lexically_normal())) {
             throw application::ConfigurationError("model path traversal is not allowed");
         }
         if (!is_hex_sha256(entry.sha256)) {
