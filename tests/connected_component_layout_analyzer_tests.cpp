@@ -93,6 +93,29 @@ TEST(ConnectedComponentLayoutAnalyzer, TooFewComponentsReturnsNeutralEvidence) {
     EXPECT_FLOAT_EQ(evidence.confidence, 0.0F);
 }
 
+TEST(ConnectedComponentLayoutAnalyzer, PerspectiveLikeHeightDistortionReturnsNeutralEvidence) {
+    std::vector<std::byte> bytes(width * height, std::byte{255});
+    // Simulate a heavily perspective-distorted crop: character-like components
+    // progressively change height enough that layout evidence should not be trusted.
+    fill_rect(bytes, 5U, 14U, 11U, 28U);
+    fill_rect(bytes, 14U, 12U, 20U, 30U);
+    fill_rect(bytes, 31U, 10U, 38U, 32U);
+    fill_rect(bytes, 50U, 8U, 56U, 34U);
+    fill_rect(bytes, 59U, 6U, 65U, 35U);
+    fill_rect(bytes, 68U, 4U, 74U, 36U);
+    fill_rect(bytes, 77U, 2U, 83U, 38U);
+    const ImageView image{bytes, width, height, width, PixelFormat::gray8};
+
+    ConnectedComponentLayoutConfig config{};
+    config.minimum_component_height_ratio = 0.25F;
+    config.maximum_height_coefficient_of_variation = 0.20F;
+    const ConnectedComponentPlateLayoutAnalyzer analyzer{config};
+    const auto evidence = analyzer.analyze(image, {}, OperationContext{});
+
+    EXPECT_FALSE(evidence.reliable);
+    EXPECT_FLOAT_EQ(evidence.confidence, 0.0F);
+}
+
 TEST(ConnectedComponentLayoutAnalyzer, OverlappingXComponentsAreNotTrusted) {
     std::vector<std::byte> bytes(width * height, std::byte{255});
     // Keep components disconnected vertically while deliberately overlapping in X.
