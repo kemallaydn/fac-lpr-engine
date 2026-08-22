@@ -29,6 +29,7 @@ struct ActiveModelInfo final {
     std::filesystem::path resolved_path{};
     std::string sha256{};
     std::size_t size_bytes{0U};
+    bool integrity_verified{false};
 };
 
 class ModelLifecycleManager final {
