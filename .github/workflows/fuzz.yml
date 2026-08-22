@@ -23,13 +23,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Ensure LLVM
+      - name: Configure Homebrew PATH and LLVM
         shell: bash
         run: |
           set -euo pipefail
-          command -v brew >/dev/null
+          export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+          command -v brew
+          brew list cmake >/dev/null 2>&1 || brew install cmake
+          brew list ninja >/dev/null 2>&1 || brew install ninja
           brew list llvm >/dev/null 2>&1 || brew install llvm
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          export PATH="$(brew --prefix llvm)/bin:$PATH"
+          command -v cmake
+          command -v ninja
+          command -v clang
+          command -v clang++
 
       - name: Configure fuzz targets
         shell: bash
