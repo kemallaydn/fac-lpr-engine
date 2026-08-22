@@ -14,6 +14,19 @@
 
 namespace fac_lpr::application {
 
+enum class ReadinessState {
+    ready,
+    degraded,
+    failed
+};
+
+struct StartupCheckSnapshot final {
+    std::string name{};
+    bool required{true};
+    bool passed{false};
+    std::string summary{};
+};
+
 struct DiagnosticProviderInfo final {
     std::string name{};
     std::string version{};
@@ -44,6 +57,8 @@ struct WorkerQueueSnapshot final {
 };
 
 struct EngineDiagnosticsSnapshot final {
+    ReadinessState readiness{ReadinessState::failed};
+    std::vector<StartupCheckSnapshot> startup_checks{};
     std::uint64_t accepted{0U};
     std::uint64_t review{0U};
     std::uint64_t rejected{0U};
@@ -61,6 +76,7 @@ public:
     void record_provider_failures(std::size_t count) noexcept;
     void record_stage_latency(std::string_view stage, double latency_ms);
 
+    void set_readiness(ReadinessState state, std::vector<StartupCheckSnapshot> checks);
     void set_providers(std::vector<DiagnosticProviderInfo> providers);
     void set_models(std::vector<DiagnosticModelInfo> models);
     void set_worker_queue(WorkerQueueSnapshot snapshot) noexcept;
@@ -82,6 +98,8 @@ private:
     std::atomic<std::uint64_t> provider_failures_{0U};
 
     mutable std::mutex mutex_{};
+    ReadinessState readiness_{ReadinessState::failed};
+    std::vector<StartupCheckSnapshot> startup_checks_{};
     std::unordered_map<std::string, LatencyAccumulator> stage_latencies_{};
     std::vector<DiagnosticProviderInfo> providers_{};
     std::vector<DiagnosticModelInfo> models_{};
