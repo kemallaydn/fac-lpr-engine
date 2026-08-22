@@ -1,3 +1,4 @@
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/application/recognition_ensemble.hpp>
 
 #include <gtest/gtest.h>
