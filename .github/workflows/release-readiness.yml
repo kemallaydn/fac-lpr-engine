@@ -1,0 +1,59 @@
+name: release-readiness
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'scripts/release-readiness-report.py'
+      - 'scripts/collect-release-evidence.py'
+      - 'scripts/test_release_readiness_report.py'
+      - '.github/workflows/release-readiness.yml'
+  workflow_dispatch:
+    inputs:
+      release_commit:
+        description: Exact commit SHA to evaluate for production release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  policy-test:
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test fail-closed readiness policy
+        run: python3 scripts/test_release_readiness_report.py -v
+
+  evaluate:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    needs: policy-test
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 15
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect exact-commit workflow and artifact evidence
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/readiness
+          python3 scripts/collect-release-evidence.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --commit "${{ inputs.release_commit }}" \
+            --output artifacts/readiness/evidence.json
+      - name: Enforce production v1 acceptance gate
+        run: |
+          python3 scripts/release-readiness-report.py \
+            --input artifacts/readiness/evidence.json \
+            --output artifacts/readiness/report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-readiness-${{ inputs.release_commit }}-${{ github.run_id }}
+          path: artifacts/readiness/
+          if-no-files-found: error
+          retention-days: 90
