@@ -12,6 +12,7 @@ option(FAC_LPR_BUILD_MODEL_INSPECTOR "Build the ONNX model inspector CLI" OFF)
 option(FAC_LPR_BUILD_WORKSPACE_PROBE "Build the workspace buffer reuse probe" OFF)
 option(FAC_LPR_BUILD_LPR_CLI "Build the offline JPG/PNG recognition CLI" OFF)
 option(FAC_LPR_BUILD_MEMORY_STRESS "Build the long-run memory stress harness" OFF)
+option(FAC_LPR_BUILD_BENCHMARK "Build the stage latency benchmark CLI" OFF)
 option(FAC_LPR_BUILD_TESTS "Build FAC LPR Engine tests" OFF)
 
 include(cmake/Sanitizers.cmake)
@@ -95,6 +96,10 @@ endif()
 
 if(FAC_LPR_BUILD_MEMORY_STRESS)
     add_subdirectory(tools/memory-stress)
+endif()
+
+if(FAC_LPR_BUILD_BENCHMARK)
+    add_subdirectory(tools/benchmark)
 endif()
 
 if(FAC_LPR_BUILD_TESTS)
