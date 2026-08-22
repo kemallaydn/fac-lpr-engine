@@ -2,7 +2,6 @@
 #include <fac_lpr/infrastructure/onnx/execution_provider.hpp>
 
 #include <algorithm>
-#include <array>
 #include <string>
 #include <vector>
 
@@ -28,6 +27,80 @@ namespace {
     const OnnxExecutionProvider provider) {
     const std::string expected{runtime_provider_name(provider)};
     return std::find(providers.begin(), providers.end(), expected) != providers.end();
+}
+
+struct OptionPointers final {
+    std::vector<const char*> keys{};
+    std::vector<const char*> values{};
+};
+
+[[nodiscard]] OptionPointers option_pointers(const OnnxExecutionProviderConfig& config) {
+    OptionPointers pointers{};
+    pointers.keys.reserve(config.options.size());
+    pointers.values.reserve(config.options.size());
+    for (const auto& [key, value] : config.options) {
+        if (key.empty() || value.empty()) {
+            throw application::ConfigurationError("ONNX execution provider option key/value cannot be empty");
+        }
+        pointers.keys.push_back(key.c_str());
+        pointers.values.push_back(value.c_str());
+    }
+    return pointers;
+}
+
+void append_cuda(
+    Ort::SessionOptions& options,
+    const OptionPointers& pointers) {
+    const auto& api = Ort::GetApi();
+    OrtCUDAProviderOptionsV2* provider_options = nullptr;
+    Ort::ThrowOnError(api.CreateCUDAProviderOptions(&provider_options));
+    try {
+        if (!pointers.keys.empty()) {
+            Ort::ThrowOnError(api.UpdateCUDAProviderOptions(
+                provider_options,
+                pointers.keys.data(),
+                pointers.values.data(),
+                pointers.keys.size()));
+        }
+        Ort::ThrowOnError(api.SessionOptionsAppendExecutionProvider_CUDA_V2(options, provider_options));
+    } catch (...) {
+        api.ReleaseCUDAProviderOptions(provider_options);
+        throw;
+    }
+    api.ReleaseCUDAProviderOptions(provider_options);
+}
+
+void append_tensorrt(
+    Ort::SessionOptions& options,
+    const OptionPointers& pointers) {
+    const auto& api = Ort::GetApi();
+    OrtTensorRTProviderOptionsV2* provider_options = nullptr;
+    Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&provider_options));
+    try {
+        if (!pointers.keys.empty()) {
+            Ort::ThrowOnError(api.UpdateTensorRTProviderOptions(
+                provider_options,
+                pointers.keys.data(),
+                pointers.values.data(),
+                pointers.keys.size()));
+        }
+        Ort::ThrowOnError(api.SessionOptionsAppendExecutionProvider_TensorRT_V2(options, provider_options));
+    } catch (...) {
+        api.ReleaseTensorRTProviderOptions(provider_options);
+        throw;
+    }
+    api.ReleaseTensorRTProviderOptions(provider_options);
+}
+
+void append_directml(
+    Ort::SessionOptions& options,
+    const OptionPointers& pointers) {
+    Ort::ThrowOnError(Ort::GetApi().SessionOptionsAppendExecutionProvider(
+        options,
+        "DML",
+        pointers.keys.empty() ? nullptr : pointers.keys.data(),
+        pointers.values.empty() ? nullptr : pointers.values.data(),
+        pointers.keys.size()));
 }
 
 } // namespace
@@ -81,22 +154,23 @@ OnnxExecutionProviderDiagnostics OnnxExecutionProviderStrategy::configure(
             std::string{"requested ONNX execution provider is unavailable: "} + to_string(config.provider));
     }
 
-    std::vector<const char*> keys{};
-    std::vector<const char*> values{};
-    keys.reserve(config.options.size());
-    values.reserve(config.options.size());
-    for (const auto& [key, value] : config.options) {
-        keys.push_back(key.c_str());
-        values.push_back(value.c_str());
-    }
-
     try {
-        Ort::ThrowOnError(Ort::GetApi().SessionOptionsAppendExecutionProvider(
-            options,
-            runtime_provider_name(config.provider),
-            keys.empty() ? nullptr : keys.data(),
-            values.empty() ? nullptr : values.data(),
-            keys.size()));
+        const auto pointers = option_pointers(config);
+        switch (config.provider) {
+        case OnnxExecutionProvider::cpu:
+            break;
+        case OnnxExecutionProvider::cuda:
+            append_cuda(options, pointers);
+            break;
+        case OnnxExecutionProvider::directml:
+            append_directml(options, pointers);
+            break;
+        case OnnxExecutionProvider::tensorrt:
+            append_tensorrt(options, pointers);
+            break;
+        }
+    } catch (const application::EngineError&) {
+        throw;
     } catch (const Ort::Exception& exception) {
         if (config.fallback_policy == OnnxProviderFallbackPolicy::fallback_to_cpu) {
             diagnostics.active = OnnxExecutionProvider::cpu;
