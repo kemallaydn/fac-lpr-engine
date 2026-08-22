@@ -28,6 +28,7 @@ endif()
 
 add_executable(fac_lpr_native_tests
     adaptive_tile_detector_tests.cpp
+    atomic_model_slot_tests.cpp
     bounded_worker_pool_tests.cpp
     c_api_error_detail_tests.cpp
     c_api_header_smoke.c
