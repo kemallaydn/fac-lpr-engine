@@ -1,0 +1,117 @@
+name: publish-release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ github.sha }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Validate semantic tag and changelog
+        run: |
+          set -euo pipefail
+          mkdir -p release-input release-assets
+          python3 scripts/validate-release-tag.py \
+            --tag "$TAG" \
+            --notes-out release-input/release-notes.md
+
+      - name: Wait for required package and security gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          wait_for_workflow() {
+            workflow="$1"
+            for attempt in $(seq 1 60); do
+              json=$(gh run list --repo "$REPO" --workflow "$workflow" --commit "$HEAD_SHA" --limit 10 \
+                --json databaseId,status,conclusion 2>/dev/null || echo '[]')
+              run_id=$(printf '%s' "$json" | python3 -c 'import json,sys; rows=json.load(sys.stdin); print(rows[0]["databaseId"] if rows else "")')
+              status=$(printf '%s' "$json" | python3 -c 'import json,sys; rows=json.load(sys.stdin); print(rows[0]["status"] if rows else "")')
+              conclusion=$(printf '%s' "$json" | python3 -c 'import json,sys; rows=json.load(sys.stdin); print(rows[0].get("conclusion") or "" if rows else "")')
+              if [ -n "$run_id" ] && [ "$status" = "completed" ]; then
+                if [ "$conclusion" != "success" ]; then
+                  echo "$workflow gate failed with conclusion=$conclusion" >&2
+                  return 1
+                fi
+                printf '%s' "$run_id"
+                return 0
+              fi
+              sleep 30
+            done
+            echo "Timed out waiting for $workflow gate" >&2
+            return 1
+          }
+
+          package_run=$(wait_for_workflow release-package.yml)
+          security_run=$(wait_for_workflow dependency-security.yml)
+          echo "PACKAGE_RUN=$package_run" >> "$GITHUB_ENV"
+          echo "SECURITY_RUN=$security_run" >> "$GITHUB_ENV"
+
+      - name: Download gated artifacts
+        run: |
+          set -euo pipefail
+          gh run download "$PACKAGE_RUN" --repo "$REPO" --dir release-input/packages
+          gh run download "$SECURITY_RUN" --repo "$REPO" --dir release-input/security
+
+      - name: Validate and collect release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          linux_archive=$(find release-input/packages -type f -name '*linux-x64*.tar.gz' | head -n 1)
+          windows_archive=$(find release-input/packages -type f -name '*windows-x64*.zip' | head -n 1)
+          test -n "$linux_archive" && test -s "$linux_archive"
+          test -n "$windows_archive" && test -s "$windows_archive"
+          test "$(find release-input/packages -type f -name '*.sha256' | wc -l | tr -d ' ')" -ge 2
+          test "$(find release-input/packages -type f -name '*.provenance.json' | wc -l | tr -d ' ')" -ge 2
+          test -s "$(find release-input/security -type f -name 'sbom.cyclonedx.json' | head -n 1)"
+          test -s "$(find release-input/security -type f -name 'sbom.spdx.json' | head -n 1)"
+
+          find release-input/packages -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.sha256' -o -name '*.provenance.json' \) \
+            -exec cp {} release-assets/ \;
+          cp "$(find release-input/security -type f -name 'sbom.cyclonedx.json' | head -n 1)" release-assets/sbom.cyclonedx.json
+          cp "$(find release-input/security -type f -name 'sbom.spdx.json' | head -n 1)" release-assets/sbom.spdx.json
+
+          rm -rf release-input/extracted
+          mkdir -p release-input/extracted
+          tar -xzf "$linux_archive" -C release-input/extracted
+          notice=$(find release-input/extracted -type f -name 'THIRD_PARTY_NOTICES.txt' | head -n 1)
+          test -n "$notice" && test -s "$notice"
+          cp "$notice" release-assets/THIRD_PARTY_NOTICES.txt
+
+      - name: Publish GitHub release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; refusing to overwrite it." >&2
+            exit 1
+          fi
+          prerelease=()
+          case "$TAG" in
+            *-*) prerelease=(--prerelease) ;;
+          esac
+          gh release create "$TAG" release-assets/* \
+            --repo "$REPO" \
+            --title "FAC LPR Engine $TAG" \
+            --notes-file release-input/release-notes.md \
+            "${prerelease[@]}"
