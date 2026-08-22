@@ -1,3 +1,4 @@
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/infrastructure/onnx/generic_ocr_recognizer.hpp>
 
 #include <gtest/gtest.h>
