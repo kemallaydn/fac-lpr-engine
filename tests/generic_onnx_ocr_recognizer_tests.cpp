@@ -137,8 +137,8 @@ TEST(GenericOnnxOcrRecognizer, RejectsAdapterNodeNamesNotPresentInModel) {
         std::vector<std::string> input_names() const override { return {"missing"}; }
     };
     EXPECT_THROW(
-        infrastructure::onnx::GenericOnnxOcrRecognizer{
-            std::make_shared<FakeSession>(), std::make_shared<BadAdapter>()},
+        (infrastructure::onnx::GenericOnnxOcrRecognizer{
+            std::make_shared<FakeSession>(), std::make_shared<BadAdapter>()}),
         application::ModelLoadError);
 }
 
