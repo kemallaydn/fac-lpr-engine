@@ -1,1 +1,1 @@
-mac fuzz retrigger after checksum fix 2026-08-22
+mac fuzz retrigger after Homebrew PATH fix 2026-08-22
