@@ -1,0 +1,39 @@
+name: cmake-package-smoke
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'CMakeLists.txt'
+      - 'cmake/fac-lpr-engine-config.cmake.in'
+      - 'tests/consumers/cpp_cmake/**'
+      - '.github/workflows/cmake-package-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac-arm64:
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and install release package
+        run: |
+          set -euo pipefail
+          rm -rf build/cmake-package build/cmake-package-stage build/cmake-consumer
+          cmake -S . -B build/cmake-package -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFAC_LPR_BUILD_SHARED=ON
+          cmake --build build/cmake-package --parallel 2
+          cmake --install build/cmake-package --prefix "$PWD/build/cmake-package-stage"
+      - name: Configure external consumer with find_package
+        run: |
+          set -euo pipefail
+          cmake -S tests/consumers/cpp_cmake -B build/cmake-consumer -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$PWD/build/cmake-package-stage"
+          cmake --build build/cmake-consumer --parallel 2
+          DYLD_LIBRARY_PATH="$PWD/build/cmake-package-stage/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
+            ./build/cmake-consumer/fac_lpr_cpp_consumer
