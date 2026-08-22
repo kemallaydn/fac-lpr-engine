@@ -1,1 +1,1 @@
-mac-arm64-validation rerun after deterministic reproducibility regression issue_number=61 2026-08-22 22:00 TRT
+mac-arm64-validation JSON config adapter validation issue_number=57 2026-08-22 23:32 TRT
