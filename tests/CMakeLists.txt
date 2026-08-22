@@ -4,6 +4,8 @@ find_package(Threads REQUIRED)
 add_executable(fac_lpr_native_tests
     adaptive_tile_detector_tests.cpp
     bounded_worker_pool_tests.cpp
+    c_api_header_smoke.c
+    c_api_v1_tests.cpp
     candidate_fusion_tests.cpp
     confidence_calibration_tests.cpp
     constrained_ctc_beam_search_tests.cpp
@@ -24,8 +26,8 @@ add_executable(fac_lpr_native_tests
     yolo_pose_parser_tests.cpp
     yolo_preprocessor_tests.cpp
 )
-target_compile_features(fac_lpr_native_tests PRIVATE cxx_std_20)
-target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::adaptive_detection fac_lpr::concurrency fac_lpr::crop fac_lpr::crypto fac_lpr::geometry fac_lpr::lprnet fac_lpr::model fac_lpr::native_image fac_lpr::paddle_adapter fac_lpr::yolo GTest::gtest_main Threads::Threads)
+target_compile_features(fac_lpr_native_tests PRIVATE c_std_11 cxx_std_20)
+target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::engine fac_lpr::adaptive_detection fac_lpr::concurrency fac_lpr::crop fac_lpr::crypto fac_lpr::geometry fac_lpr::lprnet fac_lpr::model fac_lpr::native_image fac_lpr::paddle_adapter fac_lpr::yolo GTest::gtest_main Threads::Threads)
 
 if(FAC_LPR_WITH_ONNX_RUNTIME)
     target_sources(fac_lpr_native_tests PRIVATE generic_onnx_ocr_recognizer_tests.cpp lprnet_onnx_contract_tests.cpp)
