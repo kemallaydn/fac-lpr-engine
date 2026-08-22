@@ -12,6 +12,12 @@ on:
           - linux
           - windows
           - both
+  push:
+    branches:
+      - dev
+    paths:
+      - 'samples/dotnet/**'
+      - '.github/workflows/self-hosted-validation.yml'
 
 permissions:
   contents: read
@@ -25,7 +31,7 @@ env:
 
 jobs:
   linux:
-    if: ${{ inputs.platform == 'linux' || inputs.platform == 'both' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'linux' || inputs.platform == 'both') }}
     name: Self-hosted Linux full validation
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 60
@@ -72,7 +78,7 @@ jobs:
         run: ctest --test-dir build/self-hosted-release --output-on-failure
 
   windows:
-    if: ${{ inputs.platform == 'windows' || inputs.platform == 'both' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'windows' || inputs.platform == 'both' }}
     name: Self-hosted Windows full validation
     runs-on: [self-hosted, windows, x64]
     timeout-minutes: 60
