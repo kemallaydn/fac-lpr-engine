@@ -1,0 +1,111 @@
+name: self-hosted-validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Self-hosted platform to validate
+        required: true
+        default: linux
+        type: choice
+        options:
+          - linux
+          - windows
+          - both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-hosted-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux:
+    if: ${{ inputs.platform == 'linux' || inputs.platform == 'both' }}
+    name: Self-hosted Linux full validation
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 60
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure Debug
+        run: >-
+          cmake -S . -B build/self-hosted-debug -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build Debug
+        run: cmake --build build/self-hosted-debug --parallel 2
+      - name: Test Debug
+        run: ctest --test-dir build/self-hosted-debug --output-on-failure
+      - name: Configure Release
+        run: >-
+          cmake -S . -B build/self-hosted-release -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build Release
+        run: cmake --build build/self-hosted-release --parallel 2
+      - name: Test Release
+        run: ctest --test-dir build/self-hosted-release --output-on-failure
+
+  windows:
+    if: ${{ inputs.platform == 'windows' || inputs.platform == 'both' }}
+    name: Self-hosted Windows full validation
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 60
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\\.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/self-hosted -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/build/vcpkg_installed"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DFAC_LPR_ONNXRUNTIME_ROOT="${{ github.workspace }}/build/deps/onnxruntime"
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build Debug
+        shell: pwsh
+        run: cmake --build build/self-hosted --config Debug --parallel 2
+      - name: Test Debug
+        shell: pwsh
+        run: ctest --test-dir build/self-hosted -C Debug --output-on-failure
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build build/self-hosted --config Release --parallel 2
+      - name: Test Release
+        shell: pwsh
+        run: ctest --test-dir build/self-hosted -C Release --output-on-failure
