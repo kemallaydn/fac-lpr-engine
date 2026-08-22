@@ -1,3 +1,4 @@
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/infrastructure/crop/crop_hypothesis_generator.hpp>
 
 #include <gtest/gtest.h>
