@@ -15,7 +15,8 @@ typedef enum fac_lpr_status {
     FAC_LPR_STATUS_CANCELLED = 6,
     FAC_LPR_STATUS_TIMEOUT = 7,
     FAC_LPR_STATUS_RESOURCE_EXHAUSTED = 8,
-    FAC_LPR_STATUS_INTERNAL_ERROR = 9
+    FAC_LPR_STATUS_INTERNAL_ERROR = 9,
+    FAC_LPR_STATUS_BUFFER_TOO_SMALL = 10
 } fac_lpr_status;
 
 #ifdef __cplusplus
