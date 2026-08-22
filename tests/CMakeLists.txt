@@ -34,6 +34,7 @@ add_executable(fac_lpr_native_tests
     c_api_header_smoke.c
     c_api_thread_safety_tests.cpp
     c_api_v1_tests.cpp
+    calibration_json_adapter_tests.cpp
     candidate_fusion_tests.cpp
     confidence_calibration_tests.cpp
     constrained_ctc_beam_search_tests.cpp
