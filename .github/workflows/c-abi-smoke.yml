@@ -37,7 +37,7 @@ jobs:
       - name: Compile standalone C consumer from installed package
         run: |
           set -euo pipefail
-          cc -std=c11 -Wall -Wextra -Werror \
+          cc -std=c11 -Wall -Wextra -Werror -DFAC_LPR_SHARED \
             tests/consumers/c_abi_smoke.c \
             -I"${GITHUB_WORKSPACE}/build/c-abi-stage/include" \
             -L"${GITHUB_WORKSPACE}/build/c-abi-stage/lib" \
@@ -72,6 +72,6 @@ jobs:
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          cl /nologo /W4 /WX /TC /std:c11 tests\consumers\c_abi_smoke.c /I build\c-abi-stage\include /link /LIBPATH:build\c-abi-stage\lib fac_lpr_engine.lib /OUT:build\c-abi-consumer.exe
+          cl /nologo /W4 /WX /TC /std:c11 /DFAC_LPR_SHARED tests\consumers\c_abi_smoke.c /I build\c-abi-stage\include /link /LIBPATH:build\c-abi-stage\lib fac_lpr_engine.lib /OUT:build\c-abi-consumer.exe
           set PATH=%CD%\build\c-abi-stage\bin;%PATH%
           build\c-abi-consumer.exe
