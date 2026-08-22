@@ -61,7 +61,6 @@ namespace {
     try {
         replace_all(std::filesystem::absolute(path).string());
     } catch (...) {
-        // Redaction is best-effort; failure must not mask the original error.
     }
     return detail;
 }
@@ -80,7 +79,9 @@ OnnxRuntimeEnvironment::OnnxRuntimeEnvironment(
     const char* log_id)
     : environment_(level, log_id) {}
 
-Ort::SessionOptions OnnxSession::build_options(const OnnxSessionConfig& config) {
+Ort::SessionOptions OnnxSession::build_options(
+    const OnnxSessionConfig& config,
+    OnnxExecutionProviderDiagnostics& diagnostics) {
     if (config.intra_op_threads < 0 || config.inter_op_threads < 0) {
         throw application::ConfigurationError("ONNX Runtime thread counts cannot be negative");
     }
@@ -93,6 +94,7 @@ Ort::SessionOptions OnnxSession::build_options(const OnnxSessionConfig& config) 
     if (config.inter_op_threads > 0) {
         options.SetInterOpNumThreads(config.inter_op_threads);
     }
+    diagnostics = OnnxExecutionProviderStrategy::configure(options, config.execution_provider);
     return options;
 }
 
@@ -111,7 +113,7 @@ OnnxSession::OnnxSession(
     }
 
     try {
-        auto options = build_options(config);
+        auto options = build_options(config, execution_provider_diagnostics_);
         session_ = Ort::Session(environment_->native(), model_path_.c_str(), options);
         inputs_ = inspect_inputs(session_);
         outputs_ = inspect_outputs(session_);
