@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fac_lpr/application/error.hpp>
 #include <fac_lpr/application/providers.hpp>
 
 #include <chrono>
