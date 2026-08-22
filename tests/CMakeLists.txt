@@ -19,6 +19,7 @@ add_executable(fac_lpr_native_tests
     lpr_pipeline_tests.cpp
     lprnet_preprocessor_tests.cpp
     model_lifecycle_tests.cpp
+    multi_detector_fusion_tests.cpp
     native_image_tests.cpp
     paddle_ocr_adapter_tests.cpp
     recognition_ensemble_tests.cpp
