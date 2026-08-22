@@ -5,6 +5,10 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - dev
+    paths:
+      - .github/mac-security-trigger.txt
 
 permissions:
   contents: read
@@ -33,6 +37,8 @@ jobs:
           command -v brew >/dev/null
           brew list syft >/dev/null 2>&1 || brew install syft
           brew list grype >/dev/null 2>&1 || brew install grype
+          syft version
+          grype version
 
       - name: Restore pinned dependencies
         shell: bash
@@ -55,8 +61,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          syft dir:. -o cyclonedx-json=artifacts/security/sbom.cyclonedx.json
-          syft dir:. -o spdx-json=artifacts/security/sbom.spdx.json
+          syft dir:. \
+            --exclude './.git/**' \
+            --exclude './.cache/**' \
+            -o cyclonedx-json=artifacts/security/sbom.cyclonedx.json
+          syft dir:. \
+            --exclude './.git/**' \
+            --exclude './.cache/**' \
+            -o spdx-json=artifacts/security/sbom.spdx.json
 
       - name: Scan SBOM and gate High/Critical vulnerabilities
         shell: bash
@@ -78,7 +90,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dependency-security-${{ runner.os }}-${{ runner.arch }}
+          name: dependency-security-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
           path: artifacts/security/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
