@@ -1,0 +1,1 @@
+mac-arm64-validation trigger 2026-08-22
