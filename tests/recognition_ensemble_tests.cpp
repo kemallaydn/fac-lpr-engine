@@ -157,6 +157,71 @@ TEST(RecognitionEnsemble, ProviderReceivesBoundedChildDeadline) {
     EXPECT_LE(*probe->deadline, after + std::chrono::milliseconds{50});
 }
 
+TEST(RecognitionEnsemble, DisabledAndZeroWeightProvidersAreNotInvoked) {
+    auto disabled_probe = std::make_shared<Probe>();
+    auto zero_weight_probe = std::make_shared<Probe>();
+    auto active_probe = std::make_shared<Probe>();
+
+    std::vector<RecognizerRegistration> registrations{};
+    registrations.push_back(RecognizerRegistration{
+        .provider = std::make_shared<FakeRecognizer>(
+            "disabled", recognized("34A1234", 0.9F), disabled_probe),
+        .weight = 1.0F,
+        .timeout = std::chrono::milliseconds{100},
+        .enabled = false});
+    registrations.push_back(RecognizerRegistration{
+        .provider = std::make_shared<FakeRecognizer>(
+            "zero-weight", recognized("34B1234", 0.9F), zero_weight_probe),
+        .weight = 0.0F,
+        .timeout = std::chrono::milliseconds{100}});
+    registrations.push_back(RecognizerRegistration{
+        .provider = std::make_shared<FakeRecognizer>(
+            "active", recognized("34C1234", 0.8F), active_probe),
+        .weight = 1.0F,
+        .timeout = std::chrono::milliseconds{100}});
+
+    const RecognitionEnsemble ensemble{std::move(registrations)};
+    std::vector<std::byte> bytes{};
+    const auto result = ensemble.recognize(
+        image_fixture(bytes), 0.7F, OperationContext{});
+
+    EXPECT_EQ(disabled_probe->calls, 0);
+    EXPECT_EQ(zero_weight_probe->calls, 0);
+    EXPECT_EQ(active_probe->calls, 1);
+    ASSERT_EQ(result.evidence.size(), 1U);
+    EXPECT_EQ(result.evidence.front().source, "active");
+}
+
+TEST(RecognitionEnsemble, InvalidCalibratedConfidenceDegradesOptionalProvider) {
+    auto invalid = recognized("34A1234", 0.8F);
+    invalid.candidates.front().calibrated_confidence = 1.5F;
+
+    std::vector<RecognizerRegistration> registrations{};
+    registrations.push_back(RecognizerRegistration{
+        .provider = std::make_shared<FakeRecognizer>("invalid", invalid),
+        .weight = 1.0F,
+        .timeout = std::chrono::milliseconds{100},
+        .required = false});
+    registrations.push_back(RecognizerRegistration{
+        .provider = std::make_shared<FakeRecognizer>(
+            "healthy", recognized("06AB123", 0.75F)),
+        .weight = 1.0F,
+        .timeout = std::chrono::milliseconds{100},
+        .required = true});
+
+    const RecognitionEnsemble ensemble{std::move(registrations)};
+    std::vector<std::byte> bytes{};
+    const auto result = ensemble.recognize(
+        image_fixture(bytes), 0.7F, OperationContext{});
+
+    EXPECT_TRUE(result.degraded);
+    ASSERT_EQ(result.failures.size(), 1U);
+    EXPECT_EQ(result.failures.front().provider, "invalid");
+    EXPECT_EQ(result.failures.front().code, fac_lpr::application::EngineErrorCode::provider);
+    ASSERT_EQ(result.evidence.size(), 1U);
+    EXPECT_EQ(result.evidence.front().source, "healthy");
+}
+
 TEST(RecognitionEnsemble, DuplicateProviderNamesFailFast) {
     std::vector<RecognizerRegistration> registrations{};
     registrations.push_back(RecognizerRegistration{
