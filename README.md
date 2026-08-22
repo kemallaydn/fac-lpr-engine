@@ -2,6 +2,8 @@
 
 Reusable, production-grade license plate recognition engine.
 
+> **Taking over development?** Read [`PRODUCT.md`](PRODUCT.md) first. It is the canonical product, architecture, roadmap, current-state and AI handoff document. It explains what is complete, what remains, the issue-closing order, model-contract rules, and the current zero-spend CI constraint.
+
 Development happens on the `dev` branch. Runtime model artifacts are not committed to this repository.
 
 ## Foundation
