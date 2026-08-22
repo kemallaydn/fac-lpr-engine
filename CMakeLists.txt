@@ -24,6 +24,7 @@ add_subdirectory(src/infrastructure)
 add_library(fac_lpr_engine STATIC
     src/fac_lpr_engine.cpp
     src/c_api/fac_lpr_engine_c_api.cpp
+    src/c_api/result_buffer.cpp
 )
 
 add_library(fac_lpr::engine ALIAS fac_lpr_engine)
