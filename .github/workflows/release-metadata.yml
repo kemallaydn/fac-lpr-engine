@@ -1,0 +1,25 @@
+name: release-metadata
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'CHANGELOG.md'
+      - 'scripts/validate-release-tag.py'
+      - 'scripts/test_validate_release_tag.py'
+      - '.github/workflows/release-metadata.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test release metadata validation
+        run: python3 scripts/test_validate_release_tag.py -v
+      - name: Validate current release section
+        run: python3 scripts/validate-release-tag.py --tag v0.1.0 --notes-out artifacts/release-notes.md
