@@ -150,7 +150,7 @@ TEST(GenericOnnxOcrRecognizer, RejectsUnexpectedSessionOutputCountBeforeDecode) 
     std::vector<std::byte> bytes;
 
     EXPECT_THROW(
-        recognizer.recognize(image_fixture(bytes), {}),
+        (void)recognizer.recognize(image_fixture(bytes), {}),
         application::InferenceError);
 }
 
@@ -162,7 +162,7 @@ TEST(GenericOnnxOcrRecognizer, RejectsMalformedAdapterEvidence) {
     std::vector<std::byte> bytes;
 
     EXPECT_THROW(
-        recognizer.recognize(image_fixture(bytes), {}),
+        (void)recognizer.recognize(image_fixture(bytes), {}),
         application::InferenceError);
 }
 
