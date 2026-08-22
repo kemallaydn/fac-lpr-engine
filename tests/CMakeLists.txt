@@ -36,6 +36,7 @@ target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::engine fac_lpr::adap
 
 if(FAC_LPR_WITH_ONNX_RUNTIME)
     target_sources(fac_lpr_native_tests PRIVATE
+        best_onnx_contract_tests.cpp
         concrete_onnx_provider_tests.cpp
         generic_onnx_ocr_recognizer_tests.cpp
         lprnet_onnx_contract_tests.cpp
@@ -47,8 +48,25 @@ if(FAC_LPR_WITH_ONNX_RUNTIME)
         fac_lpr::onnx_runtime
         fac_lpr::yolo_onnx
     )
-    if(EXISTS "${PROJECT_SOURCE_DIR}/models/lprnet_turkey.onnx")
-        target_compile_definitions(fac_lpr_native_tests PRIVATE FAC_LPR_TEST_LPRNET_MODEL_PATH="${PROJECT_SOURCE_DIR}/models/lprnet_turkey.onnx")
+
+    set(FAC_LPR_TEST_BEST_MODEL_PATH "" CACHE FILEPATH "Optional best.onnx artifact path for contract regression tests")
+    if(FAC_LPR_TEST_BEST_MODEL_PATH)
+        get_filename_component(_best_model_path "${FAC_LPR_TEST_BEST_MODEL_PATH}" ABSOLUTE BASE_DIR "${PROJECT_SOURCE_DIR}")
+    elseif(EXISTS "${PROJECT_SOURCE_DIR}/models/best.onnx")
+        set(_best_model_path "${PROJECT_SOURCE_DIR}/models/best.onnx")
+    endif()
+    if(DEFINED _best_model_path)
+        target_compile_definitions(fac_lpr_native_tests PRIVATE FAC_LPR_TEST_BEST_MODEL_PATH="${_best_model_path}")
+    endif()
+
+    set(FAC_LPR_TEST_LPRNET_MODEL_PATH "" CACHE FILEPATH "Optional lprnet_turkey.onnx artifact path for contract regression tests")
+    if(FAC_LPR_TEST_LPRNET_MODEL_PATH)
+        get_filename_component(_lprnet_model_path "${FAC_LPR_TEST_LPRNET_MODEL_PATH}" ABSOLUTE BASE_DIR "${PROJECT_SOURCE_DIR}")
+    elseif(EXISTS "${PROJECT_SOURCE_DIR}/models/lprnet_turkey.onnx")
+        set(_lprnet_model_path "${PROJECT_SOURCE_DIR}/models/lprnet_turkey.onnx")
+    endif()
+    if(DEFINED _lprnet_model_path)
+        target_compile_definitions(fac_lpr_native_tests PRIVATE FAC_LPR_TEST_LPRNET_MODEL_PATH="${_lprnet_model_path}")
     endif()
 endif()
 
