@@ -1,10 +1,6 @@
 # FAC LPR Engine — Product, Architecture and AI Handoff
 
-> **Purpose**
->
-> Canonical handoff for FAC LPR Engine. A developer or AI should be able to read this document, inspect current `dev` code/tests and live GitHub issues, and continue without previous chat history.
->
-> **Authority:** live GitHub issue state + current `dev` code/tests override stale text. If this file differs, verify first and update it.
+> Canonical handoff for FAC LPR Engine. Live GitHub issue state + current `dev` code/tests override stale text.
 
 ---
 
@@ -23,7 +19,7 @@ image/frame
 → PlateRecognitionResult
 ```
 
-It must not own barrier/access authorization, FAC Access business rules, Spring/backend calls, RTSP lifecycle, application database/UI state, or runtime model binaries in Git.
+The engine does **not** own barrier/access authorization, FAC Access business rules, backend/database/UI state, RTSP lifecycle, or runtime model binaries in Git.
 
 Technical statuses only:
 
@@ -37,7 +33,7 @@ REJECTED
 
 ---
 
-## 2. Repository/workflow
+## 2. Repository and workflow
 
 Repository: `kemallaydn/fac-lpr-engine`
 
@@ -45,9 +41,7 @@ Repository: `kemallaydn/fac-lpr-engine`
 - `dev`: active development
 - Draft PR #79: `FAC LPR Engine production development`, main ← dev
 
-### Sequential issue procedure
-
-For each issue, in numerical order:
+Sequential issue procedure:
 
 1. read live acceptance criteria;
 2. inspect current implementation;
@@ -55,9 +49,9 @@ For each issue, in numerical order:
 4. add/adjust tests;
 5. perform strongest truthful validation available;
 6. post Turkish top-level completion comment;
-7. close with `state_reason=completed`;
+7. close only when acceptance is truthfully met;
 8. update this checkpoint at meaningful milestones;
-9. continue.
+9. continue numerically.
 
 Never fake CI/test/model validation and never close merely because similarly named code exists.
 
@@ -67,136 +61,211 @@ Never fake CI/test/model validation and never close merely because similarly nam
 
 Re-audited on **2026-08-22**.
 
-**Issues #1 through #30 are CLOSED / completed.**
+**Issues #1 through #36 are CLOSED / completed.**
 
 Current first open sequential issue:
 
-- **#31 — LPR pipeline orchestrator oluştur** — NEXT / OPEN
+- **#37 — lpr-cli offline recognition aracı oluştur — OPEN / PARTIALLY IMPLEMENTED / BLOCKED ON REAL PROVIDER COMPOSITION**
 
-Do not skip #31 even though later foundation code may already exist.
-
----
-
-## 4. Work completed during current handoff session
-
-### #22 Turkish plate grammar
-
-- ASCII uppercase/whitespace/hyphen normalization;
-- non-ASCII rejection;
-- province 01–81, reject 00/82+;
-- configurable allowed letters;
-- supported 1/2/3-letter civilian formats;
-- beam-pruning prefix validation;
-- expanded valid/invalid/boundary unit tests;
-- independent C++20 warnings-as-errors grammar smoke passed.
-
-### #23 constrained CTC beam search
-
-- configurable beam/result/top-classes;
-- Turkish prefix pruning during expansion;
-- confusion map `0/O,1/I,8/B,5/S,6/G`;
-- deterministic ordering;
-- greedy reference/fallback;
-- test helper fixed for non-terminal blank index;
-- real GCC warnings-as-errors header portability bug fixed (`explicit` grammar default construction);
-- combined grammar/greedy/beam smoke passed.
-
-### #24 connected-component layout analyzer
-
-- verified gray → CLAHE → blur → Otsu → connected-components;
-- analyzer remains OCR-independent geometric evidence only;
-- neutral evidence on unreliable component count/height/overlap;
-- added explicit heavy-perspective height-distortion test;
-- OpenCV CMake/test wiring verified;
-- current execution environment lacks OpenCV dev package, therefore no fake local OpenCV GTest pass was claimed.
-
-### #25 multi-crop candidate fusion
-
-- discovered and fixed duplicate-margin bug: same plate text within one crop was incorrectly treated as a competing candidate;
-- margin now compares only different plate texts;
-- same-crop duplicate remains one max-score vote;
-- cross-crop same plate uses probabilistic-OR consensus;
-- bounded/deterministic ordering retained;
-- independent formula smoke confirmed consistent crops can beat one extreme outlier.
-
-### #26 recognition ensemble
-
-- optional failure → degraded evidence while healthy providers continue;
-- required failure → fatal ProviderError;
-- provider weight and bounded child deadline retained;
-- invalid calibrated confidence now rejected outside `[0,1]` instead of silently clamped/falling back;
-- added disabled/zero-weight non-invocation tests;
-- provider evidence/weight smoke passed.
-
-### #27 optional PaddleOCR adapter
-
-- external worker/encoder boundary retained; PaddleOCR is not a required native dependency;
-- unavailable worker produces ProviderError for ensemble degradation;
-- malformed calibrated confidence now rejected;
-- added real LRU eviction test for bounded SHA-256 cache;
-- added adapter timeout-overrun test;
-- hard interruption of an infinitely blocking external worker remains later #59 cancellation/timeout scope.
-
-### #28 generic ONNX OCR adapter
-
-- model-specific adapter remains behind generic `IPlateRecognizer` wrapper;
-- metadata/node contract validated against session descriptors;
-- added session output-count validation before decode;
-- invalid calibrated evidence now rejected, not silently repaired;
-- added RAII lifetime test using weak_ptr expiration;
-- current environment lacks provisioned ONNX Runtime dev/runtime artifact, so no fake ONNX-backed GTest pass was claimed.
-
-### #29 confidence calibration
-
-- identity when no/insufficient dataset segment;
-- exact provider+crop context overrides provider fallback;
-- runtime segment constructor path retained;
-- expanded tests for min samples, epsilon, duplicate segments, input bounds and raw 0/1;
-- independent logistic math smoke passed;
-- no unnecessary production algorithm change was made.
-
-### #30 safe recognition decision policy
-
-- technical recognition only, no access/barrier business logic;
-- fatal → reject, degraded → at most review;
-- weak detector/no valid candidate → reject;
-- weak geometry/crop/accept threshold and strong conflict → review;
-- strong consistent evidence → accept;
-- tests expanded to assert explicit explainable `RecognitionDecisionReason` values.
+#37 acceptance requires real `JPG/PNG -> PlateRecognitionResult`. The CLI shell now exists, but current `fac_lpr_engine_create_v1()` intentionally creates a lifecycle shell without a production pipeline. Repository currently has YOLO preprocess/parser and ONNX primitives, but no production concrete `IPlateDetector` composition. Do not close #37 until real provider composition produces a truthful result.
 
 ---
 
-## 5. CI budget constraint
+## 4. Key completed work in the current handoff
 
-Hard operational rule: routine development stays **zero-spend** for GitHub-hosted Actions while account minutes are constrained.
+### #22–#30 recognition foundation
 
-- automatic expensive push/PR matrices must not be re-enabled without explicit approval;
-- foundation/dependency workflows remain manual (`workflow_dispatch`);
-- prefer local/free/self-hosted validation;
-- red zero-step workflow may be runner/account allocation, not code;
-- release candidate still requires full Windows/Linux validation.
+- Turkish plate grammar and constrained CTC beam search hardened.
+- GCC warnings-as-errors portability bug fixed.
+- Connected-component layout perspective edge test added.
+- Multi-crop duplicate-margin fusion bug fixed.
+- Recognition ensemble optional/required failure semantics hardened.
+- PaddleOCR cache/timeout/malformed-evidence coverage improved.
+- Generic ONNX OCR output-count/RAII/evidence validation improved.
+- Confidence calibration boundary coverage expanded.
+- Safe decision policy reason-level tests added.
 
-See `docs/ci-budget.md`.
+### #31 LPR pipeline orchestrator
+
+Vendor-neutral pipeline composed as:
+
+```text
+IPlateDetector
+→ IPlateGeometryEvaluator
+→ IPlateAligner
+→ ICropGenerator
+→ RecognitionEnsemble
+→ IConfidenceCalibrator
+→ IPlateLayoutAnalyzer
+→ ICandidateFusion
+→ IDecisionPolicy
+```
+
+`LprPipelineResult` preserves recognitions, stage timings, degraded state and provider failures. Geometry evidence is carried through a vendor-neutral application contract rather than leaking Infrastructure concrete classes inward.
+
+### #32 model manifest/checksum/lifecycle
+
+- `ModelManifest` / `ModelManifestEntry` / `ActiveModelInfo` added.
+- model name/type/version/path/size/SHA-256 required;
+- exact size + bounded read + SHA-256 verification;
+- absolute path and `..` traversal rejected;
+- canonical root containment prevents symlink/root escape;
+- duplicate model identity rejected;
+- activation is all-or-nothing;
+- diagnostics-ready verified metadata produced.
+
+### #33 reusable inference workspace
+
+`NativeImageWorkspace` is bounded, RAII and move-only.
+
+Telemetry:
+
+```text
+tensor_capacity
+scratch_capacity
+tensor_growth_count
+scratch_growth_count
+```
+
+Limits prevent unbounded tensor/scratch growth. YOLO and LPRNet preprocessors expose workspace-based reuse paths. Generic ONNX OCR passes a reusable workspace through model input construction. Optional `FAC_LPR_BUILD_WORKSPACE_PROBE` measures warm-up/growth reuse behavior.
+
+### #34 bounded worker pool / concurrency
+
+- configurable worker count;
+- bounded queue;
+- `reject_newest` and blocking backpressure;
+- `drain` / `discard_pending` shutdown;
+- one reusable workspace per worker;
+- task exceptions do not kill worker threads;
+- submitted/completed/failed/dropped/pending/active/peak-pending telemetry;
+- stress test covers 2000 tasks, queue bound and per-worker workspace count.
+
+The stress test is wired into the native test target but has not yet been executed by hosted CI because Actions included minutes are exhausted.
+
+### #35 Public C ABI v1
+
+Public pure-C header:
+
+```text
+include/fac_lpr/fac_lpr_engine.h
+```
+
+Stable symbols:
+
+```c
+fac_lpr_engine_create_v1
+fac_lpr_engine_recognize_v1
+fac_lpr_engine_destroy_v1
+fac_lpr_get_last_error_v1
+```
+
+Properties:
+
+- opaque handle;
+- export/calling convention macros;
+- pointer-to-handle destroy clears caller slot;
+- null/repeated destroy safe;
+- no C++ exception crosses ABI;
+- struct size/version contract documented;
+- independent C11 warnings-as-errors header smoke passed.
+
+### #36 C ABI result buffer / ownership
+
+Recognition output is one **caller-owned flat byte buffer**. No engine-owned `char*`, candidate pointer or evidence pointer crosses ABI.
+
+Layout families:
+
+```text
+fac_lpr_result_v1
+fac_lpr_plate_result_v1[]
+fac_lpr_evidence_v1[]
+fac_lpr_candidate_v1[]
+decision reason values
+UTF-8/ASCII text slices
+```
+
+Nested values use buffer-relative offsets/counts. Text uses `fac_lpr_text_ref_v1 { offset, length }` and is not NUL-terminated.
+
+- `FAC_LPR_STATUS_BUFFER_TOO_SMALL = 10`;
+- two-call exact required-size pattern;
+- 4-byte result-buffer alignment contract;
+- explicit internal→C status/reason mapping;
+- 32-bit wire overflow checks;
+- finite/probability/latency validation;
+- caller-owned last-error copy API;
+- wire struct sizes locked with C11 `_Static_assert`;
+- synthetic serializer tests cover nested result/evidence/alternatives/reasons, exact buffer, one-byte-short, empty result and misalignment;
+- independent C11 wire-layout smoke passed.
 
 ---
 
-## 6. Technology baseline
+## 5. #37 current partial implementation
+
+Optional build target:
+
+```text
+FAC_LPR_BUILD_LPR_CLI=ON
+→ fac-lpr-cli
+```
+
+Current shell supports:
+
+- JPG/PNG path input via OpenCV `imgcodecs`;
+- `--json`;
+- `--debug-evidence`;
+- `--model-dir <path>` surface;
+- `--config <path>` surface;
+- `--log-level trace|debug|info|warn|error|off`;
+- public C ABI create/recognize/destroy flow;
+- two-call caller-owned result buffer;
+- human and JSON result decoding;
+- explicit process error codes and C ABI last-error printing.
+
+**Blocker:** model/config options cannot yet construct the production detector/recognizer pipeline because concrete provider composition is missing. The CLI must not fabricate recognition. Keep #37 open until a real image with real runtime model composition produces `PlateRecognitionResult`.
+
+---
+
+## 6. CI / validation state
+
+GitHub Pro included Actions usage for the current month is exhausted:
+
+```text
+3000 / 3000 included minutes used
+billable usage observed: $0 at checkpoint
+```
+
+Do not trigger expensive GitHub-hosted workflows until included usage resets or explicit approval is given.
+
+A manual self-hosted validation workflow was prepared for Windows/Linux. Full release validation still requires:
+
+```text
+Windows x64
+Linux x64
+Debug + Release
+OpenCV ON
+ONNX Runtime ON
+GTest/CTest
+```
+
+ARM64 portability can be added when an actual ARM64 deployment target/runner is available.
+
+Truthfulness rule: source/test wiring or independent smoke tests are not equivalent to full repository CI. Never claim full GTest/OpenCV/ONNX PASS until those binaries actually run.
+
+---
+
+## 7. Technology and architecture baseline
 
 - C++20
+- C11 public ABI validation
 - CMake 3.25+
-- CMake Presets
 - Windows x64 / MSVC
 - Linux x64 / GCC + Clang
 - ONNX Runtime
-- OpenCV, intentionally minimized
+- OpenCV kept at infrastructure/tool edges
 - GoogleTest
 - spdlog
 
-Dependencies: vcpkg for normal C/C++ deps, pinned baseline; official checksum-pinned Microsoft ONNX Runtime prebuilts; no runtime `.onnx` binaries in Git.
-
----
-
-## 7. Architecture
+Dependency direction:
 
 ```text
 Public API / Composition Root
@@ -208,96 +277,38 @@ Public API / Composition Root
           Domain
 ```
 
-Domain: standard C++ value types only, no vendor/framework/process/UI/backend dependencies.
-
-Application: vendor-neutral use cases/contracts including detector, aligner, crop generator, recognizer, layout analyzer, candidate fusion, confidence calibration and decision policy interfaces; also ImageView, OperationContext, config and typed errors.
-
-Infrastructure: concrete ONNX/OpenCV/native-image/logging/model adapters. Vendor types never leak inward or into public ABI.
+Domain uses standard C++ value types only. Application owns vendor-neutral contracts/use cases. Infrastructure owns ONNX/OpenCV/native-image/model/concurrency adapters. Vendor types never leak into Domain/Application/public C ABI.
 
 ---
 
-## 8. Image/memory rules
+## 8. Memory, error and privacy guardrails
 
-OpenCV is not the fundamental image abstraction. Native C++ owns simple hot-path validation/crop/letterbox/sampling/color/normalization/HWC→CHW/workspace/statistics. OpenCV remains for high-value complex algorithms like homography, warpPerspective, CLAHE, thresholding and connected components.
+- RAII; no scattered raw ownership/new/delete;
+- caller owns `ImageView` input memory;
+- bounded workspaces/queues/caches;
+- checked external dimensions/stride/offset arithmetic;
+- no C++ exception across C ABI;
+- no engine-owned result strings across C ABI;
+- sensitive images/crops/full plate text/secrets are not logged by default;
+- runtime `.onnx` models are not committed to Git.
 
-Ownership/resource rules:
-
-- RAII;
-- no raw ownership/scattered new/delete;
-- caller owns ImageView memory;
-- ImageBuffer/workspace own bounded storage;
-- no unbounded queues/caches/tensors/crops/images;
-- checked external dimension/stride arithmetic;
-- no dangling engine-owned strings through C ABI.
-
-Strided extent:
+Strided image extent:
 
 ```text
 (height - 1) * stride + packed_row_bytes
 ```
 
----
-
-## 9. Error/privacy/model rules
-
-No C++ exception crosses C ABI. Typed errors include configuration/model-load/inference/invalid-image/provider/cancelled/timeout/resource-exhausted/internal.
-
-Sensitive images/crops/full plate text/secrets are not logged by default.
-
-Expected runtime models: `best.onnx`, `lprnet_turkey.onnx`.
-
-**Never guess model contracts:** tensor names/shapes/layout/class count/keypoint order/offsets/charset/blank index/logit axes/normalization must come from inspector + real artifacts. Missing artifacts produce explicit skipped/missing validation, never fake pass.
+Expected runtime models currently include `best.onnx` and `lprnet_turkey.onnx`. Never guess tensor names/shapes/layout/class count/keypoint order/charset/blank index/normalization; inspect real artifacts.
 
 ---
 
-## 10. Target recognition pipeline
+## 9. Canonical roadmap
+
+Roadmap issues are #1–#78. Accidental #80 is not roadmap work.
 
 ```text
-Image
-↓
-Full-frame detection
-↓
-Adaptive tiles when needed
-↓
-Detection merge/NMS
-↓
-Geometry validation
-↓
-Alignment/crop hypotheses
-↓
-Primary OCR candidates
-↓
-Turkish constrained search
-↓
-Layout analysis
-↓
-Multi-crop fusion
-↘ optional secondary recognizers
-↓
-Provider calibration / cross-source evidence
-↓
-Safe technical recognition decision
-↓
-PlateRecognitionResult
-```
-
-Deterministic ordering, evidence preservation, explicit degradation and fail-closed behavior are required.
-
----
-
-## 11. Canonical roadmap
-
-Roadmap is issues #1–#78. Accidental #80 is not roadmap work.
-
-```text
-#1–#30                                      CLOSED
-#31 LPR pipeline orchestrator               NEXT / OPEN
-#32 Model manifest/checksum/lifecycle
-#33 Reusable inference workspace
-#34 Bounded worker pool/concurrency
-#35 Public C ABI v1
-#36 ABI result buffer/ownership
-#37 Offline lpr-cli
+#1–#36                                      CLOSED
+#37 Offline lpr-cli                         OPEN / BLOCKED ON REAL COMPOSITION
 #38 Golden dataset regression
 #39 Multi-detector fusion
 #40 Long-run memory stress
@@ -343,56 +354,25 @@ Roadmap is issues #1–#78. Accidental #80 is not roadmap work.
 
 ---
 
-## 12. Immediate continuation: #31 LPR pipeline orchestrator
+## 10. Production v1 guardrail
 
-Live issue acceptance criteria must be read before implementation.
-
-Target responsibility is expected to compose the already-built vendor-neutral stages rather than reimplement them:
-
-```text
-detection
-→ geometry/alignment
-→ crop generation
-→ recognition ensemble
-→ layout evidence
-→ candidate fusion
-→ decision policy
-```
-
-Requirements from architecture:
-
-- depend on application interfaces, not concrete provider classes;
-- preserve partial-failure/degraded evidence;
-- propagate operation context/deadline;
-- produce per-stage/total latency metadata where issue requires it;
-- return structured `PlateRecognitionResult`;
-- no access-control business logic;
-- no vendor-specific types leaking into the orchestrator contract.
-
-Audit current code before creating new abstractions; do not duplicate existing provider responsibilities.
+Do not call production v1 ready until #78 truthfully passes clean multi-platform build, unit/integration/real-model/golden tests, sanitizer/static/fuzz, memory/performance, ABI, packaged/consumer smoke, security/SBOM/licenses/provenance/checksums and readiness/runbook gates.
 
 ---
 
-## 13. Production v1 guardrails
-
-Do not call production v1 until #78 truthfully passes clean multi-platform build, unit/integration/real-model/golden tests, sanitizer/static/fuzz, memory/performance, ABI, packaged/consumer smoke, security/SBOM/licenses/provenance/checksums and readiness/runbook gates.
-
-Never re-enable expensive hosted CI without approval, guess ONNX contracts, commit models/sensitive data, add access rules, expose exceptions, use raw ownership/unbounded resources, log sensitive plate data by default, close out of order or fabricate validation.
-
----
-
-## 14. Handoff checkpoint
+## 11. Handoff checkpoint
 
 ```text
 checkpoint date: 2026-08-22
-closed issues: #1 through #30
-last closed issue: #30 safe recognition decision policy
-next issue to audit/close: #31 LPR pipeline orchestrator
+closed issues: #1 through #36
+last closed issue: #36 C ABI result buffer/ownership
+current issue: #37 offline lpr-cli
+#37 state: OPEN / partial CLI shell implemented / real provider composition missing
 active development branch: dev
 active draft PR: #79
-GitHub Actions mode: manual / zero-spend
+GitHub-hosted Actions included minutes: exhausted for current period
 runtime ONNX models committed to Git: NO
 production v1 ready: NO
 ```
 
-**Resume at #31. Inspect live acceptance criteria and current code first, implement missing orchestration only, validate truthfully, comment/close sequentially.**
+**Resume at #37. Do not close it until a real JPG/PNG produces a real `PlateRecognitionResult` through actual engine/provider composition.**
