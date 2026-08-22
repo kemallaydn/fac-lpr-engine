@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "semanticVersion": "0.1.0",
+  "abiMajor": 1,
+  "symbols": [
+    "fac_lpr_engine_create_v1",
+    "fac_lpr_engine_destroy_v1",
+    "fac_lpr_engine_recognize_v1",
+    "fac_lpr_get_last_error_v1",
+    "fac_lpr_get_version_v1"
+  ],
+  "signatures": {
+    "fac_lpr_engine_create_v1": "fac_lpr_status fac_lpr_engine_create_v1(const fac_lpr_engine_config_v1* config, fac_lpr_engine_handle** out_handle)",
+    "fac_lpr_engine_destroy_v1": "fac_lpr_status fac_lpr_engine_destroy_v1(fac_lpr_engine_handle** handle)",
+    "fac_lpr_engine_recognize_v1": "fac_lpr_status fac_lpr_engine_recognize_v1(fac_lpr_engine_handle* handle, const fac_lpr_image_view_v1* image, void* output_buffer, size_t output_capacity, size_t* required_output_size)",
+    "fac_lpr_get_last_error_v1": "fac_lpr_status fac_lpr_get_last_error_v1(char* buffer, size_t buffer_capacity, size_t* required_size)",
+    "fac_lpr_get_version_v1": "fac_lpr_status fac_lpr_get_version_v1(fac_lpr_version_info_v1* out_version)"
+  },
+  "layouts": {
+    "fac_lpr_version_info_v1": {"size": 24, "align": 4},
+    "fac_lpr_engine_config_v1": {"size": 16, "align": 4},
+    "fac_lpr_image_view_v1": {"size": 40, "align": 8},
+    "fac_lpr_text_ref_v1": {"size": 8, "align": 4},
+    "fac_lpr_point_v1": {"size": 8, "align": 4},
+    "fac_lpr_bbox_v1": {"size": 16, "align": 4},
+    "fac_lpr_quadrilateral_v1": {"size": 48, "align": 4},
+    "fac_lpr_candidate_v1": {"size": 32, "align": 4},
+    "fac_lpr_evidence_v1": {"size": 32, "align": 4},
+    "fac_lpr_plate_result_v1": {"size": 140, "align": 4},
+    "fac_lpr_result_v1": {"size": 32, "align": 4}
+  }
+}
