@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: linux-x64-docker-validation-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   linux-x64:
