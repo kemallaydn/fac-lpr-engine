@@ -4,6 +4,7 @@
 #include <fac_lpr/application/image_validation.hpp>
 #include <fac_lpr/domain/recognition.hpp>
 
+#include <opencv2/core/utils/logger.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 #include <cstddef>
@@ -232,6 +233,13 @@ int main(const int argc, char** argv) {
         print_usage();
         return 2;
     }
+
+    // JSON mode is a machine-readable stdout contract. Suppress OpenCV diagnostics
+    // that may otherwise be emitted to stdout and corrupt the JSON stream.
+    if (options->json) {
+        cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_ERROR);
+    }
+
     if (!std::filesystem::is_regular_file(options->image)) {
         std::cerr << "Image file not found: " << options->image << '\n';
         return 2;
