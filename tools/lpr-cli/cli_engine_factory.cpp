@@ -335,7 +335,7 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
     ocr_config.output_name = required(contract, "ocr.output_name");
     ocr_config.input = ocr_input_spec;
     ocr_config.output_layout = output_layout(required(contract, "ocr.output_layout"));
-    const auto& charset = required(contract, "ocr.charset");
+    const auto charset = required(contract, "ocr.charset");
     ocr_config.decoder.ctc.charset.assign(charset.begin(), charset.end());
     ocr_config.decoder.ctc.blank_index = parse_size(contract, "ocr.blank_index");
     ocr_config.decoder.ctc.maximum_timesteps = parse_size(contract, "ocr.maximum_timesteps");
