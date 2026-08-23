@@ -37,6 +37,12 @@ jobs:
             uname -a
           '
 
+      - name: Prepare persistent vcpkg binary cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${HOME}/.cache/fac-lpr-vcpkg"
+
       - name: Linux x64 Debug and Release validation
         shell: bash
         run: |
@@ -44,9 +50,11 @@ jobs:
           docker run --rm \
             --platform linux/amd64 \
             -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "${HOME}/.cache/fac-lpr-vcpkg:/vcpkg-cache" \
             -w /workspace \
             -e VCPKG_DISABLE_METRICS=1 \
             -e VCPKG_DEFAULT_TRIPLET=x64-linux \
+            -e VCPKG_BINARY_SOURCES='clear;files,/vcpkg-cache,readwrite' \
             ubuntu:24.04 bash -lc '
               set -euo pipefail
               export DEBIAN_FRONTEND=noninteractive
