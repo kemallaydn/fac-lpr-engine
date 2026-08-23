@@ -4,10 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - dev
-    paths:
-      - '.github/linux-x64-docker-trigger.txt'
-      - '.github/workflows/linux-x64-docker-validation.yml'
+      - ci/linux-x64-validation
 
 permissions:
   contents: read
