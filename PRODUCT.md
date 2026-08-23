@@ -1,27 +1,40 @@
-# FAC LPR Engine — Product, Architecture and AI Handoff
+# FAC LPR Engine — Product and Architecture Specification
 
-> Canonical handoff for FAC LPR Engine. Live GitHub issue state + current `dev` code/tests override stale text.
+This document is the canonical description of **what FAC LPR Engine is, what it owns, how it is structured, what runtime contracts are considered production-critical, and what must be true before a release is promoted**.
+
+Live code, tests and release evidence always override stale prose. This document should describe the product, not act as a running issue diary.
 
 ---
 
 ## 1. Product definition
 
-FAC LPR Engine is an independent, reusable, production-grade native license plate recognition engine.
+FAC LPR Engine is an independent, reusable, production-grade native **license plate recognition engine**.
+
+Its responsibility is to turn an input image/frame into a technically justified recognition result:
 
 ```text
-image/frame
-→ plate detection
-→ geometry validation/alignment
-→ crop generation/enhancement
-→ OCR recognition
-→ candidate/evidence fusion
-→ technical recognition decision
-→ PlateRecognitionResult
+image / frame
+    ↓
+plate detection
+    ↓
+geometry validation
+    ↓
+perspective alignment
+    ↓
+crop generation / enhancement
+    ↓
+OCR recognition
+    ↓
+confidence calibration + layout evidence
+    ↓
+candidate fusion
+    ↓
+technical decision
+    ↓
+PlateRecognitionResult
 ```
 
-The engine does **not** own barrier/access authorization, FAC Access business rules, backend/database/UI state, RTSP lifecycle, or model-training lifecycle.
-
-Technical statuses only:
+The public technical outcomes are:
 
 ```text
 ACCEPTED
@@ -29,202 +42,122 @@ REVIEW
 REJECTED
 ```
 
-`ACCEPTED` means recognition evidence is technically strong enough, never “grant access”.
+`ACCEPTED` means the recognition evidence is technically strong enough under the configured policy. It never means “grant access”.
+
+### The engine owns
+
+- plate detection
+- geometric validation and rectification
+- crop generation and enhancement
+- OCR execution
+- recognition evidence collection
+- confidence calibration
+- plate-layout analysis
+- candidate fusion
+- technical decision policy
+- model activation/verification
+- bounded native execution
+- public C++/C integration surfaces
+- diagnostics and stage timing
+
+### The engine does not own
+
+- barrier/gate authorization
+- FAC Access business rules
+- user/customer permissions
+- backend/database state
+- UI state
+- RTSP/camera lifecycle
+- camera discovery
+- model training lifecycle
+- payment/licensing business logic
+- audit/business-event persistence
+
+That boundary is deliberate. FAC LPR Engine is a recognition component, not a complete access-control product.
 
 ---
 
-## 2. Repository and workflow
+## 2. Product principles
 
-Repository: `kemallaydn/fac-lpr-engine`
+### 2.1 Correctness over optimistic output
 
-- `main`: stable/release base
-- `dev`: active development
-- Draft PR #79: `FAC LPR Engine production development`, main ← dev
+The engine must prefer `REVIEW` or `REJECTED` over a fabricated high-confidence plate. Invalid or incomplete evidence must fail closed.
 
-Sequential issue procedure:
+### 2.2 Deterministic runtime contracts
 
-1. read live acceptance criteria;
-2. inspect current implementation;
-3. implement missing pieces only;
-4. add/adjust tests;
-5. perform strongest truthful validation available;
-6. post Turkish top-level completion comment;
-7. close only when acceptance is truthfully met;
-8. update this checkpoint at meaningful milestones;
-9. continue numerically.
+Model tensor names, dimensions, preprocessing, charset, blank index, keypoint interpretation and decoder semantics are part of the production contract. They are never guessed at runtime.
 
-Never fake CI/test/model validation and never close merely because similarly named code exists.
+### 2.3 Bounded native execution
 
----
+External input must never be allowed to cause uncontrolled allocation, queue growth, workspace growth or integer overflow. Resource limits are explicit and validated.
 
-## 3. Current authoritative checkpoint
+### 2.4 Stable integration boundary
 
-Re-audited on **2026-08-23**.
+Consumers should not need to know about ONNX Runtime, OpenCV, internal C++ classes or ownership details. The public C ABI is versioned and intentionally flat.
 
-**Roadmap issues #1 through #78 are CLOSED / completed.**
+### 2.5 Vendor isolation
 
-Current release state:
+ONNX Runtime and OpenCV are infrastructure details. Vendor-specific types must not leak into Domain, Application or the public C ABI.
 
-- #37 offline `lpr-cli` runtime acceptance is completed and closed.
-- #78 production v1 readiness issue is completed and closed.
-- PR #103 (`release: add production v1 readiness and acceptance gate`) has been merged into `dev`.
-- `production-readiness.yml` now exists on `dev` and implements the fail-closed release gate.
-- `main`'s standalone dependency-security registration commit has been merged into `dev`, resolving the previous branch divergence while keeping the newer `dev` security workflow content.
-- PR #79 (`dev -> main`) is now mergeable and remains draft until current validation is truthfully complete.
-- No roadmap issue is currently open.
+### 2.6 Truthful release evidence
 
-Production v1 must still not be declared released merely because roadmap issues are closed. The exact release candidate must satisfy the release gate and produce machine-readable readiness evidence.
+A source file existing is not proof that a platform works. A skipped job is not equivalent to a passed job. Production promotion is based on executed evidence for the exact candidate.
 
 ---
 
-## 4. Recognition foundation and core implementation
+## 3. Architecture
 
-### #22–#30 recognition foundation
+Dependency direction is inward:
 
-- Turkish plate grammar and constrained CTC beam search hardened.
-- GCC warnings-as-errors portability bug fixed.
-- Connected-component layout perspective edge test added.
-- Multi-crop duplicate-margin fusion bug fixed.
-- Recognition ensemble optional/required failure semantics hardened.
-- PaddleOCR cache/timeout/malformed-evidence coverage improved.
-- Generic ONNX OCR output-count/RAII/evidence validation improved.
-- Confidence calibration boundary coverage expanded.
-- Safe decision policy reason-level tests added.
+```text
+Public API / Composition Root
+            ↓
+      Infrastructure
+            ↓
+       Application
+            ↓
+          Domain
+```
 
-### #31 LPR pipeline orchestrator
+### Domain
 
-Vendor-neutral pipeline composed as:
+Contains recognition concepts and value types only. It must remain independent from OpenCV, ONNX Runtime, filesystem/runtime adapters and public wire-format concerns.
+
+### Application
+
+Owns orchestration and vendor-neutral ports/policies, including the recognition pipeline and contracts such as:
 
 ```text
 IPlateDetector
-→ IPlateGeometryEvaluator
-→ IPlateAligner
-→ ICropGenerator
-→ RecognitionEnsemble
-→ IConfidenceCalibrator
-→ IPlateLayoutAnalyzer
-→ ICandidateFusion
-→ IDecisionPolicy
+IPlateGeometryEvaluator
+IPlateAligner
+ICropGenerator
+IConfidenceCalibrator
+IPlateLayoutAnalyzer
+ICandidateFusion
+IDecisionPolicy
 ```
 
-`LprPipelineResult` preserves recognitions, stage timings, degraded state and provider failures. Geometry evidence is carried through a vendor-neutral application contract rather than leaking Infrastructure concrete classes inward.
+### Infrastructure
 
-### #32 model manifest/checksum/lifecycle
+Owns concrete runtime implementations:
 
-- `ModelManifest` / `ModelManifestEntry` / `ActiveModelInfo` added.
-- model name/type/version/path/size/SHA-256 required;
-- exact size + bounded read + SHA-256 verification;
-- absolute path and `..` traversal rejected;
-- canonical root containment prevents symlink/root escape;
-- duplicate model identity rejected;
-- activation is all-or-nothing;
-- diagnostics-ready verified metadata produced.
+- ONNX Runtime sessions/providers
+- OpenCV image operations
+- detector/OCR adapters
+- model loading and checksum verification
+- native image/workspace implementation
+- concurrency primitives and concrete platform integrations
 
-### #33 reusable inference workspace
+### Public API / Composition Root
 
-`NativeImageWorkspace` is bounded, RAII and move-only.
-
-Telemetry:
-
-```text
-tensor_capacity
-scratch_capacity
-tensor_growth_count
-scratch_growth_count
-```
-
-Limits prevent unbounded tensor/scratch growth. YOLO and LPRNet preprocessors expose workspace-based reuse paths. Generic ONNX OCR passes a reusable workspace through model input construction. Optional `FAC_LPR_BUILD_WORKSPACE_PROBE` measures warm-up/growth reuse behavior.
-
-### #34 bounded worker pool / concurrency
-
-- configurable worker count;
-- bounded queue;
-- `reject_newest` and blocking backpressure;
-- `drain` / `discard_pending` shutdown;
-- one reusable workspace per worker;
-- task exceptions do not kill worker threads;
-- submitted/completed/failed/dropped/pending/active/peak-pending telemetry;
-- stress test covers 2000 tasks, queue bound and per-worker workspace count.
-
-### #35 Public C ABI v1
-
-Public pure-C header:
-
-```text
-include/fac_lpr/fac_lpr_engine.h
-```
-
-Stable symbols:
-
-```c
-fac_lpr_engine_create_v1
-fac_lpr_engine_recognize_v1
-fac_lpr_engine_destroy_v1
-fac_lpr_get_last_error_v1
-```
-
-Properties:
-
-- opaque handle;
-- export/calling convention macros;
-- pointer-to-handle destroy clears caller slot;
-- null/repeated destroy safe;
-- no C++ exception crosses ABI;
-- struct size/version contract documented;
-- independent C11 warnings-as-errors header smoke covered.
-
-### #36 C ABI result buffer / ownership
-
-Recognition output is one **caller-owned flat byte buffer**. No engine-owned `char*`, candidate pointer or evidence pointer crosses ABI.
-
-Layout families:
-
-```text
-fac_lpr_result_v1
-fac_lpr_plate_result_v1[]
-fac_lpr_evidence_v1[]
-fac_lpr_candidate_v1[]
-decision reason values
-UTF-8/ASCII text slices
-```
-
-Nested values use buffer-relative offsets/counts. Text uses `fac_lpr_text_ref_v1 { offset, length }` and is not NUL-terminated.
-
-- `FAC_LPR_STATUS_BUFFER_TOO_SMALL = 10`;
-- two-call exact required-size pattern;
-- 4-byte result-buffer alignment contract;
-- explicit internal→C status/reason mapping;
-- 32-bit wire overflow checks;
-- finite/probability/latency validation;
-- caller-owned last-error copy API;
-- wire struct sizes locked with C11 `_Static_assert`;
-- synthetic serializer tests cover nested result/evidence/alternatives/reasons, exact buffer, one-byte-short, empty result and misalignment;
-- independent C11 wire-layout smoke covered.
+Owns the stable integration boundary and concrete assembly of the production pipeline.
 
 ---
 
-## 5. Offline CLI and active model contracts
+## 4. Production recognition pipeline
 
-Optional build target:
-
-```text
-FAC_LPR_BUILD_LPR_CLI=ON
-→ fac-lpr-cli
-```
-
-CLI supports:
-
-- JPG/PNG path input via OpenCV `imgcodecs`;
-- `--json`;
-- `--debug-evidence`;
-- `--model-dir <path>`;
-- `--config <path>`;
-- `--log-level trace|debug|info|warn|error`;
-- real application `LprPipeline` execution;
-- human and JSON result output;
-- explicit process error handling.
-
-Real CLI composition wires:
+The current production composition is conceptually:
 
 ```text
 best.onnx
@@ -244,199 +177,467 @@ best.onnx
 → LprPipeline
 ```
 
-### Active detector contract
+`LprPipelineResult` preserves more than the final string. It carries the technical evidence needed to understand the decision, including recognition results, stage timings, degraded state and provider failures.
 
-`best.onnx`:
+The pipeline must remain vendor-neutral at the application boundary even when concrete infrastructure uses OpenCV and ONNX Runtime.
+
+---
+
+## 5. Detector contract
+
+The active detector model is:
+
+```text
+best.onnx
+```
+
+Authoritative tensor contract:
 
 ```text
 input  images   float32 [1,3,960,960]
 output output0  float32 [1,17,18900]
 ```
 
-- input scale `1/255`;
-- pad `114`;
-- RGB CHW tensor;
-- features-first output;
-- 4 bbox values;
-- one plate class score;
-- no separate objectness;
-- 4 keypoints × `(x,y,confidence)`;
-- geometry layer reorders corner points and does not assume model keypoint semantic order.
+Preprocessing/output assumptions:
 
-### Active OCR contract
+- RGB CHW
+- scale `1/255`
+- letterbox pad value `114`
+- features-first output
+- 4 bounding-box values
+- one plate-class score
+- no separate objectness score
+- 4 keypoints, each `(x, y, confidence)`
 
-`lprnet_turkey.onnx` active model: **V2 Mixed Epoch 7**.
+The geometry layer must normalize/reorder corners itself. It must not depend on an undocumented semantic keypoint order from the model.
+
+---
+
+## 6. OCR contract
+
+The active OCR model is:
+
+```text
+lprnet_turkey.onnx
+```
+
+Current model family: **V2 Mixed Epoch 7**.
+
+Tensor contract:
 
 ```text
 input  input   float32 [1,3,40,160]
 output output  float32 [1,34,24]
-layout: BCT (batch, classes, timesteps)
+layout: BCT
 ```
 
-Exact training CHARS order:
+Training character order:
 
 ```text
 0 1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P R S T U V Y Z -
 ```
 
-The final `-` is not a real character. Native decoder charset is:
+The final `-` is the CTC blank and is not a real output character.
+
+Native decoder contract:
 
 ```text
-0123456789ABCDEFGHIJKLMNOPRSTUVYZ
+charset = 0123456789ABCDEFGHIJKLMNOPRSTUVYZ
+blank_index = 33
+class_count = 34
+timesteps = 24
 ```
 
-with `blank_index=33`, 34 total classes and 24 timesteps.
-
-Training preprocessing:
+Preprocessing:
 
 ```text
-cv2.resize(..., (160,40), INTER_LINEAR)
-keep BGR order
+resize: 160 x 40, linear interpolation
+color order: BGR
 float32
-(img - 127.5) * 0.0078125
+(img - 127.5) / 128
 HWC -> CHW
-add batch
-contiguous float32
+batch dimension -> [1,3,40,160]
 ```
 
-Equivalent native normalization:
+Equivalent native configuration:
 
 ```text
-color_order = BGR
 input_scale = 1.0
 mean = [127.5,127.5,127.5]
-std = [128,128,128]
+std  = [128,128,128]
 ```
 
-Regression tests lock BGR/normalization semantics, exact 33-character + blank-33 CTC mapping and `[1,34,24]` BCT adapter decoding.
+Deprecated model assumptions such as `[1,3,24,94]` input or `[1,34,18]` output are forbidden for the active production model.
 
-Deprecated and forbidden for this active model:
-
-```text
-input  [1,3,24,94]
-output [1,34,18]
-```
+These contracts are regression locked. Any future model replacement must update the explicit contract and its tests instead of relying on compatibility by accident.
 
 ---
 
-## 6. CI / validation state
+## 7. Model lifecycle and integrity
 
-Current validation is based on the latest `dev` head and PR #79.
+Runtime model activation is all-or-nothing.
 
-The repository contains dedicated workflows for:
+A model manifest identifies and verifies model artifacts using metadata including:
 
-```text
-ci-pr
-mac-arm64-validation
-sanitizers
-static-analysis
-fuzz
-memory-stress
-performance-regression
-abi-compatibility
-resource-budget
-release-package
-cmake-package-release-smoke
-dependency-security
-production-readiness
-release-readiness
-coverage
-C / C# / Python consumer smoke
-```
+- logical model identity/type
+- version
+- path
+- exact file size
+- SHA-256
 
-Hosted CI can be intentionally disabled through repository variables, so a skipped hosted job is not equivalent to a successful validation. Production release policy is fail-closed: missing, skipped, cancelled or failed required release evidence must not be treated as approval.
+Activation rejects unsafe or ambiguous input, including:
 
-The new `production-readiness` workflow collects exact-tag/exact-commit evidence and requires Linux/Windows clean builds, real-model/native/golden coverage, sanitizer/static/fuzz/memory/performance/ABI/package/security/documentation evidence before publishing can proceed.
+- absolute paths where not allowed
+- `..` traversal
+- canonical-path escape through symlinks/root manipulation
+- duplicate model identity
+- file-size mismatch
+- checksum mismatch
+- invalid/incomplete contract
 
-Truthfulness rule: source/test wiring or independent smoke tests are not equivalent to full repository CI. Never claim a platform/gate passed until its corresponding execution evidence exists.
+A partially valid model set must never become active. The previously valid runtime state must remain intact when a replacement fails validation.
 
 ---
 
-## 7. Technology and architecture baseline
+## 8. Recognition evidence and decision semantics
 
-- C++20
-- C11 public ABI validation
-- CMake 3.25+
-- Windows x64 / MSVC
-- Linux x64 / GCC + Clang
-- macOS ARM64 self-hosted validation
-- ONNX Runtime
-- OpenCV kept at infrastructure/tool edges
-- GoogleTest
-- spdlog
+A plate string alone is not the product contract. The engine evaluates multiple evidence sources.
 
-Dependency direction:
+Evidence may include:
 
-```text
-Public API / Composition Root
-            ↓
-      Infrastructure
-            ↓
-       Application
-            ↓
-          Domain
-```
+- detector confidence
+- geometry quality
+- crop quality
+- OCR provider evidence
+- calibrated candidate confidence
+- plate-layout evidence
+- alternative candidates
+- degraded provider state
+- explicit technical decision reasons
 
-Domain uses standard C++ value types only. Application owns vendor-neutral contracts/use cases. Infrastructure owns ONNX/OpenCV/native-image/model/concurrency adapters. Vendor types never leak into Domain/Application/public C ABI.
+The decision policy must expose why a result became `ACCEPTED`, `REVIEW` or `REJECTED`. Typical reasons include weak detector evidence, weak geometry, weak crop quality, no valid candidate, low candidate confidence, conflicting strong candidates or degraded/fatal provider state.
+
+This information is intended for technical observability and downstream review flows, not for silently converting uncertainty into a positive authorization decision.
 
 ---
 
-## 8. Memory, error and privacy guardrails
+## 9. Concurrency and resource model
 
-- RAII; no scattered raw ownership/new/delete;
-- caller owns `ImageView` input memory;
-- bounded workspaces/queues/caches;
-- checked external dimensions/stride/offset arithmetic;
-- no C++ exception across C ABI;
-- no engine-owned result strings across C ABI;
-- sensitive images/crops/full plate text/secrets are not logged by default;
-- release policy provisions/verifies runtime model artifacts by checksum.
+### Reusable inference workspace
 
-Strided image extent:
+`NativeImageWorkspace` is bounded, RAII-managed and move-only. It supports reuse across inference operations and tracks capacity/growth telemetry.
+
+Relevant telemetry includes:
+
+```text
+tensor_capacity
+scratch_capacity
+tensor_growth_count
+scratch_growth_count
+```
+
+The goal is predictable steady-state behavior after warm-up rather than repeated large allocation churn.
+
+### Worker pool
+
+The bounded worker pool supports:
+
+- configurable worker count
+- bounded queue capacity
+- reject-newest or blocking backpressure
+- drain/discard-pending shutdown semantics
+- one reusable workspace per worker
+- exception isolation between tasks
+- submitted/completed/failed/dropped/pending/active telemetry
+
+### Resource arithmetic
+
+External dimensions and allocation calculations are checked before allocation.
+
+For strided images, the required extent is calculated as:
 
 ```text
 (height - 1) * stride + packed_row_bytes
 ```
 
-Expected runtime models currently include `best.onnx` and `lprnet_turkey.onnx`. Never guess tensor names/shapes/layout/class count/keypoint order/charset/blank index/normalization; use the authoritative model/training contract and regression tests.
-
-**Current repository reality:** `dev/models` contains `best.onnx` and `lprnet_turkey.onnx`. Artifact provisioning and release evidence must remain deliberate and checksum-backed.
+Integer overflow, impossible dimensions and budget violations must fail before allocation or memory access.
 
 ---
 
-## 9. Canonical roadmap
+## 10. Public C ABI v1
 
-Roadmap issues are #1–#78. Accidental #80 is not roadmap work.
+The stable C header is:
 
 ```text
-#1–#78                                      CLOSED
+include/fac_lpr/fac_lpr_engine.h
 ```
 
-Major completed release-hardening areas include golden regression, detector fusion, memory stress, sanitizers, performance, static analysis, fuzzing, multi-platform CI, dependency security/SBOM, packaging, SemVer/ABI policy, diagnostics, startup readiness, model contract regression, real-model integration, C#/Python/C consumers, composition/configuration, execution providers, cancellation/deadlines, atomic model reload, deterministic inference, coverage, provenance, calibration/evaluation tools, CMake package export, artifact provisioning, production runbook, changelog/release automation, ABI compatibility and resource budgets.
+Primary lifecycle symbols:
 
----
+```c
+fac_lpr_engine_create_v1
+fac_lpr_engine_recognize_v1
+fac_lpr_engine_destroy_v1
+fac_lpr_get_last_error_v1
+```
 
-## 10. Production v1 guardrail
+Design rules:
 
-Do not call production v1 released until the exact release candidate truthfully passes clean multi-platform build, unit/integration/real-model/golden tests, sanitizer/static/fuzz, memory/performance, ABI, packaged/consumer smoke, security/SBOM/licenses/provenance/checksums and readiness/runbook gates.
+- opaque engine handle
+- explicit export/calling-convention macros
+- no C++ exception crosses the ABI
+- destroy is null/repeated-safe
+- pointer-to-handle destruction clears the caller slot
+- struct size/version contract is explicit
+- independent C11 compilation/layout validation protects the wire format
 
-Closing #78 means the gate implementation is complete. It does **not** mean every future release candidate automatically passes that gate.
+### Result ownership
 
----
+Recognition output is serialized into one **caller-owned flat byte buffer**.
 
-## 11. Handoff checkpoint
+No engine-owned nested string/pointer graph crosses the ABI.
+
+Wire-layout families include:
 
 ```text
-checkpoint date: 2026-08-23
-closed roadmap issues: #1 through #78
+fac_lpr_result_v1
+fac_lpr_plate_result_v1[]
+fac_lpr_evidence_v1[]
+fac_lpr_candidate_v1[]
+decision reason values
+text slices
+```
+
+Nested data is represented with buffer-relative offsets/counts. Text uses explicit offset + length and is not assumed to be NUL-terminated.
+
+The API supports a two-call required-size pattern and returns `FAC_LPR_STATUS_BUFFER_TOO_SMALL` when appropriate.
+
+The ABI layer validates alignment, finite numeric values, probability ranges and wire-size overflow before returning data to the consumer.
+
+---
+
+## 11. Consumer integration
+
+The native engine is intended to support multiple integration surfaces without coupling consumer code to internal C++ implementation.
+
+Validated/covered consumer paths include:
+
+- native C++
+- C ABI
+- C# P/Invoke
+- Python `ctypes`
+- installed/exported CMake package consumption
+
+Consumer compatibility is a release concern. Internal refactoring is allowed only when the public contract remains compatible under the declared SemVer/ABI policy.
+
+---
+
+## 12. Offline CLI
+
+Optional build target:
+
+```text
+FAC_LPR_BUILD_LPR_CLI=ON
+```
+
+produces:
+
+```text
+fac-lpr-cli
+```
+
+It executes the real application pipeline against JPG/PNG input and supports:
+
+```text
+--json
+--debug-evidence
+--model-dir <path>
+--config <path>
+--log-level trace|debug|info|warn|error
+```
+
+JSON mode is a machine-readable contract. Third-party diagnostic logging must not contaminate stdout. Human diagnostics belong on stderr or behind the appropriate logging path.
+
+The CLI exists for real-pipeline validation, operations/debugging and offline acceptance. It is not a second implementation of recognition logic.
+
+---
+
+## 13. Error handling and failure policy
+
+The engine follows fail-closed behavior at external boundaries.
+
+Examples:
+
+- malformed images are rejected
+- invalid model contracts are rejected
+- checksum mismatch blocks activation
+- provider failures are surfaced
+- invalid result values do not cross the C ABI
+- C++ exceptions are translated before crossing C boundaries
+- unsafe resource requests fail before allocation
+- cancellation/deadline semantics are explicit
+
+A degraded pipeline must communicate that state rather than silently presenting a normal successful execution.
+
+---
+
+## 14. Privacy and logging
+
+By default, the engine should not log:
+
+- raw input images
+- plate crops
+- full plate text as routine diagnostic payload
+- model secrets/credentials
+- consumer secrets
+
+Technical observability should favor:
+
+- stage timing
+- provider status/failure code
+- resource telemetry
+- model identity/version/checksum metadata
+- non-sensitive decision reasons
+
+Any future persistence of sensitive recognition data belongs to the consuming product's explicit privacy/audit policy, not hidden inside the engine.
+
+---
+
+## 15. Build and platform baseline
+
+Primary baseline:
+
+- C++20
+- C11-compatible public ABI
+- CMake 3.25+
+- Ninja where applicable
+- Windows x64 / MSVC
+- Linux x64 / GCC and Clang
+- macOS ARM64 self-hosted validation
+- ONNX Runtime
+- OpenCV
+- GoogleTest / CTest
+- spdlog
+
+Normal validation treats warnings as errors where configured. Platform-specific undefined behavior or compiler diagnostics are considered product defects, not cosmetic differences.
+
+---
+
+## 16. Validation strategy
+
+Production readiness is broader than “the unit tests passed”.
+
+The repository contains validation/gates for areas including:
+
+- unit tests
+- integration tests
+- real-model execution
+- golden regression
+- Linux x64 Debug/Release Docker validation
+- macOS ARM64 validation
+- sanitizer paths
+- static analysis
+- fuzzing
+- memory stress
+- performance regression
+- ABI compatibility
+- resource budgets
+- C/C#/Python consumers
+- CMake package consumption
+- dependency/security scanning
+- SBOM/release metadata
+- release-readiness
+- production-readiness
+
+A workflow being present does not prove it passed. A workflow being skipped does not prove it passed either. The applicable release policy decides which evidence is mandatory for the exact candidate.
+
+---
+
+## 17. Production release policy
+
+A production release must be promoted from an exact, validated candidate.
+
+The release process is fail-closed:
+
+1. candidate code is frozen by commit SHA;
+2. mandatory validation executes against that candidate;
+3. required evidence is collected;
+4. model artifacts/contracts/checksums are verified;
+5. ABI/package/security/readiness requirements are satisfied;
+6. candidate is promoted to the stable branch;
+7. the released commit is tagged/versioned according to release policy;
+8. release artifacts/metadata correspond to that exact commit.
+
+Missing, failed, cancelled or improperly skipped mandatory evidence must block promotion.
+
+Closing implementation roadmap issues does not automatically make every future candidate releasable.
+
+---
+
+## 18. Current release-candidate state
+
+Checkpoint: **2026-08-23**
+
+Development state:
+
+```text
+roadmap issues #1–#78: complete / closed
 open roadmap issues: none
-active development branch: dev
-active release PR: #79 (dev -> main, draft, mergeable)
-production readiness workflow on dev: YES
-PR #103 production readiness implementation: MERGED
-main-only security registration divergence: RESOLVED INTO DEV
-runtime ONNX models committed to dev/models: YES
-production v1 release: PENDING EXACT-CANDIDATE VALIDATION
+active release-candidate branch: dev
+promotion PR: #79 (dev -> main)
+PR state: ready for review, mergeable
+production v1 release: not yet tagged/released
 ```
 
-**Next action:** finish current PR #79 validation, require truthful evidence for all mandatory release gates, then promote `dev` to `main` and create the first production release tag only after the release candidate is approved.
+The current `dev` release candidate has successful evidence for the final gates checked during this promotion cycle, including:
+
+```text
+Linux x64 full validation via Docker
+production-readiness
+release-readiness
+abi-compatibility
+cmake-package-smoke
+resource-budget
+evaluation-tool
+release-metadata
+```
+
+Some workflows may be intentionally conditional/skipped for a specific event. Such skips are not described as passes; the production/release readiness policy remains the authority on mandatory evidence.
+
+The next release action is promotion of the validated `dev` candidate to `main`, followed by exact-commit release/tag validation and publication under the repository release policy.
+
+---
+
+## 19. Roadmap and future evolution
+
+The initial production-hardening roadmap is complete. Future development should be driven by measurable product needs rather than reopening already-solved foundation work.
+
+Likely future evolution areas include:
+
+- additional detector/OCR model generations
+- improved confidence calibration from larger evaluation sets
+- country/plate-format expansion behind explicit contracts
+- hardware-provider tuning and acceleration
+- throughput/latency optimization with unchanged decision semantics
+- improved operational diagnostics
+- stronger packaged-consumer automation
+
+Any future model or provider upgrade must preserve the architecture boundary and pass the same class of contract, regression, resource, ABI and release checks.
+
+---
+
+## 20. Non-negotiable guardrails
+
+Do not:
+
+- treat `ACCEPTED` as access authorization
+- guess model tensor/charset/preprocessing semantics
+- bypass checksum/model-contract verification
+- leak OpenCV/ONNX types into Domain/Application/public ABI
+- expose engine-owned nested pointers through the C ABI
+- allow unbounded queue/workspace/result growth
+- weaken warnings/tests/security/release gates merely to get a green build
+- call a skipped check “passed”
+- call a candidate “production released” before exact-commit promotion/tag evidence exists
+
+The product is considered trustworthy only when its recognition behavior, resource behavior and release evidence remain explicit and reproducible.
