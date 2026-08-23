@@ -18,16 +18,17 @@ TEST(ResourceBudget, RejectsCountAboveLimit) {
 
 TEST(ResourceBudget, RejectsMultiplicationOverflowBeforeAllocation) {
     EXPECT_THROW(
-        application::checked_resource_multiply(
+        static_cast<void>(application::checked_resource_multiply(
             std::numeric_limits<std::size_t>::max(), 2U,
             application::default_resource_budget.max_queue_memory_bytes,
-            "test allocation"),
+            "test allocation")),
         application::ResourceExhaustedError);
 }
 
 TEST(ResourceBudget, RejectsAllocationAboveConfiguredMaximum) {
     EXPECT_THROW(
-        application::checked_resource_multiply(1024U, 1024U, 1024U, "test allocation"),
+        static_cast<void>(application::checked_resource_multiply(
+            1024U, 1024U, 1024U, "test allocation")),
         application::ResourceExhaustedError);
 }
 
