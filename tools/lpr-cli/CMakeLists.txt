@@ -43,6 +43,12 @@ else()
         -Wsign-conversion
         $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:-Werror>
     )
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        # GCC can conservatively assume required(contract, temporary-key) may
+        # return a reference tied to the temporary lookup key. The helper
+        # actually returns the std::string stored in the long-lived contract map.
+        target_compile_options(fac-lpr-cli PRIVATE -Wno-error=dangling-reference)
+    endif()
 endif()
 
 set_target_properties(fac-lpr-cli PROPERTIES
