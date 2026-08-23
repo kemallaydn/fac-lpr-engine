@@ -90,9 +90,9 @@ void activate_production_pipeline(
     }
 
     const auto contract = load_contract(contract_path);
-    const auto& detector_sha = required(contract, "detector.sha256");
-    const auto& ocr_sha = required(contract, "ocr.sha256");
-    const auto& ocr_version = required(contract, "ocr.model_version");
+    const auto detector_sha = required(contract, "detector.sha256");
+    const auto ocr_sha = required(contract, "ocr.sha256");
+    const auto ocr_version = required(contract, "ocr.model_version");
 
     infrastructure::model::ModelManifest manifest{};
     manifest.root_directory = model_directory;
