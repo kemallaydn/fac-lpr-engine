@@ -1,1 +1,0 @@
-linux-x64-docker-validation rerun after golden-regression stdout fix 2026-08-23T19:35+03:00
