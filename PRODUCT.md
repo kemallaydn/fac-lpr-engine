@@ -59,19 +59,25 @@ Never fake CI/test/model validation and never close merely because similarly nam
 
 ## 3. Current authoritative checkpoint
 
-Re-audited on **2026-08-22**.
+Re-audited on **2026-08-23**.
 
-**Issues #1 through #36 are CLOSED / completed.**
+**Roadmap issues #1 through #78 are CLOSED / completed.**
 
-Current first open sequential issue:
+Current release state:
 
-- **#37 — lpr-cli offline recognition aracı oluştur — OPEN / IMPLEMENTATION COMPLETE ENOUGH FOR REAL RUNTIME VALIDATION**
+- #37 offline `lpr-cli` runtime acceptance is completed and closed.
+- #78 production v1 readiness issue is completed and closed.
+- PR #103 (`release: add production v1 readiness and acceptance gate`) has been merged into `dev`.
+- `production-readiness.yml` now exists on `dev` and implements the fail-closed release gate.
+- `main`'s standalone dependency-security registration commit has been merged into `dev`, resolving the previous branch divergence while keeping the newer `dev` security workflow content.
+- PR #79 (`dev -> main`) is now mergeable and remains draft until current validation is truthfully complete.
+- No roadmap issue is currently open.
 
-#37 acceptance requires real `JPG/PNG -> PlateRecognitionResult` execution. The previous provider-composition blocker is resolved: concrete YOLO ONNX detector, LPRNet ONNX OCR adapter and CLI-specific real `LprPipeline` composition now exist. The active V2 Mixed Epoch 7 LPRNet charset/blank/preprocess/output contract is also resolved and regression-tested. Do not close #37 until a real JPG/PNG is executed with the real ONNX artifacts and produces a truthful runtime result.
+Production v1 must still not be declared released merely because roadmap issues are closed. The exact release candidate must satisfy the release gate and produce machine-readable readiness evidence.
 
 ---
 
-## 4. Key completed work in the current handoff
+## 4. Recognition foundation and core implementation
 
 ### #22–#30 recognition foundation
 
@@ -140,8 +146,6 @@ Limits prevent unbounded tensor/scratch growth. YOLO and LPRNet preprocessors ex
 - submitted/completed/failed/dropped/pending/active/peak-pending telemetry;
 - stress test covers 2000 tasks, queue bound and per-worker workspace count.
 
-The stress test is wired into the native test target but has not yet been executed by hosted CI because Actions included minutes are exhausted.
-
 ### #35 Public C ABI v1
 
 Public pure-C header:
@@ -167,7 +171,7 @@ Properties:
 - null/repeated destroy safe;
 - no C++ exception crosses ABI;
 - struct size/version contract documented;
-- independent C11 warnings-as-errors header smoke passed.
+- independent C11 warnings-as-errors header smoke covered.
 
 ### #36 C ABI result buffer / ownership
 
@@ -195,11 +199,11 @@ Nested values use buffer-relative offsets/counts. Text uses `fac_lpr_text_ref_v1
 - caller-owned last-error copy API;
 - wire struct sizes locked with C11 `_Static_assert`;
 - synthetic serializer tests cover nested result/evidence/alternatives/reasons, exact buffer, one-byte-short, empty result and misalignment;
-- independent C11 wire-layout smoke passed.
+- independent C11 wire-layout smoke covered.
 
 ---
 
-## 5. #37 current implementation
+## 5. Offline CLI and active model contracts
 
 Optional build target:
 
@@ -220,7 +224,7 @@ CLI supports:
 - human and JSON result output;
 - explicit process error handling.
 
-Real CLI composition now wires:
+Real CLI composition wires:
 
 ```text
 best.onnx
@@ -239,8 +243,6 @@ best.onnx
 → SafeRecognitionDecisionPolicy
 → LprPipeline
 ```
-
-Concrete provider tests use fake ONNX sessions to validate explicit model contracts without requiring production artifacts.
 
 ### Active detector contract
 
@@ -315,35 +317,38 @@ input  [1,3,24,94]
 output [1,34,18]
 ```
 
-Current #37 remaining work is **runtime acceptance only**: execute a real JPG/PNG with the real ONNX artifacts and verify real `PlateRecognitionResult`/CLI behavior. No model-semantic or provider-composition blocker remains.
-
 ---
 
 ## 6. CI / validation state
 
-GitHub Pro included Actions usage for the current month is exhausted:
+Current validation is based on the latest `dev` head and PR #79.
+
+The repository contains dedicated workflows for:
 
 ```text
-3000 / 3000 included minutes used
-billable usage observed: $0 at checkpoint
+ci-pr
+mac-arm64-validation
+sanitizers
+static-analysis
+fuzz
+memory-stress
+performance-regression
+abi-compatibility
+resource-budget
+release-package
+cmake-package-release-smoke
+dependency-security
+production-readiness
+release-readiness
+coverage
+C / C# / Python consumer smoke
 ```
 
-Do not trigger expensive GitHub-hosted workflows until included usage resets or explicit approval is given.
+Hosted CI can be intentionally disabled through repository variables, so a skipped hosted job is not equivalent to a successful validation. Production release policy is fail-closed: missing, skipped, cancelled or failed required release evidence must not be treated as approval.
 
-A manual self-hosted validation workflow was prepared for Windows/Linux. Full release validation still requires:
+The new `production-readiness` workflow collects exact-tag/exact-commit evidence and requires Linux/Windows clean builds, real-model/native/golden coverage, sanitizer/static/fuzz/memory/performance/ABI/package/security/documentation evidence before publishing can proceed.
 
-```text
-Windows x64
-Linux x64
-Debug + Release
-OpenCV ON
-ONNX Runtime ON
-GTest/CTest
-```
-
-ARM64 portability can be added when an actual ARM64 deployment target/runner is available.
-
-Truthfulness rule: source/test wiring or independent smoke tests are not equivalent to full repository CI. Never claim full GTest/OpenCV/ONNX PASS until those binaries actually run.
+Truthfulness rule: source/test wiring or independent smoke tests are not equivalent to full repository CI. Never claim a platform/gate passed until its corresponding execution evidence exists.
 
 ---
 
@@ -354,6 +359,7 @@ Truthfulness rule: source/test wiring or independent smoke tests are not equival
 - CMake 3.25+
 - Windows x64 / MSVC
 - Linux x64 / GCC + Clang
+- macOS ARM64 self-hosted validation
 - ONNX Runtime
 - OpenCV kept at infrastructure/tool edges
 - GoogleTest
@@ -384,7 +390,7 @@ Domain uses standard C++ value types only. Application owns vendor-neutral contr
 - no C++ exception across C ABI;
 - no engine-owned result strings across C ABI;
 - sensitive images/crops/full plate text/secrets are not logged by default;
-- intended release policy is to provision runtime `.onnx` artifacts with checksum verification rather than ship arbitrary mutable model files in source history.
+- release policy provisions/verifies runtime model artifacts by checksum.
 
 Strided image extent:
 
@@ -394,7 +400,7 @@ Strided image extent:
 
 Expected runtime models currently include `best.onnx` and `lprnet_turkey.onnx`. Never guess tensor names/shapes/layout/class count/keypoint order/charset/blank index/normalization; use the authoritative model/training contract and regression tests.
 
-**Current repository reality:** `dev/models` currently contains `best.onnx` and `lprnet_turkey.onnx`, despite the intended external-artifact policy documented earlier. Do not silently claim they are absent. Artifact cleanup/provisioning must be handled deliberately under the later model/test artifact provisioning and release-hardening work.
+**Current repository reality:** `dev/models` contains `best.onnx` and `lprnet_turkey.onnx`. Artifact provisioning and release evidence must remain deliberate and checksum-backed.
 
 ---
 
@@ -403,72 +409,34 @@ Expected runtime models currently include `best.onnx` and `lprnet_turkey.onnx`. 
 Roadmap issues are #1–#78. Accidental #80 is not roadmap work.
 
 ```text
-#1–#36                                      CLOSED
-#37 Offline lpr-cli                         OPEN / real runtime acceptance pending
-#38 Golden dataset regression
-#39 Multi-detector fusion
-#40 Long-run memory stress
-#41 ASan/LSan/TSan
-#42 Performance benchmark/latencies
-#43 Static analysis
-#44 Fuzz testing
-#45 Multi-platform CI
-#46 Dependency security/SBOM
-#47 Versioned binary packaging
-#48 SemVer/ABI policy
-#49 Diagnostics/metrics snapshot
-#50 Startup self-test/readiness
-#51 best.onnx contract regression
-#52 lprnet_turkey.onnx contract regression
-#53 Real-model end-to-end integration
-#54 C# P/Invoke consumer
-#55 Python ctypes consumer
-#56 Engine builder/provider registry/composition root
-#57 JSON config adapter/schema
-#58 ONNX execution-provider abstraction
-#59 Cancellation/timeout/deadline propagation
-#60 Atomic model reload/safe swap
-#61 Deterministic inference/reproducibility
-#62 Native C ABI smoke
-#63 Packaged artifact smoke
-#64 Public API thread-safety/reentrancy
-#65 Public consumer docs
-#66 Coverage gate
-#67 Performance regression gate
-#68 Third-party licenses/NOTICE
-#69 Reproducible build/provenance
-#70 Offline confidence calibration fit tool
-#71 Evaluation/report tool
-#72 CMake package export/C++ consumer
-#73 Model/test dataset artifact provisioning
-#74 Production troubleshooting runbook
-#75 Changelog/automated release
-#76 Automated ABI compatibility gate
-#77 Memory/resource budget/OOM guard
-#78 Production v1 release readiness
+#1–#78                                      CLOSED
 ```
+
+Major completed release-hardening areas include golden regression, detector fusion, memory stress, sanitizers, performance, static analysis, fuzzing, multi-platform CI, dependency security/SBOM, packaging, SemVer/ABI policy, diagnostics, startup readiness, model contract regression, real-model integration, C#/Python/C consumers, composition/configuration, execution providers, cancellation/deadlines, atomic model reload, deterministic inference, coverage, provenance, calibration/evaluation tools, CMake package export, artifact provisioning, production runbook, changelog/release automation, ABI compatibility and resource budgets.
 
 ---
 
 ## 10. Production v1 guardrail
 
-Do not call production v1 ready until #78 truthfully passes clean multi-platform build, unit/integration/real-model/golden tests, sanitizer/static/fuzz, memory/performance, ABI, packaged/consumer smoke, security/SBOM/licenses/provenance/checksums and readiness/runbook gates.
+Do not call production v1 released until the exact release candidate truthfully passes clean multi-platform build, unit/integration/real-model/golden tests, sanitizer/static/fuzz, memory/performance, ABI, packaged/consumer smoke, security/SBOM/licenses/provenance/checksums and readiness/runbook gates.
+
+Closing #78 means the gate implementation is complete. It does **not** mean every future release candidate automatically passes that gate.
 
 ---
 
 ## 11. Handoff checkpoint
 
 ```text
-checkpoint date: 2026-08-22
-closed issues: #1 through #36
-last closed issue: #36 C ABI result buffer/ownership
-current issue: #37 offline lpr-cli
-#37 state: OPEN / providers+composition+active model contract implemented / real JPG+ONNX runtime acceptance pending
+checkpoint date: 2026-08-23
+closed roadmap issues: #1 through #78
+open roadmap issues: none
 active development branch: dev
-active draft PR: #79
-GitHub-hosted Actions included minutes: exhausted for current period
-runtime ONNX models committed to dev/models: YES (current reality; intended policy differs)
-production v1 ready: NO
+active release PR: #79 (dev -> main, draft, mergeable)
+production readiness workflow on dev: YES
+PR #103 production readiness implementation: MERGED
+main-only security registration divergence: RESOLVED INTO DEV
+runtime ONNX models committed to dev/models: YES
+production v1 release: PENDING EXACT-CANDIDATE VALIDATION
 ```
 
-**Resume at #37. Do not close it until a real JPG/PNG produces a real `PlateRecognitionResult` through the actual ONNX/OpenCV pipeline.**
+**Next action:** finish current PR #79 validation, require truthful evidence for all mandatory release gates, then promote `dev` to `main` and create the first production release tag only after the release candidate is approved.
