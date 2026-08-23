@@ -6,7 +6,16 @@ on:
     branches:
       - dev
     paths:
-      - '.github/linux-x64-docker-trigger.txt'
+      - 'src/**'
+      - 'include/**'
+      - 'tools/**'
+      - 'tests/**'
+      - 'samples/**'
+      - 'cmake/**'
+      - 'scripts/**'
+      - 'CMakeLists.txt'
+      - 'vcpkg.json'
+      - 'vcpkg-configuration.json'
       - '.github/workflows/linux-x64-docker-validation.yml'
 
 permissions:
@@ -14,7 +23,7 @@ permissions:
 
 concurrency:
   group: linux-x64-docker-validation-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   linux-x64:
