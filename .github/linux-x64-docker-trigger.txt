@@ -1,1 +1,1 @@
-linux-x64-docker-validation rerun after GCC dangling-reference suppression 2026-08-23
+linux-x64-docker-validation rerun after dangling-reference fix 2026-08-23T18:50+03:00
