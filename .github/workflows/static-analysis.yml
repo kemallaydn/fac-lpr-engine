@@ -1,0 +1,80 @@
+name: static-analysis
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/mac-static-analysis-trigger.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-analysis-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+  VCPKG_DEFAULT_TRIPLET: arm64-osx
+
+jobs:
+  macos-arm64:
+    name: Static analysis macOS ARM64
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Homebrew PATH and analysis tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+          command -v brew
+          brew list cmake >/dev/null 2>&1 || brew install cmake
+          brew list ninja >/dev/null 2>&1 || brew install ninja
+          brew list llvm >/dev/null 2>&1 || brew install llvm
+          brew list cppcheck >/dev/null 2>&1 || brew install cppcheck
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          export PATH="$(brew --prefix llvm)/bin:$PATH"
+          command -v cmake
+          command -v ninja
+          command -v clang
+          command -v clang++
+          command -v clang-tidy
+          command -v cppcheck
+
+      - name: Restore dependencies
+        shell: bash
+        run: bash scripts/bootstrap-dependencies.sh
+
+      - name: Configure with clang-tidy gate
+        shell: bash
+        run: >-
+          cmake -S . -B build/static-analysis -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang
+          -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=arm64-osx
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_LPR_CLI=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+          -DFAC_LPR_ENABLE_CLANG_TIDY=ON
+
+      - name: Build with clang-tidy
+        shell: bash
+        run: cmake --build build/static-analysis --parallel 4
+
+      - name: Run cppcheck
+        shell: bash
+        run: bash scripts/run-static-analysis.sh build/static-analysis

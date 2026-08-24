@@ -1,0 +1,3 @@
+add_executable(fac_lpr_workspace_probe main.cpp)
+target_compile_features(fac_lpr_workspace_probe PRIVATE cxx_std_20)
+target_link_libraries(fac_lpr_workspace_probe PRIVATE fac_lpr::native_image)

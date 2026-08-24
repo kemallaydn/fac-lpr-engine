@@ -1,0 +1,212 @@
+name: release-package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Resolve package version and source epoch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            echo "PACKAGE_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "PACKAGE_VERSION=0.1.0-${GITHUB_SHA::8}" >> "$GITHUB_ENV"
+          fi
+          echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"
+      - name: Configure shared release
+        run: >-
+          cmake -S . -B build/package-linux -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=${{ github.workspace }}/cmake/ReproducibleBuild.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_SHARED=ON
+          -DFAC_LPR_BUILD_LPR_CLI=ON
+          -DFAC_LPR_REPRODUCIBLE_BUILD=ON
+          -DFAC_LPR_BUILD_GIT_COMMIT=${{ github.sha }}
+      - name: Build and install
+        run: |
+          set -euo pipefail
+          cmake --build build/package-linux --parallel 2
+          STAGE="${GITHUB_WORKSPACE}/build/package-stage/fac-lpr-engine-${PACKAGE_VERSION}-linux-x64"
+          cmake --install build/package-linux --prefix "$STAGE" --strip
+          mkdir -p "$STAGE/lib"
+          cp -a build/deps/onnxruntime/lib/libonnxruntime.so* "$STAGE/lib/"
+          find build/vcpkg_installed/x64-linux/lib -maxdepth 1 -type f -name 'libopencv_*.so*' -exec cp -a {} "$STAGE/lib/" \; || true
+          python3 scripts/generate-third-party-notices.py \
+            --vcpkg-installed build/vcpkg_installed \
+            --triplet x64-linux \
+            --onnx-root build/deps/onnxruntime \
+            --output "$STAGE/THIRD_PARTY_NOTICES.txt"
+          test -s "$STAGE/THIRD_PARTY_NOTICES.txt"
+          if find "$STAGE" -type f -name '*.onnx' | grep -q .; then
+            echo "Model artifact leaked into release package" >&2
+            exit 4
+          fi
+      - name: Smoke packaged artifact with provisioned models and sample image
+        run: |
+          set -euo pipefail
+          STAGE="${GITHUB_WORKSPACE}/build/package-stage/fac-lpr-engine-${PACKAGE_VERSION}-linux-x64"
+          test -f "$STAGE/include/fac_lpr/fac_lpr_engine.h"
+          test -f "$STAGE/lib/libfac_lpr_engine.so"
+          test -x "$STAGE/bin/fac-lpr-cli"
+          test -s "$STAGE/THIRD_PARTY_NOTICES.txt"
+          export LD_LIBRARY_PATH="$STAGE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          cmake \
+            -DCLI_PATH="$STAGE/bin/fac-lpr-cli" \
+            -DMODEL_DIR="${GITHUB_WORKSPACE}/models" \
+            -DCONTRACT_PATH="${GITHUB_WORKSPACE}/docs/lpr-cli-contract.example" \
+            -DFIXTURE_DIR="${GITHUB_WORKSPACE}/tests/fixtures/real" \
+            -DEXPECTATIONS_FILE="${GITHUB_WORKSPACE}/tests/fixtures/real/expected-results.txt" \
+            -P "${GITHUB_WORKSPACE}/tests/real_cli_e2e.cmake"
+      - name: Archive, checksum and provenance
+        run: |
+          set -euo pipefail
+          ROOT="${GITHUB_WORKSPACE}/build/package-stage"
+          NAME="fac-lpr-engine-${PACKAGE_VERSION}-linux-x64"
+          ARCHIVE="$ROOT/${NAME}.tar.gz"
+          python3 scripts/create-reproducible-archive.py "$ROOT/$NAME" "$ARCHIVE" --epoch "$SOURCE_DATE_EPOCH"
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+          python3 scripts/generate-build-provenance.py \
+            --source-commit "$GITHUB_SHA" \
+            --source-date-epoch "$SOURCE_DATE_EPOCH" \
+            --vcpkg-baseline cmake/vcpkg-baseline.txt \
+            --onnx-version cmake/onnxruntime-version.txt \
+            --triplet x64-linux \
+            --artifact "$ARCHIVE" \
+            --output "$ARCHIVE.provenance.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fac-lpr-engine-linux-x64-${{ env.PACKAGE_VERSION }}
+          path: |
+            build/package-stage/*.tar.gz
+            build/package-stage/*.sha256
+            build/package-stage/*.provenance.json
+          retention-days: 30
+
+  windows-x64:
+    if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Resolve package version and source epoch
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME.StartsWith('v')) {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = "0.1.0-$($env:GITHUB_SHA.Substring(0,8))"
+          }
+          "PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $epoch = git show -s --format=%ct $env:GITHUB_SHA
+          "SOURCE_DATE_EPOCH=$epoch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Configure shared release
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/package-windows -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="${{ github.workspace }}/cmake/ReproducibleBuild.cmake"
+          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/build/vcpkg_installed"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DFAC_LPR_ONNXRUNTIME_ROOT="${{ github.workspace }}/build/deps/onnxruntime"
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_SHARED=ON
+          -DFAC_LPR_BUILD_LPR_CLI=ON
+          -DFAC_LPR_REPRODUCIBLE_BUILD=ON
+          -DFAC_LPR_BUILD_GIT_COMMIT=${{ github.sha }}
+      - name: Build and install
+        shell: pwsh
+        run: |
+          cmake --build build/package-windows --config Release --parallel 2
+          $stage = Join-Path $env:GITHUB_WORKSPACE "build/package-stage/fac-lpr-engine-$env:PACKAGE_VERSION-windows-x64"
+          cmake --install build/package-windows --config Release --prefix $stage
+          $bin = Join-Path $stage 'bin'
+          New-Item -ItemType Directory -Force -Path $bin | Out-Null
+          $ort = Join-Path $env:GITHUB_WORKSPACE 'build/deps/onnxruntime/bin/onnxruntime.dll'
+          if (-not (Test-Path $ort)) { $ort = Join-Path $env:GITHUB_WORKSPACE 'build/deps/onnxruntime/lib/onnxruntime.dll' }
+          Copy-Item $ort $bin -Force
+          Get-ChildItem "$env:GITHUB_WORKSPACE/build/vcpkg_installed/x64-windows/bin" -Filter '*.dll' | Copy-Item -Destination $bin -Force
+          python scripts/generate-third-party-notices.py `
+            --vcpkg-installed build/vcpkg_installed `
+            --triplet x64-windows `
+            --onnx-root build/deps/onnxruntime `
+            --output (Join-Path $stage 'THIRD_PARTY_NOTICES.txt')
+          if (-not (Test-Path (Join-Path $stage 'THIRD_PARTY_NOTICES.txt'))) { throw 'third-party notices missing' }
+          $models = Get-ChildItem -Path $stage -Recurse -Filter *.onnx -ErrorAction SilentlyContinue
+          if ($models) { throw 'Model artifact leaked into release package' }
+      - name: Smoke packaged artifact with provisioned models and sample image
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:GITHUB_WORKSPACE "build/package-stage/fac-lpr-engine-$env:PACKAGE_VERSION-windows-x64"
+          if (-not (Test-Path (Join-Path $stage 'include/fac_lpr/fac_lpr_engine.h'))) { throw 'public header missing' }
+          if (-not (Test-Path (Join-Path $stage 'bin/fac_lpr_engine.dll'))) { throw 'engine DLL missing' }
+          if (-not (Test-Path (Join-Path $stage 'bin/fac-lpr-cli.exe'))) { throw 'CLI missing' }
+          if (-not (Test-Path (Join-Path $stage 'THIRD_PARTY_NOTICES.txt'))) { throw 'third-party notices missing' }
+          $env:PATH = "$(Join-Path $stage 'bin');$env:PATH"
+          cmake `
+            -DCLI_PATH="$(Join-Path $stage 'bin/fac-lpr-cli.exe')" `
+            -DMODEL_DIR="$env:GITHUB_WORKSPACE/models" `
+            -DCONTRACT_PATH="$env:GITHUB_WORKSPACE/docs/lpr-cli-contract.example" `
+            -DFIXTURE_DIR="$env:GITHUB_WORKSPACE/tests/fixtures/real" `
+            -DEXPECTATIONS_FILE="$env:GITHUB_WORKSPACE/tests/fixtures/real/expected-results.txt" `
+            -P "$env:GITHUB_WORKSPACE/tests/real_cli_e2e.cmake"
+      - name: Archive, checksum and provenance
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:GITHUB_WORKSPACE 'build/package-stage'
+          $name = "fac-lpr-engine-$env:PACKAGE_VERSION-windows-x64"
+          $archive = Join-Path $root "$name.zip"
+          python scripts/create-reproducible-archive.py (Join-Path $root $name) $archive --epoch $env:SOURCE_DATE_EPOCH
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          "$hash  $name.zip" | Set-Content -Encoding ascii "$archive.sha256"
+          python scripts/generate-build-provenance.py `
+            --source-commit $env:GITHUB_SHA `
+            --source-date-epoch $env:SOURCE_DATE_EPOCH `
+            --vcpkg-baseline cmake/vcpkg-baseline.txt `
+            --onnx-version cmake/onnxruntime-version.txt `
+            --triplet x64-windows `
+            --artifact $archive `
+            --output "$archive.provenance.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fac-lpr-engine-windows-x64-${{ env.PACKAGE_VERSION }}
+          path: |
+            build/package-stage/*.zip
+            build/package-stage/*.sha256
+            build/package-stage/*.provenance.json
+          retention-days: 30

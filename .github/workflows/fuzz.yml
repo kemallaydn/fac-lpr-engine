@@ -1,0 +1,95 @@
+name: fuzz
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/mac-fuzz-trigger.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-arm64:
+    name: libFuzzer ASan/UBSan macOS ARM64
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Homebrew PATH and LLVM
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+          command -v brew
+          brew list cmake >/dev/null 2>&1 || brew install cmake
+          brew list ninja >/dev/null 2>&1 || brew install ninja
+          brew list llvm >/dev/null 2>&1 || brew install llvm
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          export PATH="$(brew --prefix llvm)/bin:$PATH"
+          command -v cmake
+          command -v ninja
+          command -v clang
+          command -v clang++
+
+      - name: Configure fuzz targets
+        shell: bash
+        run: >-
+          cmake -S . -B build/fuzz -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang
+          -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++
+          -DFAC_LPR_SANITIZER=address-undefined
+          -DFAC_LPR_BUILD_FUZZERS=ON
+          -DFAC_LPR_WARNINGS_AS_ERRORS=ON
+
+      - name: Build fuzz targets
+        shell: bash
+        run: cmake --build build/fuzz --parallel 4
+
+      - name: Run bounded fuzz smoke
+        shell: bash
+        env:
+          ASAN_OPTIONS: halt_on_error=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          mkdir -p build/fuzz/corpus/{image,config,abi,grammar,ctc}
+          mkdir -p build/fuzz/artifacts/fuzz-crashes/{image,config,abi,grammar,ctc}
+
+          run_fuzzer() {
+            local name="$1"
+            local corpus="$2"
+            local crash_dir="$3"
+            "build/fuzz/artifacts/fuzz/${name}" "$corpus" \
+              -artifact_prefix="$crash_dir/" \
+              -max_total_time=20 \
+              -timeout=5 \
+              -rss_limit_mb=2048 \
+              -max_len=65536
+          }
+
+          run_fuzzer fac_lpr_fuzz_image build/fuzz/corpus/image build/fuzz/artifacts/fuzz-crashes/image
+          run_fuzzer fac_lpr_fuzz_config build/fuzz/corpus/config build/fuzz/artifacts/fuzz-crashes/config
+          run_fuzzer fac_lpr_fuzz_abi build/fuzz/corpus/abi build/fuzz/artifacts/fuzz-crashes/abi
+          run_fuzzer fac_lpr_fuzz_grammar build/fuzz/corpus/grammar build/fuzz/artifacts/fuzz-crashes/grammar
+          run_fuzzer fac_lpr_fuzz_ctc_decoder build/fuzz/corpus/ctc build/fuzz/artifacts/fuzz-crashes/ctc
+
+      - name: Upload crash reproducers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-reproducers-mac-arm64
+          path: build/fuzz/artifacts/fuzz-crashes/
+          if-no-files-found: warn
+          retention-days: 30

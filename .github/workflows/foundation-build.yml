@@ -1,0 +1,81 @@
+name: foundation-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Validation profile
+        required: true
+        default: quick
+        type: choice
+        options:
+          - quick
+          - full
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quick-linux:
+    if: ${{ inputs.profile == 'quick' }}
+    name: Linux GCC Release (quick)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset linux-gcc-release
+      - name: Build
+        run: cmake --build --preset linux-gcc-release --parallel 2
+
+  linux-full:
+    if: ${{ inputs.profile == 'full' }}
+    name: Linux ${{ matrix.compiler }} ${{ matrix.config }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            config: Debug
+            preset: linux-gcc-debug
+          - compiler: gcc
+            config: Release
+            preset: linux-gcc-release
+          - compiler: clang
+            config: Debug
+            preset: linux-clang-debug
+          - compiler: clang
+            config: Release
+            preset: linux-clang-release
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset "${{ matrix.preset }}"
+      - name: Build
+        run: cmake --build --preset "${{ matrix.preset }}" --parallel 2
+
+  windows-full:
+    if: ${{ inputs.profile == 'full' }}
+    name: Windows MSVC ${{ matrix.config }}
+    runs-on: windows-2022
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - config: Debug
+            preset: windows-msvc-debug
+          - config: Release
+            preset: windows-msvc-release
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset windows-msvc
+      - name: Build
+        run: cmake --build --preset "${{ matrix.preset }}" --parallel 2

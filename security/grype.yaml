@@ -1,0 +1,3 @@
+# FAC LPR vulnerability exceptions.
+# Keep empty unless docs/dependency-security.md exception policy is satisfied.
+ignore: []

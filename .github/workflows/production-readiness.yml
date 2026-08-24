@@ -1,0 +1,177 @@
+name: production-readiness
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'scripts/production-readiness.py'
+      - 'scripts/test_production_readiness.py'
+      - '.github/workflows/production-readiness.yml'
+      - '.github/workflows/publish-release.yml'
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  REPO: ${{ github.repository }}
+
+jobs:
+  policy-test:
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test fail-closed readiness policy
+        run: python3 scripts/test_production_readiness.py -v
+      - name: Verify required release workflow files exist
+        run: |
+          set -euo pipefail
+          for path in \
+            .github/workflows/mac-arm64-validation.yml \
+            .github/workflows/sanitizers.yml \
+            .github/workflows/static-analysis.yml \
+            .github/workflows/fuzz.yml \
+            .github/workflows/memory-stress.yml \
+            .github/workflows/performance-regression.yml \
+            .github/workflows/release-package.yml \
+            .github/workflows/dependency-security.yml; do
+            test -s "$path"
+          done
+
+  release-gate:
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 90
+    env:
+      HEAD_SHA: ${{ github.sha }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Trigger exact-tag quality workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          for workflow in \
+            mac-arm64-validation.yml \
+            sanitizers.yml \
+            static-analysis.yml \
+            fuzz.yml \
+            memory-stress.yml \
+            performance-regression.yml \
+            abi-compatibility.yml \
+            resource-budget.yml \
+            release-package.yml \
+            dependency-security.yml \
+            cmake-package-release-smoke.yml; do
+            gh workflow run "$workflow" --repo "$REPO" --ref "$TAG" >/dev/null 2>&1 || true
+          done
+
+      - name: Collect exact-commit gate evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/readiness
+
+          wait_run() {
+            workflow="$1"
+            for attempt in $(seq 1 120); do
+              json=$(gh run list --repo "$REPO" --workflow "$workflow" --commit "$HEAD_SHA" --limit 20 \
+                --json databaseId,status,conclusion,createdAt 2>/dev/null || echo '[]')
+              row=$(printf '%s' "$json" | python3 -c 'import json,sys; rows=json.load(sys.stdin); rows.sort(key=lambda r:r.get("createdAt", ""), reverse=True); print(json.dumps(rows[0]) if rows else "")')
+              if [ -n "$row" ]; then
+                status=$(printf '%s' "$row" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+                if [ "$status" = completed ]; then
+                  conclusion=$(printf '%s' "$row" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("conclusion") or "")')
+                  run_id=$(printf '%s' "$row" | python3 -c 'import json,sys; print(json.load(sys.stdin)["databaseId"])')
+                  printf '%s|%s' "$run_id" "$conclusion"
+                  return 0
+                fi
+              fi
+              sleep 30
+            done
+            printf '|missing'
+          }
+
+          : > artifacts/readiness/runs.tsv
+          for workflow in mac-arm64-validation sanitizers static-analysis fuzz memory-stress performance-regression abi-compatibility resource-budget release-package dependency-security cmake-package-release-smoke; do
+            value=$(wait_run "$workflow.yml")
+            echo "$workflow=$value"
+            printf '%s\t%s\n' "$workflow" "$value" >> artifacts/readiness/runs.tsv
+          done
+
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+
+          runs = {}
+          for line in Path('artifacts/readiness/runs.tsv').read_text().splitlines():
+              name, value = line.split('\t', 1)
+              run_id, conclusion = value.split('|', 1)
+              runs[name] = {'id': run_id, 'conclusion': conclusion}
+
+          def state(name):
+              return 'success' if runs.get(name, {}).get('conclusion') == 'success' else runs.get(name, {}).get('conclusion', 'missing') or 'missing'
+
+          gates = {
+              'native-tests': state('mac-arm64-validation'),
+              'real-model-integration': state('mac-arm64-validation'),
+              'golden-regression': state('mac-arm64-validation'),
+              'sanitizer': state('sanitizers'),
+              'static-analysis': state('static-analysis'),
+              'fuzz': state('fuzz'),
+              'memory-long-run': state('memory-stress'),
+              'performance-regression': state('performance-regression'),
+              'abi-compatibility': state('abi-compatibility'),
+              'packaged-artifact-smoke': state('release-package'),
+              'sbom-license-provenance-checksum': 'success' if state('release-package') == 'success' and state('dependency-security') == 'success' else 'failure',
+              'documentation-readiness': 'success',
+              'linux-clean-build': 'missing',
+              'windows-clean-build': 'missing',
+          }
+
+          package_id = runs.get('release-package', {}).get('id')
+          if package_id:
+              raw = subprocess.check_output(['gh','api',f'repos/${{ github.repository }}/actions/runs/{package_id}/jobs'], text=True)
+              jobs = json.loads(raw).get('jobs', [])
+              by_name = {j['name']: j.get('conclusion') for j in jobs}
+              gates['linux-clean-build'] = 'success' if by_name.get('linux-x64') == 'success' else by_name.get('linux-x64', 'missing') or 'missing'
+              gates['windows-clean-build'] = 'success' if by_name.get('windows-x64') == 'success' else by_name.get('windows-x64', 'missing') or 'missing'
+
+          Path('artifacts/readiness/gates.json').write_text(json.dumps(gates, indent=2, sort_keys=True) + '\n')
+          PY
+
+      - name: Verify documentation readiness
+        run: |
+          set -euo pipefail
+          test -s README.md
+          test -s docs/c-api-v1.md
+          test -s docs/abi-versioning.md
+          test -s CHANGELOG.md
+
+      - name: Produce machine-readable acceptance report
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          python3 scripts/production-readiness.py \
+            --gates artifacts/readiness/gates.json \
+            --sha "$HEAD_SHA" \
+            --version "$VERSION" \
+            --output artifacts/readiness/production-readiness.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-readiness-${{ github.ref_name }}-${{ github.sha }}
+          path: artifacts/readiness/
+          if-no-files-found: warn
+          retention-days: 90

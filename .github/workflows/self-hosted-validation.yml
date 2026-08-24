@@ -1,0 +1,153 @@
+name: self-hosted-validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Self-hosted platform to validate
+        required: true
+        default: linux
+        type: choice
+        options:
+          - linux
+          - windows
+          - both
+  push:
+    branches:
+      - dev
+    paths:
+      - 'samples/dotnet/**'
+      - 'samples/python/**'
+      - '.github/workflows/self-hosted-validation.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-hosted-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux:
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'linux' || inputs.platform == 'both') }}
+    name: Self-hosted Linux full validation
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 60
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure Debug
+        run: >-
+          cmake -S . -B build/self-hosted-debug -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_SHARED=ON
+          -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build Debug
+        run: cmake --build build/self-hosted-debug --parallel 2
+      - name: Test Debug
+        run: ctest --test-dir build/self-hosted-debug --output-on-failure
+      - name: Configure Release
+        run: >-
+          cmake -S . -B build/self-hosted-release -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_SHARED=ON
+          -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build Release
+        run: cmake --build build/self-hosted-release --parallel 2
+      - name: Test Release
+        run: ctest --test-dir build/self-hosted-release --output-on-failure
+      - name: Validate Python ctypes consumer against Release SO
+        run: |
+          native_lib="${GITHUB_WORKSPACE}/build/self-hosted-release/artifacts/lib/libfac_lpr_engine.so"
+          if [[ ! -f "$native_lib" ]]; then
+            echo "Expected Release SO not found: $native_lib" >&2
+            exit 1
+          fi
+          python3 --version
+          export LD_LIBRARY_PATH="${GITHUB_WORKSPACE}/build/deps/onnxruntime/lib:${GITHUB_WORKSPACE}/build/self-hosted-release/artifacts/lib:${LD_LIBRARY_PATH:-}"
+          python3 samples/python/fac_lpr_ctypes.py --library "$native_lib" --iterations 10000
+
+  windows:
+    if: ${{ github.event_name == 'push' || inputs.platform == 'windows' || inputs.platform == 'both' }}
+    name: Self-hosted Windows full validation
+    runs-on: [self-hosted, windows, x64]
+    timeout-minutes: 60
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\\.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/self-hosted -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/build/vcpkg_installed"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DFAC_LPR_ONNXRUNTIME_ROOT="${{ github.workspace }}/build/deps/onnxruntime"
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_SHARED=ON
+          -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build Debug
+        shell: pwsh
+        run: cmake --build build/self-hosted --config Debug --parallel 2
+      - name: Test Debug
+        shell: pwsh
+        run: ctest --test-dir build/self-hosted -C Debug --output-on-failure
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build build/self-hosted --config Release --parallel 2
+      - name: Test Release
+        shell: pwsh
+        run: ctest --test-dir build/self-hosted -C Release --output-on-failure
+      - name: Validate .NET P/Invoke consumer against Release DLL
+        shell: pwsh
+        run: |
+          $nativeBin = Join-Path $env:GITHUB_WORKSPACE 'build/self-hosted/artifacts/bin/Release'
+          $nativeDll = Join-Path $nativeBin 'fac_lpr_engine.dll'
+          if (-not (Test-Path $nativeDll)) {
+            throw "Expected Release DLL not found: $nativeDll"
+          }
+          dotnet --version
+          $env:PATH = "$nativeBin;$env:PATH"
+          dotnet run --project samples/dotnet/FacLpr.Sample/FacLpr.Sample.csproj -c Release -- --iterations 10000
+      - name: Validate Python ctypes consumer against Release DLL
+        shell: pwsh
+        run: |
+          $nativeBin = Join-Path $env:GITHUB_WORKSPACE 'build/self-hosted/artifacts/bin/Release'
+          $nativeDll = Join-Path $nativeBin 'fac_lpr_engine.dll'
+          if (-not (Test-Path $nativeDll)) {
+            throw "Expected Release DLL not found: $nativeDll"
+          }
+          python --version
+          $env:PATH = "$nativeBin;$env:PATH"
+          python samples/python/fac_lpr_ctypes.py --library $nativeDll --iterations 10000

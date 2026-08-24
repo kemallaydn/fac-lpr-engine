@@ -1,0 +1,106 @@
+name: dependency-restore
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to validate
+        required: true
+        default: linux
+        type: choice
+        options:
+          - linux
+          - windows
+          - both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-restore-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+
+jobs:
+  linux:
+    if: ${{ inputs.platform == 'linux' || inputs.platform == 'both' }}
+    name: Linux dependency build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependency caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            .vcpkg-binary-cache
+            .cache/onnxruntime
+          key: deps-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-baseline.txt', 'cmake/onnxruntime-version.txt', 'cmake/onnxruntime-linux-x64.sha256') }}
+          restore-keys: |
+            deps-${{ runner.os }}-
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure dependency-backed targets
+        run: >-
+          cmake -S . -B build/native-deps -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build dependency-backed targets
+        run: cmake --build build/native-deps --config Release --parallel 2
+      - name: Run native tests
+        run: ctest --test-dir build/native-deps --output-on-failure
+
+  windows:
+    if: ${{ inputs.platform == 'windows' || inputs.platform == 'both' }}
+    name: Windows dependency build
+    runs-on: windows-2022
+    timeout-minutes: 20
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\\.vcpkg-binary-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependency caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            .vcpkg-binary-cache
+            .cache/onnxruntime
+          key: deps-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-baseline.txt', 'cmake/onnxruntime-version.txt', 'cmake/onnxruntime-win-x64.sha256') }}
+          restore-keys: |
+            deps-${{ runner.os }}-
+      - name: Restore dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-dependencies.ps1
+      - name: Configure dependency-backed targets
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/native-deps -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/build/vcpkg_installed"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DFAC_LPR_ONNXRUNTIME_ROOT="${{ github.workspace }}/build/deps/onnxruntime"
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build dependency-backed targets
+        shell: pwsh
+        run: cmake --build build/native-deps --config Release --parallel 2
+      - name: Run native tests
+        shell: pwsh
+        run: ctest --test-dir build/native-deps -C Release --output-on-failure

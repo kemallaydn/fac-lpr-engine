@@ -1,0 +1,129 @@
+name: publish-release
+
+on:
+  workflow_run:
+    workflows: [production-readiness]
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-release-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' }}
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      READINESS_RUN: ${{ github.event.workflow_run.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Download and validate production readiness report
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-input/readiness release-input/packages release-input/security release-assets
+          gh run download "$READINESS_RUN" --repo "$REPO" --dir release-input/readiness
+          readiness_report=$(find release-input/readiness -type f -name 'production-readiness.json' | head -n 1)
+          test -n "$readiness_report" && test -s "$readiness_report"
+          VERSION=$(python3 - "$readiness_report" "$HEAD_SHA" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1], encoding='utf-8'))
+          if report.get('releaseApproved') is not True:
+              raise SystemExit('production readiness report did not approve release')
+          if report.get('sourceCommit') != sys.argv[2]:
+              raise SystemExit('readiness report source commit does not match workflow commit')
+          print(report['version'])
+          PY
+          )
+          TAG="v$VERSION"
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          test "$(git rev-list -n 1 "$TAG")" = "$HEAD_SHA"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          cp "$readiness_report" release-assets/production-readiness.json
+
+      - name: Validate tag and generate release notes
+        run: |
+          set -euo pipefail
+          python3 scripts/validate-release-tag.py \
+            --tag "$TAG" \
+            --notes-out release-input/release-notes.md
+
+      - name: Resolve exact-commit package and security runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          successful_run() {
+            workflow="$1"
+            gh run list --repo "$REPO" --workflow "$workflow" --commit "$HEAD_SHA" --limit 20 \
+              --json databaseId,status,conclusion,createdAt | \
+              python3 -c 'import json,sys; rows=[r for r in json.load(sys.stdin) if r.get("status")=="completed" and r.get("conclusion")=="success"]; rows.sort(key=lambda r:r.get("createdAt", ""), reverse=True); print(rows[0]["databaseId"] if rows else "")'
+          }
+          package_run=$(successful_run release-package.yml)
+          security_run=$(successful_run dependency-security.yml)
+          test -n "$package_run" || { echo 'successful release-package run not found for exact commit' >&2; exit 1; }
+          test -n "$security_run" || { echo 'successful dependency-security run not found for exact commit' >&2; exit 1; }
+          echo "PACKAGE_RUN=$package_run" >> "$GITHUB_ENV"
+          echo "SECURITY_RUN=$security_run" >> "$GITHUB_ENV"
+
+      - name: Download gated package and security artifacts
+        run: |
+          set -euo pipefail
+          gh run download "$PACKAGE_RUN" --repo "$REPO" --dir release-input/packages
+          gh run download "$SECURITY_RUN" --repo "$REPO" --dir release-input/security
+
+      - name: Validate and collect release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          linux_archive=$(find release-input/packages -type f -name '*linux-x64*.tar.gz' | head -n 1)
+          windows_archive=$(find release-input/packages -type f -name '*windows-x64*.zip' | head -n 1)
+          test -n "$linux_archive" && test -s "$linux_archive"
+          test -n "$windows_archive" && test -s "$windows_archive"
+          test "$(find release-input/packages -type f -name '*.sha256' | wc -l | tr -d ' ')" -ge 2
+          test "$(find release-input/packages -type f -name '*.provenance.json' | wc -l | tr -d ' ')" -ge 2
+          test -s "$(find release-input/security -type f -name 'sbom.cyclonedx.json' | head -n 1)"
+          test -s "$(find release-input/security -type f -name 'sbom.spdx.json' | head -n 1)"
+
+          find release-input/packages -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.sha256' -o -name '*.provenance.json' \) \
+            -exec cp {} release-assets/ \;
+          cp "$(find release-input/security -type f -name 'sbom.cyclonedx.json' | head -n 1)" release-assets/sbom.cyclonedx.json
+          cp "$(find release-input/security -type f -name 'sbom.spdx.json' | head -n 1)" release-assets/sbom.spdx.json
+
+          rm -rf release-input/extracted
+          mkdir -p release-input/extracted
+          tar -xzf "$linux_archive" -C release-input/extracted
+          notice=$(find release-input/extracted -type f -name 'THIRD_PARTY_NOTICES.txt' | head -n 1)
+          test -n "$notice" && test -s "$notice"
+          cp "$notice" release-assets/THIRD_PARTY_NOTICES.txt
+
+      - name: Publish GitHub release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; refusing to overwrite it." >&2
+            exit 1
+          fi
+          prerelease=()
+          case "$TAG" in
+            *-*) prerelease=(--prerelease) ;;
+          esac
+          gh release create "$TAG" release-assets/* \
+            --repo "$REPO" \
+            --title "FAC LPR Engine $TAG" \
+            --notes-file release-input/release-notes.md \
+            "${prerelease[@]}"

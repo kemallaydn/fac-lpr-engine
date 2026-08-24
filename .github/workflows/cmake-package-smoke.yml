@@ -1,0 +1,48 @@
+name: cmake-package-smoke
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'CMakeLists.txt'
+      - 'cmake/fac-lpr-engine-config.cmake.in'
+      - 'tests/consumers/cpp_cmake/**'
+      - '.github/workflows/cmake-package-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+  VCPKG_DEFAULT_TRIPLET: arm64-osx
+
+jobs:
+  mac-arm64:
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Build and install release package
+        run: |
+          set -euo pipefail
+          rm -rf build/cmake-package build/cmake-package-stage build/cmake-consumer
+          cmake -S . -B build/cmake-package -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="$PWD/build/vcpkg_installed" \
+            -DVCPKG_TARGET_TRIPLET=arm64-osx \
+            -DFAC_LPR_BUILD_SHARED=ON
+          cmake --build build/cmake-package --parallel 2
+          cmake --install build/cmake-package --prefix "$PWD/build/cmake-package-stage"
+      - name: Configure external consumer with find_package
+        run: |
+          set -euo pipefail
+          cmake -S tests/consumers/cpp_cmake -B build/cmake-consumer -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$PWD/build/cmake-package-stage"
+          cmake --build build/cmake-consumer --parallel 2
+          DYLD_LIBRARY_PATH="$PWD/build/cmake-package-stage/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
+            ./build/cmake-consumer/fac_lpr_cpp_consumer

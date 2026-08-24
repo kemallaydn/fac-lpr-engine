@@ -1,0 +1,122 @@
+name: linux-x64-docker-validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'tools/**'
+      - 'tests/**'
+      - 'samples/**'
+      - 'cmake/**'
+      - 'scripts/**'
+      - 'CMakeLists.txt'
+      - 'vcpkg.json'
+      - 'vcpkg-configuration.json'
+      - '.github/workflows/linux-x64-docker-validation.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-x64-docker-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-x64:
+    name: Linux x64 full validation via Docker
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker amd64 preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker version
+          docker run --rm --platform linux/amd64 ubuntu:24.04 bash -lc '
+            set -euo pipefail
+            test "$(uname -s)" = "Linux"
+            test "$(uname -m)" = "x86_64"
+            uname -a
+          '
+
+      - name: Prepare persistent vcpkg binary cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${HOME}/.cache/fac-lpr-vcpkg"
+
+      - name: Linux x64 Debug and Release validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --platform linux/amd64 \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "${HOME}/.cache/fac-lpr-vcpkg:/vcpkg-cache" \
+            -w /workspace \
+            -e VCPKG_DISABLE_METRICS=1 \
+            -e VCPKG_DEFAULT_TRIPLET=x64-linux \
+            -e VCPKG_BINARY_SOURCES='clear;files,/vcpkg-cache,readwrite' \
+            ubuntu:24.04 bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential clang cmake ninja-build git curl ca-certificates \
+                zip unzip tar pkg-config python3 python3-pip \
+                autoconf automake libtool perl nasm yasm
+
+              bash scripts/bootstrap-dependencies.sh
+
+              COMMON_ARGS="-G Ninja \
+                -DCMAKE_TOOLCHAIN_FILE=/workspace/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake \
+                -DVCPKG_INSTALLED_DIR=/workspace/build/vcpkg_installed \
+                -DVCPKG_TARGET_TRIPLET=x64-linux \
+                -DFAC_LPR_ONNXRUNTIME_ROOT=/workspace/build/deps/onnxruntime \
+                -DFAC_LPR_WITH_SPDLOG=ON \
+                -DFAC_LPR_WITH_ONNX_RUNTIME=ON \
+                -DFAC_LPR_WITH_OPENCV=ON \
+                -DFAC_LPR_BUILD_SHARED=ON \
+                -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON \
+                -DFAC_LPR_BUILD_LPR_CLI=ON \
+                -DFAC_LPR_BUILD_MEMORY_STRESS=ON \
+                -DFAC_LPR_BUILD_BENCHMARK=ON \
+                -DFAC_LPR_BUILD_TESTS=ON"
+
+              rm -rf build/linux-x64-docker-debug build/linux-x64-docker-release
+
+              cmake -S . -B build/linux-x64-docker-debug $COMMON_ARGS -DCMAKE_BUILD_TYPE=Debug
+              cmake --build build/linux-x64-docker-debug --parallel 2
+              ctest --test-dir build/linux-x64-docker-debug --output-on-failure
+
+              cmake -S . -B build/linux-x64-docker-release $COMMON_ARGS -DCMAKE_BUILD_TYPE=Release
+              cmake --build build/linux-x64-docker-release --parallel 2
+              ctest --test-dir build/linux-x64-docker-release --output-on-failure
+
+              ctest --test-dir build/linux-x64-docker-release -R "^fac_lpr_cli_real_e2e$" --output-on-failure
+              ctest --test-dir build/linux-x64-docker-release -R "^fac_lpr_golden_regression$" --output-on-failure
+              ctest --test-dir build/linux-x64-docker-release -R "^fac_lpr_memory_stress_smoke$" --output-on-failure
+
+              native_lib=/workspace/build/linux-x64-docker-release/artifacts/lib/libfac_lpr_engine.so
+              test -f "$native_lib"
+              export LD_LIBRARY_PATH="/workspace/build/deps/onnxruntime/lib:/workspace/build/linux-x64-docker-release/artifacts/lib:${LD_LIBRARY_PATH:-}"
+              python3 samples/python/fac_lpr_ctypes.py --library "$native_lib" --iterations 10000
+            '
+
+      - name: Upload Linux validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64-docker-validation-reports
+          path: |
+            build/linux-x64-docker-debug/artifacts/reports/
+            build/linux-x64-docker-release/artifacts/reports/
+          if-no-files-found: warn
+          retention-days: 14
