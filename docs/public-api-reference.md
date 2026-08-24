@@ -10,12 +10,28 @@ Call `fac_lpr_get_version_v1` at startup when the consumer needs to enforce a mi
 
 ## Lifecycle
 
+For lifecycle-only ABI checks:
+
 1. Build `fac_lpr_engine_config_v1` with `FAC_LPR_ENGINE_CONFIG_V1_INIT`.
 2. Call `fac_lpr_engine_create_v1(&config, &handle)`.
 3. Keep the opaque `fac_lpr_engine_handle*` until all work using it has completed.
 4. Call `fac_lpr_engine_destroy_v1(&handle)`. Successful destroy sets the caller's pointer to `NULL` and is idempotent for an already-null pointer.
 
-The current v1 C config intentionally contains only ABI/reserved fields. It does not expose model-path configuration yet. A bare v1 handle therefore validates lifecycle/error behavior but has no recognition pipeline attached. Production real-model execution is available through the packaged `fac-lpr-cli` and the C++ builder APIs. Future C configuration must be added through a backward-compatible new symbol/struct version rather than reinterpreting reserved fields.
+`fac_lpr_engine_create_v1` intentionally preserves its original v1 behavior and creates a lifecycle shell without a recognition pipeline. This behavior remains stable for existing ABI consumers.
+
+For production recognition, use the additive v1 entry point:
+
+```c
+fac_lpr_status fac_lpr_engine_create_from_contract_v1(
+    const fac_lpr_engine_config_v1* config,
+    const char* contract_path_utf8,
+    const char* model_directory_utf8,
+    fac_lpr_engine_handle** out_handle);
+```
+
+`contract_path_utf8` and `model_directory_utf8` are borrowed NUL-terminated UTF-8 strings. They only need to remain valid for the duration of the create call. The production create path loads the detector/OCR model contract, validates model integrity and startup readiness, composes the production pipeline, and stores that pipeline in the returned opaque handle. Missing or invalid contract/model artifacts fail through the normal `fac_lpr_status` and last-error contract without publishing a partially initialized handle.
+
+A build must include the production infrastructure features (`FAC_LPR_WITH_ONNX_RUNTIME=ON` and `FAC_LPR_WITH_OPENCV=ON`) for `fac_lpr_engine_create_from_contract_v1` to construct a production pipeline. Builds without those features retain the symbol but return a deterministic configuration error when production creation is requested.
 
 ## Image ownership
 
@@ -72,7 +88,21 @@ The detailed normative contract is in `docs/public-api-thread-safety.md`. In sho
 
 ## Model and config provisioning
 
-Release packages do not embed ONNX model files. For the packaged CLI, provide a model directory containing the detector and OCR models and pass an explicit contract/config path:
+Release packages do not embed ONNX model files. Production C ABI and CLI consumers provide a model directory containing the detector and OCR models plus an explicit contract/config path.
+
+C ABI example:
+
+```c
+fac_lpr_engine_config_v1 config = FAC_LPR_ENGINE_CONFIG_V1_INIT;
+fac_lpr_engine_handle* handle = NULL;
+fac_lpr_status status = fac_lpr_engine_create_from_contract_v1(
+    &config,
+    "/etc/fac-lpr/lpr-contract.conf",
+    "/opt/fac-lpr/models",
+    &handle);
+```
+
+CLI example:
 
 ```text
 fac-lpr-cli image.jpg --model-dir /opt/fac-lpr/models --config /etc/fac-lpr/lpr-contract.conf --json
@@ -82,7 +112,7 @@ Keeping models outside the engine package permits independent model versioning, 
 
 ## Consumer examples
 
-- Pure C: `tests/consumers/c_abi_smoke.c`. CI compiles it as C11 using only installed headers and links it to the staged release DLL/SO.
+- Pure C: `tests/consumers/c_abi_smoke.c`. CI compiles it as C11 using only installed headers, links it to the staged release DLL/SO and on macOS also exercises production model loading plus a real inference call through the public C ABI.
 - Python: `examples/python/ctypes_consumer.py`. It declares the ABI with `ctypes`, passes an owned image buffer, reads thread-local errors and repeatedly exercises handle lifecycle.
 - C#: `examples/csharp/Program.cs`. It uses explicit sequential structs and `DllImport`/cdecl against the installed native library.
 
