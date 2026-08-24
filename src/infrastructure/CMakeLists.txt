@@ -119,3 +119,48 @@ if(FAC_LPR_WITH_OPENCV)
     target_include_directories(fac_lpr_opencv_adapter PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include> ${OpenCV_INCLUDE_DIRS})
     target_link_libraries(fac_lpr_opencv_adapter PUBLIC fac_lpr::application fac_lpr::geometry fac_lpr::native_image PRIVATE ${OpenCV_LIBS})
 endif()
+
+if(FAC_LPR_WITH_ONNX_RUNTIME AND FAC_LPR_WITH_OPENCV)
+    add_library(fac_lpr_production_factory STATIC
+        ${PROJECT_SOURCE_DIR}/tools/lpr-cli/cli_engine_factory.cpp
+        ${PROJECT_SOURCE_DIR}/tools/lpr-cli/production_activation_gate.cpp
+    )
+    add_library(fac_lpr::production_factory ALIAS fac_lpr_production_factory)
+    target_compile_features(fac_lpr_production_factory PUBLIC cxx_std_20)
+    target_include_directories(fac_lpr_production_factory
+        PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/tools/lpr-cli>
+        PRIVATE ${OpenCV_INCLUDE_DIRS}
+    )
+    target_link_libraries(fac_lpr_production_factory PUBLIC
+        fac_lpr::application
+        fac_lpr::model
+        fac_lpr::generic_onnx_ocr
+        fac_lpr::lprnet_onnx
+        fac_lpr::yolo_onnx
+        fac_lpr::geometry
+        fac_lpr::crop
+        fac_lpr::opencv_adapter
+    )
+    if(MSVC)
+        target_compile_options(fac_lpr_production_factory PRIVATE
+            /W4
+            /permissive-
+            /EHsc
+            $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:/WX>
+        )
+    else()
+        target_compile_options(fac_lpr_production_factory PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+            -Wconversion
+            -Wsign-conversion
+            $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:-Werror>
+        )
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            target_compile_options(fac_lpr_production_factory PRIVATE -Wno-error=dangling-reference)
+        endif()
+    endif()
+    target_link_libraries(fac_lpr_infrastructure INTERFACE fac_lpr::production_factory)
+    target_compile_definitions(fac_lpr_infrastructure INTERFACE FAC_LPR_PRODUCTION_FACTORY_AVAILABLE=1)
+endif()
