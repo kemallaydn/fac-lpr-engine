@@ -65,6 +65,32 @@ TEST(CApiV1, NullConfigUsesV1DefaultsForLifecycleShell) {
     EXPECT_EQ(fac_lpr_engine_destroy_v1(&handle), FAC_LPR_STATUS_OK);
 }
 
+TEST(CApiV1, ProductionCreateValidatesPathsAndNeverLeaksHandleOnFailure) {
+    fac_lpr_engine_config_v1 config = FAC_LPR_ENGINE_CONFIG_V1_INIT;
+    fac_lpr_engine_handle* handle = reinterpret_cast<fac_lpr_engine_handle*>(0x1);
+
+    EXPECT_EQ(
+        fac_lpr_engine_create_from_contract_v1(&config, nullptr, "models", &handle),
+        FAC_LPR_STATUS_CONFIGURATION_ERROR);
+    EXPECT_EQ(handle, nullptr);
+
+    handle = reinterpret_cast<fac_lpr_engine_handle*>(0x1);
+    EXPECT_EQ(
+        fac_lpr_engine_create_from_contract_v1(&config, "", "models", &handle),
+        FAC_LPR_STATUS_CONFIGURATION_ERROR);
+    EXPECT_EQ(handle, nullptr);
+
+    handle = reinterpret_cast<fac_lpr_engine_handle*>(0x1);
+    EXPECT_EQ(
+        fac_lpr_engine_create_from_contract_v1(&config, "missing-contract.txt", "missing-models", &handle),
+        FAC_LPR_STATUS_CONFIGURATION_ERROR);
+    EXPECT_EQ(handle, nullptr);
+
+    EXPECT_EQ(
+        fac_lpr_engine_create_from_contract_v1(&config, "contract.txt", "models", nullptr),
+        FAC_LPR_STATUS_CONFIGURATION_ERROR);
+}
+
 TEST(CApiV1, InvalidConfigVersionAndSizeAreRejectedWithoutLeakingHandle) {
     fac_lpr_engine_config_v1 config = FAC_LPR_ENGINE_CONFIG_V1_INIT;
     fac_lpr_engine_handle* handle = reinterpret_cast<fac_lpr_engine_handle*>(0x1);

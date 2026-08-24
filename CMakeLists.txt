@@ -213,6 +213,16 @@ if(FAC_LPR_WITH_ONNX_RUNTIME)
     )
 endif()
 
+if(FAC_LPR_WITH_OPENCV)
+    set_target_properties(fac_lpr_opencv_adapter PROPERTIES EXPORT_NAME opencv_adapter)
+    list(APPEND FAC_LPR_EXPORT_TARGETS fac_lpr_opencv_adapter)
+endif()
+
+if(FAC_LPR_WITH_ONNX_RUNTIME AND FAC_LPR_WITH_OPENCV)
+    set_target_properties(fac_lpr_production_factory PROPERTIES EXPORT_NAME production_factory)
+    list(APPEND FAC_LPR_EXPORT_TARGETS fac_lpr_production_factory)
+endif()
+
 install(
     TARGETS ${FAC_LPR_EXPORT_TARGETS}
     EXPORT fac_lpr_engine_targets

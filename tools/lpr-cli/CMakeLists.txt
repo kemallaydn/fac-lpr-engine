@@ -9,13 +9,12 @@ find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs)
 
 add_executable(fac-lpr-cli
     main.cpp
-    cli_engine_factory.cpp
-    production_activation_gate.cpp
 )
 
 target_compile_features(fac-lpr-cli PRIVATE cxx_std_20)
 target_include_directories(fac-lpr-cli PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(fac-lpr-cli PRIVATE
+    fac_lpr::production_factory
     fac_lpr::application
     fac_lpr::model
     fac_lpr::generic_onnx_ocr
@@ -43,12 +42,6 @@ else()
         -Wsign-conversion
         $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:-Werror>
     )
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        # GCC can conservatively assume required(contract, temporary-key) may
-        # return a reference tied to the temporary lookup key. The helper
-        # actually returns the std::string stored in the long-lived contract map.
-        target_compile_options(fac-lpr-cli PRIVATE -Wno-error=dangling-reference)
-    endif()
 endif()
 
 set_target_properties(fac-lpr-cli PROPERTIES

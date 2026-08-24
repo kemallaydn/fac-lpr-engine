@@ -6,9 +6,14 @@
 #include <fac_lpr/c_api/error_boundary.hpp>
 #include <fac_lpr/c_api/result_buffer.hpp>
 
+#if defined(FAC_LPR_PRODUCTION_FACTORY_AVAILABLE)
+#include "cli_engine_factory.hpp"
+#endif
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -88,6 +93,29 @@ void validate_config(const fac_lpr_engine_config_v1* config) {
     if (config->reserved_flags != 0U || config->reserved_zero != 0U) {
         throw fac_lpr::application::ConfigurationError("C ABI v1 reserved config fields must be zero");
     }
+}
+
+void validate_required_utf8_path(const char* value, const char* field) {
+    if (value == nullptr || value[0] == '\0') {
+        throw fac_lpr::application::ConfigurationError(std::string{field} + " is required");
+    }
+}
+
+[[nodiscard]] std::unique_ptr<fac_lpr_engine_handle> make_handle(
+    std::shared_ptr<fac_lpr::application::LprPipeline> pipeline = {}) {
+    auto handle = std::make_unique<fac_lpr_engine_handle>();
+    handle->pipeline = std::move(pipeline);
+    return handle;
+}
+
+void publish_handle(
+    std::unique_ptr<fac_lpr_engine_handle> handle,
+    fac_lpr_engine_handle** out_handle) {
+    {
+        std::scoped_lock lock{g_handle_mutex};
+        g_live_handles.insert(handle.get());
+    }
+    *out_handle = handle.release();
 }
 
 [[nodiscard]] fac_lpr::application::PixelFormat to_pixel_format(
@@ -179,14 +207,37 @@ extern "C" fac_lpr_status FAC_LPR_CALL fac_lpr_engine_create_v1(
         }
         *out_handle = nullptr;
         validate_config(config);
-
-        auto handle = std::make_unique<fac_lpr_engine_handle>();
-        {
-            std::scoped_lock lock{g_handle_mutex};
-            g_live_handles.insert(handle.get());
-        }
-        *out_handle = handle.release();
+        publish_handle(make_handle(), out_handle);
         return FAC_LPR_STATUS_OK;
+    });
+}
+
+extern "C" fac_lpr_status FAC_LPR_CALL fac_lpr_engine_create_from_contract_v1(
+    const fac_lpr_engine_config_v1* config,
+    const char* contract_path_utf8,
+    const char* model_directory_utf8,
+    fac_lpr_engine_handle** out_handle) {
+    return invoke_c_api([&]() -> fac_lpr_status {
+        if (out_handle == nullptr) {
+            throw fac_lpr::application::ConfigurationError("C ABI output handle pointer is null");
+        }
+        *out_handle = nullptr;
+        validate_config(config);
+        validate_required_utf8_path(contract_path_utf8, "C ABI production contract path");
+        validate_required_utf8_path(model_directory_utf8, "C ABI model directory");
+
+#if defined(FAC_LPR_PRODUCTION_FACTORY_AVAILABLE)
+        auto pipeline = fac_lpr::cli::build_pipeline_from_contract(
+            std::filesystem::path{model_directory_utf8},
+            std::filesystem::path{contract_path_utf8},
+            "warn");
+        publish_handle(make_handle(std::move(pipeline)), out_handle);
+        return FAC_LPR_STATUS_OK;
+#else
+        throw fac_lpr::application::ConfigurationError(
+            "production pipeline factory is unavailable in this build; "
+            "enable FAC_LPR_WITH_ONNX_RUNTIME and FAC_LPR_WITH_OPENCV");
+#endif
     });
 }
 
