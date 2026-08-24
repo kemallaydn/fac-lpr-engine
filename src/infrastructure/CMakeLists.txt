@@ -116,7 +116,10 @@ if(FAC_LPR_WITH_OPENCV)
     add_library(fac_lpr_opencv_adapter STATIC opencv_image_view.cpp opencv/perspective_aligner.cpp opencv/crop_enhancers.cpp opencv/double_row_normalizer.cpp opencv/connected_component_layout_analyzer.cpp)
     add_library(fac_lpr::opencv_adapter ALIAS fac_lpr_opencv_adapter)
     target_compile_features(fac_lpr_opencv_adapter PUBLIC cxx_std_20)
-    target_include_directories(fac_lpr_opencv_adapter PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include> ${OpenCV_INCLUDE_DIRS})
+    target_include_directories(fac_lpr_opencv_adapter
+        PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>
+        PRIVATE ${OpenCV_INCLUDE_DIRS}
+    )
     target_link_libraries(fac_lpr_opencv_adapter PUBLIC fac_lpr::application fac_lpr::geometry fac_lpr::native_image PRIVATE ${OpenCV_LIBS})
 endif()
 
