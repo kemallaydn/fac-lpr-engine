@@ -122,5 +122,28 @@ if(FAC_LPR_WITH_OPENCV)
     target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::opencv_adapter ${OpenCV_LIBS})
 endif()
 
+# Windows test discovery executes the test binary. Stage non-vcpkg runtime
+# dependencies next to it first so the loader can resolve the FAC LPR facade
+# and the prebuilt ONNX Runtime without relying on a developer PATH.
+if(WIN32 AND FAC_LPR_BUILD_SHARED)
+    add_custom_command(TARGET fac_lpr_native_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:fac_lpr_engine>
+            $<TARGET_FILE_DIR:fac_lpr_native_tests>
+        VERBATIM
+    )
+    if(FAC_LPR_WITH_ONNX_RUNTIME AND FAC_LPR_ONNXRUNTIME_ROOT)
+        set(_fac_lpr_onnx_runtime_dll "${FAC_LPR_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll")
+        if(EXISTS "${_fac_lpr_onnx_runtime_dll}")
+            add_custom_command(TARGET fac_lpr_native_tests POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_fac_lpr_onnx_runtime_dll}"
+                    $<TARGET_FILE_DIR:fac_lpr_native_tests>
+                VERBATIM
+            )
+        endif()
+    endif()
+endif()
+
 include(GoogleTest)
-gtest_discover_tests(fac_lpr_native_tests)
+gtest_discover_tests(fac_lpr_native_tests DISCOVERY_MODE PRE_TEST)
