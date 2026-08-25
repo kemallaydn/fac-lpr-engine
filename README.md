@@ -1,10 +1,18 @@
 # FAC LPR Engine
 
-Production-grade, reusable native **license plate recognition (LPR)** engine written in C++20.
+FAC LPR Engine is a reusable native **license plate recognition engine** written in C++20.
 
-FAC LPR Engine turns an image/frame into a technical plate-recognition decision through a deterministic, bounded and testable pipeline. It is designed to be embedded into other products through C++, a stable C ABI, C#, Python or another FFI-capable runtime.
+Give it an image or frame and it returns a technical recognition result with plate text, confidence/evidence and a clear recognition decision:
 
-> The engine recognizes plates. It does **not** decide whether a vehicle should be allowed through a gate, own customer/business rules, manage cameras, or persist application state.
+```text
+ACCEPTED
+REVIEW
+REJECTED
+```
+
+The engine is designed to be embedded into other products through C++, a stable C ABI, C# P/Invoke, Python `ctypes` or another FFI-capable runtime.
+
+> FAC LPR Engine recognizes plates. It does **not** decide whether a vehicle is allowed to enter, manage cameras, control barriers or own customer/business rules.
 
 ## What it does
 
@@ -13,13 +21,13 @@ image / frame
     ↓
 plate detection
     ↓
-geometry validation + perspective alignment
+geometry validation + perspective correction
     ↓
-crop generation + enhancement
+crop generation / enhancement
     ↓
-OCR ensemble
+OCR
     ↓
-confidence calibration + layout evidence
+confidence + layout evidence
     ↓
 candidate fusion
     ↓
@@ -30,38 +38,42 @@ ACCEPTED / REVIEW / REJECTED
 
 `ACCEPTED` means the recognition evidence is technically strong enough. It never means “grant access”.
 
-## Production status
+## Why it exists as a separate engine
 
-The implementation roadmap is complete and the `dev` branch is the current release candidate.
+The engine is intentionally independent from FAC Access or any other host application.
 
-Current validated release-candidate gates include:
+This separation keeps responsibilities clean:
 
-- Linux x64 full Debug + Release validation in Docker
-- production-readiness
-- release-readiness
-- ABI compatibility
-- CMake package smoke
-- resource-budget validation
-- evaluation-tool validation
-- release metadata validation
+```text
+FAC LPR Engine
+"What plate is visible, and how trustworthy is the recognition?"
 
-The active promotion PR is `dev -> main`. A production release is considered complete only after the exact release candidate is promoted and tagged under the repository release policy.
+Host application
+"What should I do with that plate?"
+```
 
-For the canonical product definition, architecture, runtime contracts and release rules, read [`PRODUCT.md`](PRODUCT.md).
+For example, FAC Access may receive an `ACCEPTED` recognition and still return `DENIED` because the vehicle does not have permission to enter.
 
-## Core design goals
+## Main capabilities
 
-- **Native and embeddable:** C++20 implementation with stable C ABI v1.
-- **Vendor-neutral core:** ONNX Runtime/OpenCV stay at infrastructure boundaries.
-- **Fail-closed:** invalid models, malformed inputs, unsafe resource requests and incomplete release evidence are rejected.
-- **Bounded resources:** queues, workspaces, buffers and external dimensions are explicitly limited.
-- **Deterministic contracts:** model tensor shapes, preprocessing, charset and decoder behavior are regression locked.
-- **Observable without leaking data:** stage timings and technical diagnostics are available without logging sensitive images or full plate data by default.
-- **Release-gated:** ABI, packaging, memory, performance, security and real-model behavior are treated as release requirements, not optional cleanup.
+- native C++20 recognition pipeline
+- Turkish plate recognition
+- plate detection and geometry correction
+- OCR and candidate fusion
+- confidence / evidence-based decisions
+- explicit `ACCEPTED`, `REVIEW`, `REJECTED` semantics
+- bounded native memory/resource behavior
+- verified runtime model contracts
+- SHA-256 model integrity checks
+- stable C ABI v1
+- C++, C#, Python and CMake consumer paths
+- offline CLI for real-pipeline testing
+- stage timing and technical diagnostics
+- ABI, packaging, memory, performance, security and release validation
 
 ## Technology
 
-| Area | Choice |
+| Area | Technology |
 | --- | --- |
 | Language | C++20 |
 | Public ABI | C11-compatible C ABI v1 |
@@ -70,41 +82,76 @@ For the canonical product definition, architecture, runtime contracts and releas
 | Image processing | OpenCV |
 | Tests | GoogleTest / CTest |
 | Logging | spdlog |
-| Platforms | Windows x64, Linux x64, macOS ARM64 validation |
+| Main targets | Windows x64, Linux x64 |
+| Additional validation | macOS ARM64 |
 
 ## Repository layout
 
 ```text
 fac-lpr-engine/
-├── include/                 # Public C++ and C ABI headers
-├── src/                     # Domain, application and infrastructure implementation
-├── tests/                   # Unit, integration, real-model and regression tests
-├── tools/
-│   ├── lpr-cli/             # Offline real-pipeline CLI
-│   ├── memory-stress/       # Memory/resource stress validation
-│   └── ...                  # Evaluation/inspection utilities
-├── samples/                 # Consumer examples, including Python ctypes
+├── include/                 # public C++ / C ABI headers
+├── src/                     # Domain, Application and Infrastructure implementation
+├── tests/                   # unit, integration, regression and real-model tests
+├── tools/                   # CLI, evaluation and resource tools
+├── samples/                 # consumer examples
 ├── cmake/                   # CMake package/export helpers
-├── scripts/                 # Dependency/bootstrap/release validation scripts
-├── docs/                    # Architecture, operations and release documentation
-├── models/                  # Runtime/release model artifacts and model documentation
-├── CMakeLists.txt
-├── CMakePresets.json
-└── PRODUCT.md               # Canonical product and architecture specification
+├── scripts/                 # bootstrap/validation/release scripts
+├── docs/                    # detailed technical and release documentation
+├── models/                  # model artifacts/documentation
+├── PRODUCT.md               # canonical product + architecture specification
+├── AGENTS.md                # AI-agent / maintainer project guide
+└── README.md
 ```
 
-## Build requirements
+## Active production models
 
-Typical development environment:
+The production pipeline currently expects:
 
-- CMake 3.25+
-- C++20-capable compiler
-- Ninja
-- Git
-- Python 3 for supporting scripts/samples
-- platform toolchain (`MSVC`, `GCC` or `Clang`)
+```text
+best.onnx              # detector / keypoints
+lprnet_turkey.onnx     # Turkish plate OCR
+```
 
-Dependencies are bootstrapped through the repository scripts/vcpkg configuration. Generated build output belongs under `build/`.
+These models are governed by explicit runtime contracts. A model is not accepted simply because an ONNX file loads successfully.
+
+The current OCR contract includes:
+
+```text
+input:  float32 [1,3,40,160]
+output: float32 [1,34,24]
+layout: BCT
+blank index: 33
+charset: 0123456789ABCDEFGHIJKLMNOPRSTUVYZ
+```
+
+Model tensor names, dimensions, preprocessing, class order, charset, blank semantics and detector keypoint behavior are production contracts and are regression tested.
+
+## Public C ABI
+
+The stable C interface is defined in:
+
+```text
+include/fac_lpr/fac_lpr_engine.h
+```
+
+Primary lifecycle functions:
+
+```c
+fac_lpr_engine_create_v1(...);
+fac_lpr_engine_recognize_v1(...);
+fac_lpr_engine_destroy_v1(...);
+fac_lpr_get_last_error_v1(...);
+```
+
+Important ABI rules:
+
+- opaque engine handle
+- no C++ exception crosses the ABI
+- caller-owned result buffer
+- two-call required-size pattern
+- explicit version/size contracts
+- nested data represented with buffer-relative offsets/counts
+- ABI compatibility checked by CI
 
 ## Quick build
 
@@ -140,15 +187,7 @@ cmake --build --preset windows-msvc-debug
 cmake --build --preset windows-msvc-release
 ```
 
-All normal builds are out-of-source. Warnings are treated as errors in validation configurations.
-
-## Linux x64 validation through Docker
-
-The repository includes a self-hosted `linux-x64-docker-validation` workflow that validates Linux/amd64 from the macOS ARM64 runner through Docker.
-
-It performs clean Debug and Release builds, runs the CTest suites and consumer/runtime smoke validation. vcpkg packages use a persistent binary cache, so heavy dependencies such as OpenCV do not need to be rebuilt on every run.
-
-The workflow uses concurrency cancellation, so a newer `dev` revision replaces obsolete queued/running validation for the same branch.
+Normal builds are out-of-source. Validation configurations treat warnings as errors where configured.
 
 ## Offline CLI
 
@@ -158,9 +197,9 @@ When built with:
 FAC_LPR_BUILD_LPR_CLI=ON
 ```
 
-`fac-lpr-cli` executes the real production pipeline against JPG/PNG input.
+`fac-lpr-cli` runs the real production pipeline against JPG/PNG input.
 
-Example shape:
+Example:
 
 ```bash
 fac-lpr-cli plate.jpg \
@@ -169,7 +208,7 @@ fac-lpr-cli plate.jpg \
   --json
 ```
 
-Supported options include:
+Useful options include:
 
 ```text
 --json
@@ -179,59 +218,7 @@ Supported options include:
 --log-level trace|debug|info|warn|error
 ```
 
-In JSON mode stdout is kept machine-readable; diagnostics must not corrupt the JSON contract.
-
-## Public C ABI
-
-The stable C interface lives at:
-
-```text
-include/fac_lpr/fac_lpr_engine.h
-```
-
-Primary lifecycle functions:
-
-```c
-fac_lpr_engine_create_v1(...);
-fac_lpr_engine_recognize_v1(...);
-fac_lpr_engine_destroy_v1(...);
-fac_lpr_get_last_error_v1(...);
-```
-
-Important ABI properties:
-
-- opaque engine handle
-- no C++ exception crosses the ABI
-- caller-owned recognition result buffer
-- two-call required-size pattern
-- buffer-relative offsets for nested result data
-- explicit struct size/version contract
-- ABI compatibility checked by CI
-
-See [`PRODUCT.md`](PRODUCT.md) and the repository docs for the full ownership/wire-format rules.
-
-## Runtime model contract
-
-The current production pipeline expects two active ONNX models:
-
-```text
-best.onnx              # plate detector / keypoints
-lprnet_turkey.onnx     # Turkish plate OCR
-```
-
-Models are not accepted merely because a file with the expected name exists. Activation validates the model contract, file containment, size and SHA-256 metadata and fails atomically when the contract is invalid.
-
-The current OCR model contract is intentionally strict:
-
-```text
-input:  float32 [1,3,40,160]
-output: float32 [1,34,24]
-layout: BCT
-blank index: 33
-charset: 0123456789ABCDEFGHIJKLMNOPRSTUVYZ
-```
-
-Do not infer or casually change tensor names, dimensions, preprocessing, class order, keypoint interpretation or CTC blank semantics. Those values are part of the production contract and are regression tested.
+In JSON mode stdout remains machine-readable.
 
 ## Architecture
 
@@ -247,59 +234,74 @@ Public API / Composition Root
           Domain
 ```
 
-- **Domain** contains vendor-independent recognition concepts/value types.
-- **Application** owns orchestration, policies and ports/interfaces.
-- **Infrastructure** owns ONNX Runtime, OpenCV, model loading, native image and concrete runtime adapters.
-- **Public API / composition** exposes stable integration surfaces and assembles the concrete pipeline.
+- **Domain** contains vendor-independent recognition concepts.
+- **Application** owns orchestration and recognition policies/ports.
+- **Infrastructure** owns ONNX Runtime, OpenCV, model loading and concrete runtime adapters.
+- **Public API / composition root** exposes stable integration surfaces and assembles the production pipeline.
 
-Vendor types must not leak into Domain, Application or the public C ABI.
+Vendor/runtime types must not leak into Domain, Application or the public C ABI.
 
-## Testing and release gates
+## Reliability and safety principles
 
-The repository contains validation for areas including:
+The engine is built to fail closed rather than return optimistic garbage.
 
-- unit and integration behavior
+Core rules include:
+
+- malformed input is rejected safely
+- model checksum/contract mismatch blocks activation
+- external dimensions and allocation arithmetic are validated
+- queues/workspaces/buffers remain bounded
+- native ownership uses RAII
+- C++ exceptions never cross the C ABI
+- degraded execution is surfaced explicitly
+- sensitive images/crops/full plate text are not routine diagnostic logs
+
+## Validation and release gates
+
+Production readiness includes more than unit tests.
+
+The repository contains validation for areas such as:
+
+- unit and integration tests
 - real-model inference
 - golden regression
-- memory stress and resource budgets
+- Linux x64 Debug/Release validation
+- macOS ARM64 validation
 - sanitizer/static-analysis/fuzz paths
+- memory/resource stress
 - performance regression
 - ABI compatibility
 - C / C# / Python consumers
-- package export/install smoke
-- dependency security and SBOM
-- release metadata
-- production/release readiness
+- CMake package consumption
+- security/dependency checks
+- SBOM/release metadata
+- production-readiness
+- release-readiness
 
-A skipped workflow is not automatically equivalent to a passed workflow. Release policy is **fail-closed**: the exact candidate must have the evidence required by the applicable release gate.
+A skipped workflow is not automatically a passed workflow. Release policy is fail-closed and must be satisfied for the exact candidate being promoted.
 
-## Security, memory and privacy rules
+## Development branches
 
-- RAII ownership throughout native code.
-- No scattered raw `new`/`delete` ownership.
-- Input image memory remains caller-owned.
-- External dimensions/stride/offset arithmetic is checked.
-- Workspaces, queues and result buffers are bounded.
-- Model path traversal/root escape is rejected.
-- Model files are checksum validated before activation.
-- C++ exceptions never cross the C ABI.
-- Sensitive images/crops/full plate text/secrets are not logged by default.
+```text
+main  → stable / release
+ dev  → active development / release candidate
+```
 
-## Development workflow
+Changes normally land on `dev`, pass applicable validation and are then promoted to `main` through the release process.
 
-- `main`: stable/release branch
-- `dev`: active release-candidate branch
+## Documentation
 
-Changes should land on `dev`, pass the relevant validation, then be promoted to `main` through the release PR. Do not weaken gates to make a build green; fix the cause or document a genuinely non-applicable condition in the appropriate security/release policy.
+Start with the document that matches your role:
 
-## Documentation map
+- [`README.md`](README.md) — understandable product/build/integration overview
+- [`AGENTS.md`](AGENTS.md) — required starting context for AI coding agents and new maintainers
+- [`PRODUCT.md`](PRODUCT.md) — canonical product, architecture, model, ABI and release contracts
+- [`docs/`](docs/) — detailed technical, operational and release documentation
 
-Start here:
+If you are an AI coding agent, read `AGENTS.md` before making changes.
 
-1. [`README.md`](README.md) — build, integration and repository entry point.
-2. [`PRODUCT.md`](PRODUCT.md) — canonical product definition, architecture and runtime/release contracts.
-3. [`docs/`](docs/) — detailed architecture, operational, packaging and release documentation.
+## Current status
 
-## License / distribution
+The initial production-hardening roadmap is complete. The engine already has the native recognition pipeline, model-contract enforcement, stable C ABI, consumer coverage, resource controls and release/readiness gates needed to operate as an independent embeddable product.
 
-Distribution terms and release artifacts must follow the repository's release metadata and packaging policy. Runtime model artifacts are versioned/validated independently from the engine binary through explicit model metadata and checksums.
+It is currently consumed by FAC Access through its public C ABI, while remaining independent from FAC Access business/access-control rules.
