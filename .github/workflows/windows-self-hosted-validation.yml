@@ -53,7 +53,7 @@ jobs:
           Write-Host "RUNNER_ARCH=$env:RUNNER_ARCH"
           Write-Host "PowerShell=$($PSVersionTable.PSVersion)"
           whoami
-          Get-Command git, cmake | Format-Table -AutoSize
+          Get-Command git | Format-Table -AutoSize
 
       - uses: actions/checkout@v4
 
@@ -64,6 +64,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Ensure CMake is available
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) { python -m pip install --upgrade cmake }
+          $pythonScripts = Join-Path (Split-Path (Get-Command python).Source -Parent) 'Scripts'
+          if (Test-Path $pythonScripts) { $env:PATH = "$pythonScripts;$env:PATH"; Add-Content -Path $env:GITHUB_PATH -Value $pythonScripts }
+          cmake --version
 
       - name: Toolchain diagnostics
         shell: powershell
