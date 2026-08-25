@@ -3,8 +3,14 @@ name: performance-regression
 on:
   push:
     branches: [dev]
+    paths-ignore:
+      - 'README.md'
+      - 'AGENTS.md'
   pull_request:
     branches: [dev]
+    paths-ignore:
+      - 'README.md'
+      - 'AGENTS.md'
   workflow_dispatch:
 
 permissions:
