@@ -197,6 +197,18 @@ FAC_LPR_API fac_lpr_status FAC_LPR_CALL fac_lpr_engine_create_v1(
     const fac_lpr_engine_config_v1* config,
     fac_lpr_engine_handle** out_handle);
 
+/*
+ * Creates an engine handle backed by the production detector/OCR pipeline.
+ * contract_path_utf8 and model_directory_utf8 are borrowed NUL-terminated UTF-8
+ * strings and only need to remain valid for the duration of this call.
+ * Existing v1 lifecycle-shell creation remains unchanged for ABI compatibility.
+ */
+FAC_LPR_API fac_lpr_status FAC_LPR_CALL fac_lpr_engine_create_from_contract_v1(
+    const fac_lpr_engine_config_v1* config,
+    const char* contract_path_utf8,
+    const char* model_directory_utf8,
+    fac_lpr_engine_handle** out_handle);
+
 FAC_LPR_API fac_lpr_status FAC_LPR_CALL fac_lpr_engine_recognize_v1(
     fac_lpr_engine_handle* handle,
     const fac_lpr_image_view_v1* image,
