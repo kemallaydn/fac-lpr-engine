@@ -62,6 +62,19 @@ add_executable(fac_lpr_native_tests
     yolo_pose_parser_tests.cpp
     yolo_preprocessor_tests.cpp
 )
+
+# serialize_result_v1 is intentionally an internal C++ helper rather than part
+# of the exported Windows DLL ABI. On ELF/Mach-O the test executable can resolve
+# it from the shared object, but Windows import libraries expose only exported
+# symbols. Compile the implementation into the test target when exercising the
+# shared Windows build so result_buffer_tests validate the same serializer
+# without widening the production DLL ABI just for tests.
+if(WIN32 AND FAC_LPR_BUILD_SHARED)
+    target_sources(fac_lpr_native_tests PRIVATE
+        "${PROJECT_SOURCE_DIR}/src/c_api/result_buffer.cpp"
+    )
+endif()
+
 target_compile_features(fac_lpr_native_tests PRIVATE c_std_11 cxx_std_20)
 target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::engine fac_lpr::adaptive_detection fac_lpr::concurrency fac_lpr::crop fac_lpr::crypto fac_lpr::geometry fac_lpr::json_config fac_lpr::lprnet fac_lpr::model fac_lpr::native_image fac_lpr::paddle_adapter fac_lpr::yolo GTest::gtest_main Threads::Threads)
 
@@ -109,5 +122,28 @@ if(FAC_LPR_WITH_OPENCV)
     target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::opencv_adapter ${OpenCV_LIBS})
 endif()
 
+# Windows test discovery executes the test binary. Stage non-vcpkg runtime
+# dependencies next to it first so the loader can resolve the FAC LPR facade
+# and the prebuilt ONNX Runtime without relying on a developer PATH.
+if(WIN32 AND FAC_LPR_BUILD_SHARED)
+    add_custom_command(TARGET fac_lpr_native_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:fac_lpr_engine>
+            $<TARGET_FILE_DIR:fac_lpr_native_tests>
+        VERBATIM
+    )
+    if(FAC_LPR_WITH_ONNX_RUNTIME AND FAC_LPR_ONNXRUNTIME_ROOT)
+        set(_fac_lpr_onnx_runtime_dll "${FAC_LPR_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll")
+        if(EXISTS "${_fac_lpr_onnx_runtime_dll}")
+            add_custom_command(TARGET fac_lpr_native_tests POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_fac_lpr_onnx_runtime_dll}"
+                    $<TARGET_FILE_DIR:fac_lpr_native_tests>
+                VERBATIM
+            )
+        endif()
+    endif()
+endif()
+
 include(GoogleTest)
-gtest_discover_tests(fac_lpr_native_tests)
+gtest_discover_tests(fac_lpr_native_tests DISCOVERY_MODE PRE_TEST)

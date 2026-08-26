@@ -1,0 +1,161 @@
+name: windows-self-hosted-validation
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'samples/**'
+      - 'models/**'
+      - 'scripts/**'
+      - 'CMakeLists.txt'
+      - 'vcpkg.json'
+      - '.github/workflows/windows-self-hosted-validation.yml'
+  push:
+    branches: [dev, 'ci/windows-self-hosted-validation']
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'samples/**'
+      - 'models/**'
+      - 'scripts/**'
+      - 'CMakeLists.txt'
+      - 'vcpkg.json'
+      - '.github/workflows/windows-self-hosted-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_DISABLE_METRICS: '1'
+  VCPKG_DEFAULT_TRIPLET: x64-windows
+
+concurrency:
+  group: fac-lpr-windows-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x64-native-validation:
+    name: windows-x64-native-validation
+    runs-on: [self-hosted, Windows, X64, fac-lpr-windows]
+    timeout-minutes: 120
+    steps:
+      - name: Runner preflight
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "RUNNER_NAME=$env:RUNNER_NAME"
+          Write-Host "RUNNER_OS=$env:RUNNER_OS"
+          Write-Host "RUNNER_ARCH=$env:RUNNER_ARCH"
+          Write-Host "PowerShell=$($PSVersionTable.PSVersion)"
+          whoami
+          Get-Command git | Format-Table -AutoSize
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Ensure CMake is available
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) { python -m pip install --upgrade cmake }
+          $pythonScripts = Join-Path (Split-Path (Get-Command python).Source -Parent) 'Scripts'
+          if (Test-Path $pythonScripts) { $env:PATH = "$pythonScripts;$env:PATH"; Add-Content -Path $env:GITHUB_PATH -Value $pythonScripts }
+          cmake --version
+
+      - name: Toolchain diagnostics
+        shell: powershell
+        run: |
+          dotnet --info
+          python --version
+          cmake --version
+
+      - name: Restore native dependencies
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/bootstrap-dependencies.ps1
+
+      - name: Configure x64 Windows
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item build/windows-self-hosted -Recurse -Force -ErrorAction SilentlyContinue
+          cmake -S . -B build/windows-self-hosted -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_INSTALLED_DIR="$PWD/build/vcpkg_installed" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DFAC_LPR_ONNXRUNTIME_ROOT="$PWD/build/deps/onnxruntime" `
+            -DFAC_LPR_WITH_SPDLOG=ON `
+            -DFAC_LPR_WITH_ONNX_RUNTIME=ON `
+            -DFAC_LPR_WITH_OPENCV=ON `
+            -DFAC_LPR_BUILD_SHARED=ON `
+            -DFAC_LPR_BUILD_MODEL_INSPECTOR=ON `
+            -DFAC_LPR_BUILD_TESTS=ON
+
+      - name: Build Debug
+        shell: powershell
+        run: cmake --build build/windows-self-hosted --config Debug --parallel 2
+
+      - name: Test Debug
+        shell: powershell
+        run: ctest --test-dir build/windows-self-hosted -C Debug --output-on-failure
+
+      - name: Build Release
+        shell: powershell
+        run: cmake --build build/windows-self-hosted --config Release --parallel 2
+
+      - name: Test Release
+        shell: powershell
+        run: ctest --test-dir build/windows-self-hosted -C Release --output-on-failure
+
+      - name: Validate Release DLL clean load
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nativeBin = Join-Path $env:GITHUB_WORKSPACE 'build/windows-self-hosted/artifacts/bin/Release'
+          $nativeDll = Join-Path $nativeBin 'fac_lpr_engine.dll'
+          if (-not (Test-Path $nativeDll)) { throw "Expected Release DLL not found: $nativeDll" }
+          $ort = Join-Path $env:GITHUB_WORKSPACE 'build/deps/onnxruntime/lib'
+          $vcpkg = Join-Path $env:GITHUB_WORKSPACE 'build/vcpkg_installed/x64-windows/bin'
+          $script = "import ctypes,os; [os.add_dll_directory(p) for p in [r'$nativeBin',r'$ort',r'$vcpkg'] if os.path.isdir(p)]; ctypes.WinDLL(r'$nativeDll'); print('Clean FAC LPR Windows load succeeded')"
+          python -c $script
+          if ($LASTEXITCODE -ne 0) { throw 'FAC LPR clean DLL load failed.' }
+
+      - name: Validate .NET P/Invoke consumer
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nativeBin = Join-Path $env:GITHUB_WORKSPACE 'build/windows-self-hosted/artifacts/bin/Release'
+          $env:PATH = "$nativeBin;$env:GITHUB_WORKSPACE\build\deps\onnxruntime\lib;$env:GITHUB_WORKSPACE\build\vcpkg_installed\x64-windows\bin;$env:PATH"
+          dotnet run --project samples/dotnet/FacLpr.Sample/FacLpr.Sample.csproj -c Release -- --iterations 10000
+
+      - name: Validate Python ctypes consumer
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nativeBin = Join-Path $env:GITHUB_WORKSPACE 'build/windows-self-hosted/artifacts/bin/Release'
+          $nativeDll = Join-Path $nativeBin 'fac_lpr_engine.dll'
+          $env:PATH = "$nativeBin;$env:GITHUB_WORKSPACE\build\deps\onnxruntime\lib;$env:GITHUB_WORKSPACE\build\vcpkg_installed\x64-windows\bin;$env:PATH"
+          python samples/python/fac_lpr_ctypes.py --library $nativeDll --iterations 10000
+
+      - name: Upload Windows validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fac-lpr-windows-x64-${{ github.sha }}
+          path: |
+            build/windows-self-hosted/artifacts/bin/Release/*.dll
+            build/windows-self-hosted/Testing/Temporary/LastTest.log
+          if-no-files-found: warn

@@ -1,5 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
+& (Join-Path $PSScriptRoot 'ensure-windows-build-tools.ps1')
+
 $RootDir = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $BaselineFile = Join-Path $RootDir 'cmake/vcpkg-baseline.txt'
 $VcpkgCommit = (Get-Content $BaselineFile -Raw).Trim()
