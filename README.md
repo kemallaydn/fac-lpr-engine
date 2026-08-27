@@ -1,161 +1,238 @@
-# FAC LPR Engine
+<div align="center">
 
-FAC LPR Engine is a reusable native **license plate recognition engine** written in C++20.
+# 🚘 FAC LPR Engine
 
-Give it an image or frame and it returns a technical recognition result with plate text, confidence/evidence and a clear recognition decision:
+### Türkiye plakaları için production-ready, gömülebilir plaka tanıma motoru
 
-```text
-ACCEPTED
-REVIEW
-REJECTED
-```
+**C++20 · ONNX Runtime · OpenCV · CMake · Stable C ABI**
 
-The engine is designed to be embedded into other products through C++, a stable C ABI, C# P/Invoke, Python `ctypes` or another FFI-capable runtime.
+![C++](https://img.shields.io/badge/C%2B%2B-20-00599C?style=flat-square&logo=cplusplus)
+![CMake](https://img.shields.io/badge/CMake-3.25%2B-064F8C?style=flat-square&logo=cmake)
+![ONNX Runtime](https://img.shields.io/badge/ONNX-Runtime-005CED?style=flat-square&logo=onnx)
+![OpenCV](https://img.shields.io/badge/OpenCV-4.x-5C3EE8?style=flat-square&logo=opencv)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey?style=flat-square)
 
-> FAC LPR Engine recognizes plates. It does **not** decide whether a vehicle is allowed to enter, manage cameras, control barriers or own customer/business rules.
+**Görüntüyü ver. Plakayı bulsun, düzeltsin, okusun ve sonucun ne kadar güvenilir olduğunu söylesin.**
 
-## What it does
+</div>
 
-```text
-image / frame
-    ↓
-plate detection
-    ↓
-geometry validation + perspective correction
-    ↓
-crop generation / enhancement
-    ↓
-OCR
-    ↓
-confidence + layout evidence
-    ↓
-candidate fusion
-    ↓
-technical decision
-    ↓
-ACCEPTED / REVIEW / REJECTED
-```
+---
 
-`ACCEPTED` means the recognition evidence is technically strong enough. It never means “grant access”.
+## FAC LPR Engine nedir?
 
-## Why it exists as a separate engine
+FAC LPR Engine, kamera görüntüsü veya tekil bir görsel içerisindeki araç plakasını tespit etmek ve okumak için geliştirilmiş bağımsız bir **License Plate Recognition (LPR)** motorudur.
 
-The engine is intentionally independent from FAC Access or any other host application.
-
-This separation keeps responsibilities clean:
+Motor yalnızca OCR yapan ince bir wrapper değildir. Görüntünün alınmasından nihai teknik karara kadar plaka tanıma sürecinin tamamını kendi pipeline'ı içerisinde yönetir.
 
 ```text
-FAC LPR Engine
-"What plate is visible, and how trustworthy is the recognition?"
+Görüntü / Frame
+      │
+      ▼
+┌─────────────────────┐
+│   Plaka Detection   │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ Geometry Validation │
+│ + Perspective Fix   │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ Crop / Enhancement  │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│         OCR         │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ Confidence + Layout │
+│      Evidence       │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│  Candidate Fusion   │
+└──────────┬──────────┘
+           ▼
+     Teknik Karar
 
-Host application
-"What should I do with that plate?"
+ ACCEPTED / REVIEW / REJECTED
 ```
 
-For example, FAC Access may receive an `ACCEPTED` recognition and still return `DENIED` because the vehicle does not have permission to enter.
+Motorun çıktısı yalnızca `34ABC123` gibi bir metin değildir. Sonuçla birlikte confidence, teknik evidence ve tanımanın kullanılabilir olup olmadığına ilişkin açık bir karar üretir.
 
-## Main capabilities
+---
 
-- native C++20 recognition pipeline
-- Turkish plate recognition
-- plate detection and geometry correction
-- OCR and candidate fusion
-- confidence / evidence-based decisions
-- explicit `ACCEPTED`, `REVIEW`, `REJECTED` semantics
-- bounded native memory/resource behavior
-- verified runtime model contracts
-- SHA-256 model integrity checks
-- stable C ABI v1
-- C++, C#, Python and CMake consumer paths
-- offline CLI for real-pipeline testing
-- stage timing and technical diagnostics
-- ABI, packaging, memory, performance, security and release validation
+## Ne işe yarar?
 
-## Technology
+FAC LPR Engine, plaka tanımaya ihtiyaç duyan başka uygulamaların içine gömülmek üzere tasarlanmıştır.
 
-| Area | Technology |
+Örnek kullanım alanları:
+
+- otopark ve bariyer sistemleri
+- site / plaza araç giriş sistemleri
+- fabrika ve tesis girişleri
+- güvenlik uygulamaları
+- araç takip sistemleri
+- edge cihazları
+- masaüstü uygulamalar
+- backend veya servis tabanlı LPR çözümleri
+
+Engine'in görevi şudur:
+
+> **“Görüntüde hangi plaka var ve bu tanımaya teknik olarak ne kadar güvenebilirim?”**
+
+Engine'in görevi **şu değildir:**
+
+> “Bu araç içeri girebilir mi?”
+
+Örneğin FAC Access, engine'den `ACCEPTED` sonucu alabilir ancak araç yetkili değilse giriş kararını yine `DENIED` verebilir.
+
+Bu ayrım bilinçlidir. FAC LPR Engine herhangi bir access-control veya müşteri business rule'una bağlı değildir.
+
+---
+
+## Tanıma kararları
+
+Engine sonuçları üç temel teknik karar seviyesinden biriyle döner:
+
+| Karar | Anlamı |
 | --- | --- |
-| Language | C++20 |
-| Public ABI | C11-compatible C ABI v1 |
-| Build | CMake 3.25+ / Ninja |
-| Inference | ONNX Runtime |
-| Image processing | OpenCV |
-| Tests | GoogleTest / CTest |
-| Logging | spdlog |
-| Main targets | Windows x64, Linux x64 |
-| Additional validation | macOS ARM64 |
+| **ACCEPTED** | Plaka tanıma evidence'ı teknik olarak yeterince güçlü. |
+| **REVIEW** | Sonuç mevcut ancak belirsizlik nedeniyle ek kontrol gerekebilir. |
+| **REJECTED** | Güvenilir bir plaka sonucu üretilemedi. |
 
-## Repository layout
+> `ACCEPTED`, **“bariyeri aç”** anlamına gelmez. Yalnızca plakanın teknik olarak yeterli güvenle tanındığını ifade eder.
+
+---
+
+## Öne çıkan özellikler
+
+### 🇹🇷 Türkiye plakalarına özel pipeline
+
+Production OCR modeli Türkiye plaka karakter seti ve plaka yapısı dikkate alınarak çalışır. Layout evidence ve candidate değerlendirme mekanizmaları OCR çıktısını tek başına körü körüne kabul etmez.
+
+### 🎯 Detection + keypoint tabanlı geometri
+
+Plaka yalnızca bounding-box olarak bulunmaz. Detector/keypoint çıktıları perspective correction ve crop üretim aşamalarında kullanılır.
+
+### 🔍 Multi-crop ve candidate fusion
+
+Tek bir crop ve tek OCR sonucuna bağımlı kalmak yerine farklı adaylardan gelen evidence birleştirilebilir.
+
+### 📊 Confidence ve evidence tabanlı karar
+
+Engine yalnızca plaka metni üretmez. Tanımanın teknik güvenilirliğini değerlendiren decision katmanına sahiptir.
+
+### 🔒 Model integrity ve runtime contract kontrolü
+
+Bir `.onnx` dosyasının yüklenebilmesi production için yeterli kabul edilmez.
+
+Engine model tarafında şu sözleşmeleri doğrular:
+
+- tensor isimleri
+- input / output boyutları
+- preprocessing beklentileri
+- class sırası
+- charset
+- blank semantics
+- detector keypoint davranışı
+- SHA-256 model bütünlüğü
+
+Contract uyuşmazlığı durumunda model sessizce kullanılmaz.
+
+### 🧠 Kontrollü native kaynak kullanımı
+
+Queue, workspace ve buffer davranışları bounded olacak şekilde tasarlanmıştır. Native ownership RAII prensipleriyle yönetilir.
+
+### 🛡️ Fail-closed yaklaşımı
+
+Engine belirsiz veya bozuk veriyi iyimser şekilde kabul etmek yerine güvenli tarafta kalacak şekilde tasarlanmıştır.
+
+Malformed input, model contract problemi veya yetersiz evidence gibi durumlar açık şekilde reddedilir veya degraded olarak raporlanır.
+
+### 🔌 Uygulamadan bağımsız entegrasyon
+
+Engine şu ortamlardan kullanılabilir:
+
+- **C++**
+- **C / Stable C ABI v1**
+- **C# / P/Invoke**
+- **Python / ctypes**
+- diğer FFI destekleyen runtime'lar
+
+---
+
+## Teknoloji
+
+| Alan | Teknoloji |
+| --- | --- |
+| Ana dil | **C++20** |
+| Inference | **ONNX Runtime** |
+| Görüntü işleme | **OpenCV** |
+| Build sistemi | **CMake 3.25+ / Ninja** |
+| Test | **GoogleTest / CTest** |
+| Logging | **spdlog** |
+| Public native interface | **C11-compatible C ABI v1** |
+| Ana hedef | **Windows x64 / Linux x64** |
+| Ek validation | **macOS ARM64** |
+
+---
+
+## Production modelleri
+
+Engine'in production pipeline'ı şu temel modelleri kullanır:
 
 ```text
-fac-lpr-engine/
-├── include/                 # public C++ / C ABI headers
-├── src/                     # Domain, Application and Infrastructure implementation
-├── tests/                   # unit, integration, regression and real-model tests
-├── tools/                   # CLI, evaluation and resource tools
-├── samples/                 # consumer examples
-├── cmake/                   # CMake package/export helpers
-├── scripts/                 # bootstrap/validation/release scripts
-├── docs/                    # detailed technical and release documentation
-├── models/                  # model artifacts/documentation
-├── PRODUCT.md               # canonical product + architecture specification
-├── AGENTS.md                # AI-agent / maintainer project guide
-└── README.md
+models/
+├── best.onnx             # Plaka detector + keypoints
+└── lprnet_turkey.onnx    # Türkiye plaka OCR modeli
 ```
 
-## Active production models
-
-The production pipeline currently expects:
+Mevcut OCR runtime contract'ı:
 
 ```text
-best.onnx              # detector / keypoints
-lprnet_turkey.onnx     # Turkish plate OCR
+input   : float32 [1,3,40,160]
+output  : float32 [1,34,24]
+layout  : BCT
+blank   : 33
+charset : 0123456789ABCDEFGHIJKLMNOPRSTUVYZ
 ```
 
-These models are governed by explicit runtime contracts. A model is not accepted simply because an ONNX file loads successfully.
+Bu değerler implementation detayı gibi görülmemelidir. Production model contract'ının parçasıdır ve regression testleriyle korunur.
 
-The current OCR contract includes:
+---
+
+# Hızlı başlangıç
+
+## 1. Gereksinimler
+
+Temel geliştirme ortamında şunlara ihtiyaç vardır:
 
 ```text
-input:  float32 [1,3,40,160]
-output: float32 [1,34,24]
-layout: BCT
-blank index: 33
-charset: 0123456789ABCDEFGHIJKLMNOPRSTUVYZ
+C++20 uyumlu compiler
+CMake 3.25+
+Ninja
+ONNX Runtime
+OpenCV
 ```
 
-Model tensor names, dimensions, preprocessing, class order, charset, blank semantics and detector keypoint behavior are production contracts and are regression tested.
+Repository içerisindeki bootstrap ve validation scriptleri desteklenen ortamlarda bağımlılıkların hazırlanmasına yardımcı olur.
 
-## Public C ABI
+---
 
-The stable C interface is defined in:
+## 2. Repository'yi klonla
 
-```text
-include/fac_lpr/fac_lpr_engine.h
+```bash
+git clone https://github.com/kemallaydn/fac-lpr-engine.git
+cd fac-lpr-engine
 ```
 
-Primary lifecycle functions:
+---
 
-```c
-fac_lpr_engine_create_v1(...);
-fac_lpr_engine_recognize_v1(...);
-fac_lpr_engine_destroy_v1(...);
-fac_lpr_get_last_error_v1(...);
-```
+## 3. Linux üzerinde build
 
-Important ABI rules:
-
-- opaque engine handle
-- no C++ exception crosses the ABI
-- caller-owned result buffer
-- two-call required-size pattern
-- explicit version/size contracts
-- nested data represented with buffer-relative offsets/counts
-- ABI compatibility checked by CI
-
-## Quick build
-
-### Linux / GCC
+### GCC / Debug
 
 ```bash
 cmake --preset linux-gcc-debug
@@ -163,7 +240,7 @@ cmake --build --preset linux-gcc-debug
 ctest --preset linux-gcc-debug --output-on-failure
 ```
 
-Release:
+### GCC / Release
 
 ```bash
 cmake --preset linux-gcc-release
@@ -171,7 +248,7 @@ cmake --build --preset linux-gcc-release
 ctest --preset linux-gcc-release --output-on-failure
 ```
 
-### Linux / Clang
+### Clang
 
 ```bash
 cmake --preset linux-clang-debug
@@ -179,7 +256,11 @@ cmake --build --preset linux-clang-debug
 ctest --preset linux-clang-debug --output-on-failure
 ```
 
-### Windows / MSVC
+---
+
+## 4. Windows üzerinde build
+
+MSVC toolchain ile:
 
 ```powershell
 cmake --preset windows-msvc
@@ -187,19 +268,23 @@ cmake --build --preset windows-msvc-debug
 cmake --build --preset windows-msvc-release
 ```
 
-Normal builds are out-of-source. Validation configurations treat warnings as errors where configured.
+Repository ayrıca gerçek Windows x64 self-hosted validation akışına sahiptir.
 
-## Offline CLI
+---
 
-When built with:
+# CLI ile ilk plakayı okutmak
+
+Engine, gerçek production pipeline'ını doğrudan görseller üzerinde çalıştırabilmek için offline CLI sağlar.
+
+CLI build sırasında:
 
 ```text
 FAC_LPR_BUILD_LPR_CLI=ON
 ```
 
-`fac-lpr-cli` runs the real production pipeline against JPG/PNG input.
+aktif olmalıdır.
 
-Example:
+Örnek kullanım:
 
 ```bash
 fac-lpr-cli plate.jpg \
@@ -208,7 +293,7 @@ fac-lpr-cli plate.jpg \
   --json
 ```
 
-Useful options include:
+Sık kullanılan seçenekler:
 
 ```text
 --json
@@ -218,90 +303,258 @@ Useful options include:
 --log-level trace|debug|info|warn|error
 ```
 
-In JSON mode stdout remains machine-readable.
+`--json` kullanıldığında stdout machine-readable kalır. Bu sayede CLI başka script veya test sistemleri içerisinde de kullanılabilir.
 
-## Architecture
+---
 
-Dependency direction is inward:
+# Uygulamaya nasıl entegre edilir?
+
+## Stable C ABI
+
+Engine'in dilden bağımsız ana entegrasyon yüzeyi:
 
 ```text
-Public API / Composition Root
-            ↓
-      Infrastructure
-            ↓
-       Application
-            ↓
-          Domain
+include/fac_lpr/fac_lpr_engine.h
 ```
 
-- **Domain** contains vendor-independent recognition concepts.
-- **Application** owns orchestration and recognition policies/ports.
-- **Infrastructure** owns ONNX Runtime, OpenCV, model loading and concrete runtime adapters.
-- **Public API / composition root** exposes stable integration surfaces and assembles the production pipeline.
+Temel lifecycle:
 
-Vendor/runtime types must not leak into Domain, Application or the public C ABI.
+```c
+fac_lpr_engine_create_v1(...);
+fac_lpr_engine_recognize_v1(...);
+fac_lpr_engine_destroy_v1(...);
+fac_lpr_get_last_error_v1(...);
+```
 
-## Reliability and safety principles
+C ABI tasarımında:
 
-The engine is built to fail closed rather than return optimistic garbage.
+- opaque engine handle kullanılır
+- C++ exception ABI dışına çıkmaz
+- result buffer caller tarafından yönetilir
+- required-size için two-call pattern kullanılır
+- version / size contract'ları açık şekilde tanımlıdır
+- nested veriler buffer-relative offset/count ile taşınır
+- ABI compatibility CI tarafından doğrulanır
 
-Core rules include:
+Bu interface sayesinde engine yalnızca C++ uygulamalarına bağlı kalmaz.
 
-- malformed input is rejected safely
-- model checksum/contract mismatch blocks activation
-- external dimensions and allocation arithmetic are validated
-- queues/workspaces/buffers remain bounded
-- native ownership uses RAII
-- C++ exceptions never cross the C ABI
-- degraded execution is surfaced explicitly
-- sensitive images/crops/full plate text are not routine diagnostic logs
+```text
+                   ┌─────────────────┐
+                   │ FAC LPR Engine  │
+                   │      C++20      │
+                   └────────┬────────┘
+                            │
+                       Stable C ABI
+                            │
+          ┌─────────────────┼─────────────────┐
+          │                 │                 │
+          ▼                 ▼                 ▼
+       C / C++          C# P/Invoke      Python ctypes
+```
 
-## Validation and release gates
+Repository içerisinde farklı consumer senaryolarını doğrulayan örnek ve test yolları bulunur.
 
-Production readiness includes more than unit tests.
+---
 
-The repository contains validation for areas such as:
+# Mimari
 
-- unit and integration tests
+FAC LPR Engine katmanlar arası bağımlılığı kontrollü tutan bir mimariye sahiptir.
+
+```text
+┌──────────────────────────────┐
+│ Public API / Composition Root│
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐
+│        Infrastructure        │
+│ ONNX · OpenCV · Model Loader │
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐
+│          Application         │
+│ Orchestration · Policies     │
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐
+│            Domain            │
+│ Recognition Concepts / Rules │
+└──────────────────────────────┘
+```
+
+### Domain
+
+Vendor bağımsız plaka tanıma kavramlarını ve temel domain modellerini içerir.
+
+### Application
+
+Pipeline orchestration, port'lar ve recognition policy'lerini yönetir.
+
+### Infrastructure
+
+ONNX Runtime, OpenCV, model loading ve concrete runtime adapter'ları burada bulunur.
+
+### Public API / Composition Root
+
+Dış uygulamalara sunulan stabil interface'leri sağlar ve production pipeline'ını compose eder.
+
+> ONNX Runtime veya OpenCV gibi vendor/runtime tiplerinin Domain, Application veya public C ABI içerisine sızmaması temel mimari kurallardan biridir.
+
+---
+
+# Repository yapısı
+
+```text
+fac-lpr-engine/
+│
+├── include/          Public C++ ve C ABI header'ları
+├── src/              Engine implementation
+├── tests/            Unit, integration ve regression testleri
+├── tools/            CLI, evaluation ve resource araçları
+├── samples/          Consumer entegrasyon örnekleri
+├── cmake/            CMake package / export yardımcıları
+├── scripts/          Bootstrap, validation ve release scriptleri
+├── docs/             Teknik ve operasyonel dokümantasyon
+├── models/           Model artifact / dokümantasyonu
+│
+├── README.md         İlk başlangıç ve genel kullanım
+├── PRODUCT.md        Canonical ürün + mimari specification
+└── AGENTS.md         AI agent / maintainer proje rehberi
+```
+
+---
+
+# Test ve production validation
+
+Bir LPR engine'in “bende çalışıyor” seviyesinde olması production-ready olduğu anlamına gelmez. Bu yüzden repository yalnızca unit testlerden ibaret değildir.
+
+Validation kapsamı içerisinde:
+
+- unit testler
+- integration testleri
 - real-model inference
 - golden regression
-- Linux x64 Debug/Release validation
+- Linux x64 Debug / Release
+- Windows x64 native validation
 - macOS ARM64 validation
-- sanitizer/static-analysis/fuzz paths
-- memory/resource stress
+- sanitizer / static analysis / fuzz yolları
+- memory ve resource stress testleri
 - performance regression
 - ABI compatibility
-- C / C# / Python consumers
+- C consumer
+- C# consumer
+- Python consumer
 - CMake package consumption
-- security/dependency checks
-- SBOM/release metadata
+- security / dependency kontrolleri
+- SBOM ve release metadata
 - production-readiness
 - release-readiness
 
-A skipped workflow is not automatically a passed workflow. Release policy is fail-closed and must be satisfied for the exact candidate being promoted.
+bulunur.
 
-## Development branches
+> **Skipped bir workflow, passed kabul edilmez.** Release politikası fail-closed çalışır ve promotion yapılacak exact candidate için gerekli gate'lerin gerçekten geçmesi beklenir.
+
+---
+
+# Güvenlik ve dayanıklılık prensipleri
+
+Engine production kullanımında hatayı gizlemek yerine görünür ve kontrollü hale getirmeyi hedefler.
+
+Temel prensipler:
+
+- malformed input güvenli şekilde reddedilir
+- model checksum / contract mismatch activation'ı engeller
+- allocation arithmetic ve dışarıdan gelen dimension'lar doğrulanır
+- queue / workspace / buffer kullanımı bounded tutulur
+- native ownership RAII ile yönetilir
+- C++ exception public C ABI dışına çıkmaz
+- degraded execution açık şekilde raporlanır
+- hassas görüntüler, crop'lar ve tam plaka metinleri rutin diagnostic loglara yazılmaz
+
+---
+
+# FAC Access ile ilişkisi
+
+FAC LPR Engine ve FAC Access aynı şey değildir.
 
 ```text
-main  → stable / release
- dev  → active development / release candidate
+┌────────────────────────────────────┐
+│          FAC LPR Engine            │
+│                                    │
+│  “Bu görüntüde hangi plaka var?”   │
+│  “Bu okumaya güvenebilir miyim?”   │
+└──────────────────┬─────────────────┘
+                   │
+                   │ ACCEPTED
+                   │ 34ABC123
+                   ▼
+┌────────────────────────────────────┐
+│             FAC Access             │
+│                                    │
+│ “Bu plakanın giriş yetkisi var mı?”│
+└──────────────────┬─────────────────┘
+                   ▼
+              ALLOW / DENY
 ```
 
-Changes normally land on `dev`, pass applicable validation and are then promoted to `main` through the release process.
+FAC Access bugün engine'i public C ABI üzerinden consume eder. Ancak engine FAC Access olmadan da bağımsız olarak kullanılabilir.
 
-## Documentation
+Bu sayede aynı LPR motoru gelecekte farklı ürünlere gömülebilir ve business logic recognition katmanına taşınmaz.
 
-Start with the document that matches your role:
+---
 
-- [`README.md`](README.md) — understandable product/build/integration overview
-- [`AGENTS.md`](AGENTS.md) — required starting context for AI coding agents and new maintainers
-- [`PRODUCT.md`](PRODUCT.md) — canonical product, architecture, model, ABI and release contracts
-- [`docs/`](docs/) — detailed technical, operational and release documentation
+# Branch modeli
 
-If you are an AI coding agent, read `AGENTS.md` before making changes.
+```text
+main  → stabil / production
+ dev  → geliştirme / release candidate
+```
 
-## Current status
+Değişiklikler normalde `dev` üzerinde doğrulanır ve gerekli validation tamamlandıktan sonra `main` branch'ine promote edilir.
 
-The initial production-hardening roadmap is complete. The engine already has the native recognition pipeline, model-contract enforcement, stable C ABI, consumer coverage, resource controls and release/readiness gates needed to operate as an independent embeddable product.
+---
 
-It is currently consumed by FAC Access through its public C ABI, while remaining independent from FAC Access business/access-control rules.
+# Dokümantasyon
+
+Projeye ilk kez geliyorsanız:
+
+| Dosya | Ne zaman okunmalı? |
+| --- | --- |
+| **README.md** | Engine'in ne olduğunu, nasıl build edildiğini ve nasıl kullanıldığını anlamak için. |
+| **AGENTS.md** | AI coding agent veya projeye yeni katılan maintainer olarak çalışmaya başlamadan önce. |
+| **PRODUCT.md** | Ürün sınırları, mimari, model contract'ları, ABI ve release kurallarının canonical kaynağı olarak. |
+| **docs/** | Detaylı teknik, operasyonel ve release dokümantasyonu için. |
+
+AI agent'ların değişiklik yapmadan önce `AGENTS.md` dosyasını okuması beklenir.
+
+---
+
+## Projenin mevcut durumu
+
+FAC LPR Engine'in ilk production-hardening yol haritası tamamlanmıştır.
+
+Engine bugün:
+
+- gerçek native recognition pipeline'ına,
+- Türkiye plaka OCR modeline,
+- model contract enforcement'a,
+- stable C ABI'ye,
+- C / C++ / C# / Python consumer yollarına,
+- resource ve memory kontrollerine,
+- regression / performance / ABI validation'larına,
+- production ve release readiness gate'lerine
+
+sahiptir.
+
+Engine, FAC Access tarafından public C ABI üzerinden kullanılabilecek şekilde tasarlanmış ve aynı zamanda başka ürünlere gömülebilecek bağımsız bir LPR motoru olarak konumlandırılmıştır.
+
+---
+
+<div align="center">
+
+### FAC LPR Engine
+
+**Plakayı okumak ayrı iştir. O plakayla ne yapılacağına karar vermek ayrı.**
+
+`Detection → Geometry → OCR → Evidence → Decision`
+
+</div>
