@@ -31,57 +31,100 @@ env:
 
 jobs:
   linux-x64:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-      - name: Restore dependencies
+
+      - name: Docker amd64 preflight
         shell: bash
         run: |
           set -euo pipefail
-          export VCPKG_ROOT="${GITHUB_WORKSPACE}/build/perf-vcpkg-root-${GITHUB_RUN_ID}"
-          export FAC_LPR_VCPKG_INSTALLED_DIR="${GITHUB_WORKSPACE}/build/perf-vcpkg-${GITHUB_RUN_ID}"
-          rm -rf "${VCPKG_ROOT}" "${FAC_LPR_VCPKG_INSTALLED_DIR}"
-          bash scripts/bootstrap-dependencies.sh
-      - name: Configure benchmark
+          docker version
+          docker run --rm --platform linux/amd64 ubuntu:24.04 bash -lc '
+            set -euo pipefail
+            test "$(uname -s)" = "Linux"
+            test "$(uname -m)" = "x86_64"
+            uname -a
+          '
+
+      - name: Prepare persistent vcpkg binary cache
         shell: bash
         run: |
           set -euo pipefail
-          VCPKG_ROOT="${GITHUB_WORKSPACE}/build/perf-vcpkg-root-${GITHUB_RUN_ID}"
-          VCPKG_INSTALLED="${GITHUB_WORKSPACE}/build/perf-vcpkg-${GITHUB_RUN_ID}"
-          cmake -S . -B build/perf -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
-            -DVCPKG_INSTALLED_DIR="${VCPKG_INSTALLED}" \
-            -DVCPKG_TARGET_TRIPLET=x64-linux \
-            -DFAC_LPR_ONNXRUNTIME_ROOT="${GITHUB_WORKSPACE}/build/deps/onnxruntime" \
-            -DFAC_LPR_WITH_ONNX_RUNTIME=ON \
-            -DFAC_LPR_WITH_OPENCV=ON \
-            -DFAC_LPR_BUILD_BENCHMARK=ON
-      - name: Build benchmark
-        run: cmake --build build/perf --target fac-lpr-benchmark --parallel 2
-      - name: Run repeated benchmark samples
+          mkdir -p "${HOME}/.cache/fac-lpr-vcpkg"
+
+      - name: Build and run repeated Linux x64 benchmark samples
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p build/perf/current
-          for run in $(seq 1 "$REPEATS"); do
-            build/perf/artifacts/bin/fac-lpr-benchmark \
-              tests/fixtures/real/plate_01.jpg \
-              --model-dir models \
-              --config docs/lpr-cli-contract.example \
-              --warmup "$WARMUP" \
-              --iterations "$ITERATIONS" \
-              --report "build/perf/current/run-${run}.json"
-          done
+          docker run --rm \
+            --platform linux/amd64 \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "${HOME}/.cache/fac-lpr-vcpkg:/vcpkg-cache" \
+            -w /workspace \
+            -e FAC_LPR_CI_RUN_ID="${GITHUB_RUN_ID}" \
+            -e WARMUP="${WARMUP}" \
+            -e ITERATIONS="${ITERATIONS}" \
+            -e REPEATS="${REPEATS}" \
+            -e VCPKG_DISABLE_METRICS=1 \
+            -e VCPKG_DEFAULT_TRIPLET=x64-linux \
+            -e VCPKG_BINARY_SOURCES='clear;files,/vcpkg-cache,readwrite' \
+            ubuntu:24.04 bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+
+              PERF_ROOT="/workspace/build/perf-${FAC_LPR_CI_RUN_ID}"
+              BUILD_DIR="${PERF_ROOT}/build"
+              VCPKG_ROOT="${PERF_ROOT}/vcpkg"
+              VCPKG_INSTALLED="${PERF_ROOT}/vcpkg_installed"
+              CURRENT_DIR="${PERF_ROOT}/current"
+              export VCPKG_ROOT
+              export FAC_LPR_VCPKG_INSTALLED_DIR="${VCPKG_INSTALLED}"
+
+              rm -rf "${PERF_ROOT}"
+              mkdir -p "${PERF_ROOT}" "${CURRENT_DIR}"
+
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential cmake ninja-build git curl ca-certificates \
+                zip unzip tar pkg-config python3 autoconf automake libtool perl nasm yasm
+
+              bash scripts/bootstrap-dependencies.sh
+
+              cmake -S . -B "${BUILD_DIR}" -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+                -DVCPKG_INSTALLED_DIR="${VCPKG_INSTALLED}" \
+                -DVCPKG_TARGET_TRIPLET=x64-linux \
+                -DFAC_LPR_ONNXRUNTIME_ROOT=/workspace/build/deps/onnxruntime \
+                -DFAC_LPR_WITH_ONNX_RUNTIME=ON \
+                -DFAC_LPR_WITH_OPENCV=ON \
+                -DFAC_LPR_BUILD_BENCHMARK=ON
+
+              cmake --build "${BUILD_DIR}" --target fac-lpr-benchmark --parallel 2
+
+              export LD_LIBRARY_PATH="/workspace/build/deps/onnxruntime/lib:${BUILD_DIR}/artifacts/lib:${LD_LIBRARY_PATH:-}"
+              for run in $(seq 1 "$REPEATS"); do
+                "${BUILD_DIR}/artifacts/bin/fac-lpr-benchmark" \
+                  tests/fixtures/real/plate_01.jpg \
+                  --model-dir models \
+                  --config docs/lpr-cli-contract.example \
+                  --warmup "$WARMUP" \
+                  --iterations "$ITERATIONS" \
+                  --report "${CURRENT_DIR}/run-${run}.json"
+              done
+            '
+
       - name: Publish dev baseline snapshot
         if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         uses: actions/upload-artifact@v4
         with:
           name: performance-baseline-linux-x64-${{ github.sha }}
-          path: build/perf/current/*.json
+          path: build/perf-${{ github.run_id }}/current/*.json
           if-no-files-found: error
           retention-days: 90
+
       - name: Resolve latest successful dev baseline
         if: github.event_name == 'pull_request'
         env:
@@ -90,6 +133,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          PERF_ROOT="build/perf-${GITHUB_RUN_ID}"
           run_id=$(gh api "/repos/${REPOSITORY}/actions/workflows/performance-regression.yml/runs?branch=dev&event=push&status=success&per_page=20" \
             --jq '.workflow_runs[0].id')
           if [[ -z "$run_id" || "$run_id" == "null" ]]; then
@@ -102,28 +146,31 @@ jobs:
             echo "Baseline workflow has no benchmark artifact." >&2
             exit 4
           fi
-          mkdir -p build/perf/baseline
-          gh api "/repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > build/perf/baseline.zip
-          unzip -q build/perf/baseline.zip -d build/perf/baseline
+          mkdir -p "${PERF_ROOT}/baseline"
+          gh api "/repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "${PERF_ROOT}/baseline.zip"
+          unzip -q "${PERF_ROOT}/baseline.zip" -d "${PERF_ROOT}/baseline"
           echo "BASELINE_RUN_ID=${run_id}" >> "$GITHUB_ENV"
+
       - name: Compare P50/P95/P99 and throughput
         if: github.event_name == 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
+          PERF_ROOT="build/perf-${GITHUB_RUN_ID}"
           python3 scripts/compare_benchmark.py \
-            --baseline build/perf/baseline/*.json \
-            --current build/perf/current/*.json \
+            --baseline "${PERF_ROOT}"/baseline/*.json \
+            --current "${PERF_ROOT}"/current/*.json \
             --latency-tolerance-percent "$LATENCY_TOLERANCE_PERCENT" \
             --throughput-tolerance-percent "$THROUGHPUT_TOLERANCE_PERCENT" \
-            --output build/perf/performance-regression.json
+            --output "${PERF_ROOT}/performance-regression.json"
+
       - name: Upload current benchmark and comparison
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: performance-regression-linux-x64-${{ github.sha }}
           path: |
-            build/perf/current/*.json
-            build/perf/performance-regression.json
+            build/perf-${{ github.run_id }}/current/*.json
+            build/perf-${{ github.run_id }}/performance-regression.json
           if-no-files-found: warn
           retention-days: 30
