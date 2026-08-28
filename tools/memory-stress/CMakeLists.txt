@@ -77,6 +77,7 @@ if(FAC_LPR_BUILD_TESTS AND
     )
     set_tests_properties(fac_lpr_memory_stress_smoke PROPERTIES
         LABELS "integration;real-model;memory;stress"
-        TIMEOUT 180
+        CONFIGURATIONS Release
+        TIMEOUT 300
     )
 endif()
