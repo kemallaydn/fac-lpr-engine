@@ -25,7 +25,9 @@ application::TemporalConsensusResult stable(std::string plate, float confidence 
 TEST(StablePlateEventFilter, RejectsInvalidCooldown) {
     application::StablePlateEventFilterConfig config{};
     config.duplicate_cooldown = std::chrono::milliseconds{-1};
-    EXPECT_THROW(application::StablePlateEventFilter(config), application::ConfigurationError);
+    EXPECT_THROW(
+        static_cast<void>(application::StablePlateEventFilter{config}),
+        application::ConfigurationError);
 }
 
 TEST(StablePlateEventFilter, EmitsFirstStableResult) {
