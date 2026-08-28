@@ -62,6 +62,7 @@ add_executable(fac_lpr_native_tests
     stable_plate_event_filter_tests.cpp
     startup_self_test_tests.cpp
     temporal_plate_consensus_tests.cpp
+    temporal_regression_benchmark_tests.cpp
     turkish_plate_grammar_tests.cpp
     yolo_pose_parser_tests.cpp
     yolo_preprocessor_tests.cpp
