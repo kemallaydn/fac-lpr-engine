@@ -111,6 +111,7 @@ TEST(TemporalRegressionBenchmark, JitterConvergesWithoutFalseStableResult) {
 TEST(TemporalRegressionBenchmark, AlternatingStrongCandidatesNeverBecomeFalseStable) {
     auto config = default_temporal_config();
     config.max_history = 4U;
+    config.minimum_supporting_frames = 3U;
     config.stable_confidence_threshold = 0.65F;
     config.conflict_margin = 0.20F;
 
