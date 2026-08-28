@@ -9,6 +9,7 @@ add_library(fac_lpr_application STATIC
     lpr_pipeline_self_test.cpp
     multi_detector_fusion.cpp
     recognition_ensemble.cpp
+    recognition_stream_session.cpp
     safe_decision_policy.cpp
     startup_self_test.cpp
     temporal_plate_consensus.cpp
