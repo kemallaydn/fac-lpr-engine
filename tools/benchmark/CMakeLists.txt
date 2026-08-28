@@ -11,45 +11,51 @@ add_executable(fac-lpr-benchmark
     runner.cpp
 )
 
-target_compile_features(fac-lpr-benchmark PRIVATE cxx_std_20)
-target_include_directories(fac-lpr-benchmark PRIVATE
-    ${OpenCV_INCLUDE_DIRS}
-    ${PROJECT_SOURCE_DIR}/tools/lpr-cli
-)
-target_link_libraries(fac-lpr-benchmark PRIVATE
-    fac_lpr::production_factory
-    fac_lpr::application
-    fac_lpr::model
-    fac_lpr::generic_onnx_ocr
-    fac_lpr::lprnet_onnx
-    fac_lpr::yolo_onnx
-    fac_lpr::geometry
-    fac_lpr::crop
-    fac_lpr::opencv_adapter
-    ${OpenCV_LIBS}
+add_executable(fac-lpr-temporal-benchmark
+    temporal_runner.cpp
 )
 
-if(MSVC)
-    target_compile_options(fac-lpr-benchmark PRIVATE
-        /W4
-        /permissive-
-        /EHsc
-        $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:/WX>
+foreach(_fac_lpr_benchmark_target IN ITEMS fac-lpr-benchmark fac-lpr-temporal-benchmark)
+    target_compile_features(${_fac_lpr_benchmark_target} PRIVATE cxx_std_20)
+    target_include_directories(${_fac_lpr_benchmark_target} PRIVATE
+        ${OpenCV_INCLUDE_DIRS}
+        ${PROJECT_SOURCE_DIR}/tools/lpr-cli
     )
-else()
-    target_compile_options(fac-lpr-benchmark PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
-        -Wconversion
-        -Wsign-conversion
-        $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:-Werror>
+    target_link_libraries(${_fac_lpr_benchmark_target} PRIVATE
+        fac_lpr::production_factory
+        fac_lpr::application
+        fac_lpr::model
+        fac_lpr::generic_onnx_ocr
+        fac_lpr::lprnet_onnx
+        fac_lpr::yolo_onnx
+        fac_lpr::geometry
+        fac_lpr::crop
+        fac_lpr::opencv_adapter
+        ${OpenCV_LIBS}
     )
-endif()
 
-set_target_properties(fac-lpr-benchmark PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${FAC_LPR_OUTPUT_ROOT}/bin"
-)
+    if(MSVC)
+        target_compile_options(${_fac_lpr_benchmark_target} PRIVATE
+            /W4
+            /permissive-
+            /EHsc
+            $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:/WX>
+        )
+    else()
+        target_compile_options(${_fac_lpr_benchmark_target} PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+            -Wconversion
+            -Wsign-conversion
+            $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:-Werror>
+        )
+    endif()
+
+    set_target_properties(${_fac_lpr_benchmark_target} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${FAC_LPR_OUTPUT_ROOT}/bin"
+    )
+endforeach()
 
 if(FAC_LPR_BUILD_TESTS AND
    EXISTS "${PROJECT_SOURCE_DIR}/models/best.onnx" AND
