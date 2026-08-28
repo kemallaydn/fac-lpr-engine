@@ -58,17 +58,12 @@ add_executable(fac_lpr_native_tests
     result_buffer_tests.cpp
     safe_decision_policy_tests.cpp
     startup_self_test_tests.cpp
+    temporal_plate_consensus_tests.cpp
     turkish_plate_grammar_tests.cpp
     yolo_pose_parser_tests.cpp
     yolo_preprocessor_tests.cpp
 )
 
-# serialize_result_v1 is intentionally an internal C++ helper rather than part
-# of the exported Windows DLL ABI. On ELF/Mach-O the test executable can resolve
-# it from the shared object, but Windows import libraries expose only exported
-# symbols. Compile the implementation into the test target when exercising the
-# shared Windows build so result_buffer_tests validate the same serializer
-# without widening the production DLL ABI just for tests.
 if(WIN32 AND FAC_LPR_BUILD_SHARED)
     target_sources(fac_lpr_native_tests PRIVATE
         "${PROJECT_SOURCE_DIR}/src/c_api/result_buffer.cpp"
@@ -122,9 +117,6 @@ if(FAC_LPR_WITH_OPENCV)
     target_link_libraries(fac_lpr_native_tests PRIVATE fac_lpr::opencv_adapter ${OpenCV_LIBS})
 endif()
 
-# Windows test discovery executes the test binary. Stage non-vcpkg runtime
-# dependencies next to it first so the loader can resolve the FAC LPR facade
-# and the prebuilt ONNX Runtime without relying on a developer PATH.
 if(WIN32 AND FAC_LPR_BUILD_SHARED)
     add_custom_command(TARGET fac_lpr_native_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
