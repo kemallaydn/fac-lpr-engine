@@ -64,7 +64,7 @@ TemporalConsensusResult TemporalPlateConsensus::observe(
     float total_eligible_weight = 0.0F;
     for (const auto& observation : history_) {
         const auto& result = observation.result;
-        if (result.plate.empty() || result.status == domain::RecognitionStatus::rejected ||
+        if (result.plate.empty() || result.status != domain::RecognitionStatus::accepted ||
             !std::isfinite(result.confidence) ||
             result.confidence < config_.minimum_frame_confidence || result.confidence > 1.0F) {
             continue;
