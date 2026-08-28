@@ -11,6 +11,7 @@ add_library(fac_lpr_application STATIC
     recognition_ensemble.cpp
     recognition_stream_session.cpp
     safe_decision_policy.cpp
+    stable_plate_event_filter.cpp
     startup_self_test.cpp
     temporal_plate_consensus.cpp
     turkish_plate_grammar.cpp
