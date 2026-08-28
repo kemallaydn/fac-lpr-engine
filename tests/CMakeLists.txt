@@ -58,6 +58,7 @@ add_executable(fac_lpr_native_tests
     resource_budget_tests.cpp
     result_buffer_tests.cpp
     safe_decision_policy_tests.cpp
+    stable_plate_event_filter_tests.cpp
     startup_self_test_tests.cpp
     temporal_plate_consensus_tests.cpp
     turkish_plate_grammar_tests.cpp
