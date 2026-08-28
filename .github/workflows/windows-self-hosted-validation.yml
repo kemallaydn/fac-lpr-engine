@@ -115,7 +115,7 @@ jobs:
 
       - name: Test Debug
         shell: powershell
-        run: ctest --test-dir build/windows-self-hosted -C Debug --output-on-failure
+        run: ctest --test-dir build/windows-self-hosted -C Debug --output-on-failure -E "^(fac_lpr_benchmark_smoke|fac_lpr_temporal_benchmark_real_smoke)$"
 
       - name: Build Release
         shell: powershell
