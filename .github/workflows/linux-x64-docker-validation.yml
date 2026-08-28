@@ -72,7 +72,9 @@ jobs:
               CI_ROOT="/workspace/build/ci-${FAC_LPR_CI_RUN_ID}"
               DEBUG_DIR="${CI_ROOT}/debug"
               RELEASE_DIR="${CI_ROOT}/release"
+              VCPKG_ROOT="${CI_ROOT}/vcpkg"
               VCPKG_INSTALLED="${CI_ROOT}/vcpkg_installed"
+              export VCPKG_ROOT
               export FAC_LPR_VCPKG_INSTALLED_DIR="${VCPKG_INSTALLED}"
 
               rm -rf "${CI_ROOT}"
@@ -87,7 +89,7 @@ jobs:
               bash scripts/bootstrap-dependencies.sh
 
               COMMON_ARGS="-G Ninja \
-                -DCMAKE_TOOLCHAIN_FILE=/workspace/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake \
+                -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
                 -DVCPKG_INSTALLED_DIR=${VCPKG_INSTALLED} \
                 -DVCPKG_TARGET_TRIPLET=x64-linux \
                 -DFAC_LPR_ONNXRUNTIME_ROOT=/workspace/build/deps/onnxruntime \
