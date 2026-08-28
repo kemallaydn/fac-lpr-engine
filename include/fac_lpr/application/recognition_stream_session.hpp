@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fac_lpr/application/lpr_pipeline.hpp>
+#include <fac_lpr/application/stable_plate_event_filter.hpp>
 #include <fac_lpr/application/temporal_plate_consensus.hpp>
 
 #include <chrono>
@@ -14,6 +15,7 @@ namespace fac_lpr::application {
 struct RecognitionStreamSessionResult final {
     LprPipelineResult frame_result{};
     TemporalConsensusResult temporal{};
+    StablePlateEventFilterResult emission{};
     bool temporal_observation_applied{false};
     bool ambiguous_frame{false};
 };
@@ -25,7 +27,8 @@ public:
 
     RecognitionStreamSession(
         std::shared_ptr<const LprPipeline> pipeline,
-        TemporalPlateConsensusConfig temporal_config = {});
+        TemporalPlateConsensusConfig temporal_config = {},
+        StablePlateEventFilterConfig emission_config = {});
 
     [[nodiscard]] RecognitionStreamSessionResult recognize(
         const ImageView& image,
@@ -41,6 +44,7 @@ public:
 
     [[nodiscard]] bool closed() const noexcept;
     [[nodiscard]] std::size_t history_size() const noexcept;
+    [[nodiscard]] StablePlateEventFilterStats emission_stats() const noexcept;
 
 private:
     [[nodiscard]] RecognitionStreamSessionResult recognize_locked(
@@ -50,6 +54,7 @@ private:
 
     std::shared_ptr<const LprPipeline> pipeline_{};
     TemporalPlateConsensus consensus_;
+    StablePlateEventFilter emission_filter_;
     mutable std::mutex mutex_{};
     std::optional<TimePoint> last_timestamp_{};
     bool closed_{false};
