@@ -55,6 +55,23 @@ foreach(_fac_lpr_benchmark_target IN ITEMS fac-lpr-benchmark fac-lpr-temporal-be
     set_target_properties(${_fac_lpr_benchmark_target} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${FAC_LPR_OUTPUT_ROOT}/bin"
     )
+
+    # The benchmark executables are standalone native consumers. On Windows,
+    # linking against the ONNX Runtime import library is not enough: the runtime
+    # DLL must be discoverable when CTest launches the executable. Keep the
+    # benchmark deployment contract aligned with fac_lpr_native_tests.
+    if(WIN32 AND FAC_LPR_ONNXRUNTIME_ROOT)
+        set(_fac_lpr_benchmark_onnx_runtime_dll
+            "${FAC_LPR_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll")
+        if(EXISTS "${_fac_lpr_benchmark_onnx_runtime_dll}")
+            add_custom_command(TARGET ${_fac_lpr_benchmark_target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_fac_lpr_benchmark_onnx_runtime_dll}"
+                    $<TARGET_FILE_DIR:${_fac_lpr_benchmark_target}>
+                VERBATIM
+            )
+        endif()
+    endif()
 endforeach()
 
 if(FAC_LPR_BUILD_TESTS AND
