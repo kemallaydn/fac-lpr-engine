@@ -6,10 +6,12 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -229,6 +231,41 @@ TEST(RecognitionStreamSession, AmbiguousMultiPlateFrameDoesNotPolluteConsensus) 
     EXPECT_FALSE(result.temporal_observation_applied);
     EXPECT_EQ(result.frame_result.recognitions.size(), 2U);
     EXPECT_EQ(session.history_size(), 0U);
+}
+
+TEST(RecognitionStreamSession, ConcurrentCallsAreSerializedAndHistoryRemainsBounded) {
+    auto detector = std::make_shared<SessionDetector>();
+    detector->detections = {detection(1.0F)};
+    application::RecognitionStreamSession session(make_pipeline(detector), temporal_config());
+
+    std::vector<std::byte> storage{};
+    const auto view = image(storage);
+    const auto timestamp = application::RecognitionStreamSession::Clock::now();
+    std::atomic<std::size_t> completed{0U};
+    std::atomic<std::size_t> failed{0U};
+    std::vector<std::thread> workers{};
+    workers.reserve(8U);
+
+    for (std::size_t index = 0U; index < 8U; ++index) {
+        workers.emplace_back([&]() {
+            try {
+                const auto result = session.recognize_at(view, timestamp);
+                if (result.temporal_observation_applied) {
+                    completed.fetch_add(1U, std::memory_order_relaxed);
+                }
+            } catch (...) {
+                failed.fetch_add(1U, std::memory_order_relaxed);
+            }
+        });
+    }
+    for (auto& worker : workers) {
+        worker.join();
+    }
+
+    EXPECT_EQ(failed.load(std::memory_order_relaxed), 0U);
+    EXPECT_EQ(completed.load(std::memory_order_relaxed), 8U);
+    EXPECT_EQ(session.history_size(), temporal_config().max_history);
+    EXPECT_LE(session.history_size(), temporal_config().max_history);
 }
 
 TEST(RecognitionStreamSession, CloseIsIdempotentAndRejectsFurtherWork) {
