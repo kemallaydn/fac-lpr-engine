@@ -92,6 +92,27 @@ TEST(TemporalPlateConsensusTests, ReviewFramesNeverPromoteToAcceptedConsensus) {
     EXPECT_EQ(output.supporting_frames, 0U);
 }
 
+TEST(TemporalPlateConsensusTests, DegradedAcceptedEvidenceRemainsDegradedWhenStabilized) {
+    TemporalPlateConsensus consensus{TemporalPlateConsensusConfig{
+        .max_history = 4U,
+        .minimum_supporting_frames = 2U,
+        .minimum_frame_confidence = 0.50F,
+        .stable_confidence_threshold = 0.60F}};
+    const auto now = TemporalPlateConsensus::Clock::now();
+
+    auto first = result("34ABC123", 0.92F);
+    first.degraded = true;
+    auto second = result("34ABC123", 0.94F);
+    second.degraded = true;
+
+    (void)consensus.observe(first, now);
+    const auto stable = consensus.observe(second, now + std::chrono::milliseconds{10});
+
+    ASSERT_TRUE(stable.stable_result.has_value());
+    EXPECT_TRUE(stable.stable_result->degraded);
+    EXPECT_EQ(stable.stable_result->status, RecognitionStatus::accepted);
+}
+
 TEST(TemporalPlateConsensusTests, HistoryIsBoundedAndExpires) {
     TemporalPlateConsensus consensus{TemporalPlateConsensusConfig{
         .max_history = 2U,
