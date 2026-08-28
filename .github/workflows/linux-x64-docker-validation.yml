@@ -68,6 +68,16 @@ jobs:
             ubuntu:24.04 bash -lc '
               set -euo pipefail
               export DEBIAN_FRONTEND=noninteractive
+
+              CI_ROOT="/workspace/build/ci-${FAC_LPR_CI_RUN_ID}"
+              DEBUG_DIR="${CI_ROOT}/debug"
+              RELEASE_DIR="${CI_ROOT}/release"
+              VCPKG_INSTALLED="${CI_ROOT}/vcpkg_installed"
+              export FAC_LPR_VCPKG_INSTALLED_DIR="${VCPKG_INSTALLED}"
+
+              rm -rf "${CI_ROOT}"
+              mkdir -p "${CI_ROOT}"
+
               apt-get update
               apt-get install -y --no-install-recommends \
                 build-essential clang cmake ninja-build git curl ca-certificates \
@@ -75,11 +85,6 @@ jobs:
                 autoconf automake libtool perl nasm yasm
 
               bash scripts/bootstrap-dependencies.sh
-
-              CI_ROOT="/workspace/build/ci-${FAC_LPR_CI_RUN_ID}"
-              DEBUG_DIR="${CI_ROOT}/debug"
-              RELEASE_DIR="${CI_ROOT}/release"
-              VCPKG_INSTALLED="${CI_ROOT}/vcpkg_installed"
 
               COMMON_ARGS="-G Ninja \
                 -DCMAKE_TOOLCHAIN_FILE=/workspace/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake \
@@ -95,9 +100,6 @@ jobs:
                 -DFAC_LPR_BUILD_MEMORY_STRESS=ON \
                 -DFAC_LPR_BUILD_BENCHMARK=ON \
                 -DFAC_LPR_BUILD_TESTS=ON"
-
-              rm -rf "${CI_ROOT}"
-              mkdir -p "${CI_ROOT}"
 
               cmake -S . -B "${DEBUG_DIR}" $COMMON_ARGS -DCMAKE_BUILD_TYPE=Debug
               cmake --build "${DEBUG_DIR}" --parallel 2
