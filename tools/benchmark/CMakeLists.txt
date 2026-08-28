@@ -75,4 +75,22 @@ if(FAC_LPR_BUILD_TESTS AND
         LABELS "integration;real-model;benchmark"
         TIMEOUT 120
     )
+
+    if(EXISTS "${PROJECT_SOURCE_DIR}/tests/fixtures/real/plate_03.jpg" AND
+       EXISTS "${PROJECT_SOURCE_DIR}/tests/fixtures/real/temporal-sequence.tsv")
+        add_test(
+            NAME fac_lpr_temporal_benchmark_real_smoke
+            COMMAND ${CMAKE_COMMAND}
+                -DBENCHMARK=$<TARGET_FILE:fac-lpr-temporal-benchmark>
+                -DMANIFEST=${PROJECT_SOURCE_DIR}/tests/fixtures/real/temporal-sequence.tsv
+                -DMODEL_DIR=${PROJECT_SOURCE_DIR}/models
+                -DCONFIG=${PROJECT_SOURCE_DIR}/docs/lpr-cli-contract.example
+                -DREPORT=${CMAKE_BINARY_DIR}/artifacts/reports/temporal-benchmark-smoke.json
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/assert_temporal_report.cmake
+        )
+        set_tests_properties(fac_lpr_temporal_benchmark_real_smoke PROPERTIES
+            LABELS "integration;real-model;benchmark;temporal"
+            TIMEOUT 180
+        )
+    endif()
 endif()
