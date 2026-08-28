@@ -11,6 +11,7 @@ add_library(fac_lpr_application STATIC
     recognition_ensemble.cpp
     safe_decision_policy.cpp
     startup_self_test.cpp
+    temporal_plate_consensus.cpp
     turkish_plate_grammar.cpp
 )
 add_library(fac_lpr::application ALIAS fac_lpr_application)
