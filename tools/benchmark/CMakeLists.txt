@@ -73,6 +73,7 @@ if(FAC_LPR_BUILD_TESTS AND
     )
     set_tests_properties(fac_lpr_benchmark_smoke PROPERTIES
         LABELS "integration;real-model;benchmark"
+        CONFIGURATIONS Release
         TIMEOUT 120
     )
 
@@ -90,6 +91,7 @@ if(FAC_LPR_BUILD_TESTS AND
         )
         set_tests_properties(fac_lpr_temporal_benchmark_real_smoke PROPERTIES
             LABELS "integration;real-model;benchmark;temporal"
+            CONFIGURATIONS Release
             TIMEOUT 180
         )
     endif()
