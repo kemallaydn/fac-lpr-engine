@@ -8,9 +8,11 @@ namespace fac_lpr::application {
 
 RecognitionStreamSession::RecognitionStreamSession(
     std::shared_ptr<const LprPipeline> pipeline,
-    TemporalPlateConsensusConfig temporal_config)
+    TemporalPlateConsensusConfig temporal_config,
+    StablePlateEventFilterConfig emission_config)
     : pipeline_(std::move(pipeline)),
-      consensus_(std::move(temporal_config)) {
+      consensus_(std::move(temporal_config)),
+      emission_filter_(std::move(emission_config)) {
     if (!pipeline_) {
         throw ConfigurationError("recognition stream session requires a pipeline");
     }
@@ -57,6 +59,7 @@ RecognitionStreamSessionResult RecognitionStreamSession::recognize_locked(
             output.frame_result.recognitions.front(),
             timestamp);
         output.temporal_observation_applied = true;
+        output.emission = emission_filter_.observe(output.temporal, timestamp);
     } else if (output.frame_result.recognitions.size() > 1U) {
         output.ambiguous_frame = true;
         output.temporal.history_size = consensus_.history_size();
@@ -73,6 +76,7 @@ void RecognitionStreamSession::reset() {
         throw ConfigurationError("recognition stream session is closed");
     }
     consensus_.reset();
+    emission_filter_.reset();
     last_timestamp_.reset();
 }
 
@@ -82,6 +86,7 @@ void RecognitionStreamSession::close() noexcept {
         return;
     }
     consensus_.reset();
+    emission_filter_.reset();
     last_timestamp_.reset();
     closed_ = true;
 }
@@ -94,6 +99,11 @@ bool RecognitionStreamSession::closed() const noexcept {
 std::size_t RecognitionStreamSession::history_size() const noexcept {
     std::scoped_lock lock{mutex_};
     return consensus_.history_size();
+}
+
+StablePlateEventFilterStats RecognitionStreamSession::emission_stats() const noexcept {
+    std::scoped_lock lock{mutex_};
+    return emission_filter_.stats();
 }
 
 } // namespace fac_lpr::application
