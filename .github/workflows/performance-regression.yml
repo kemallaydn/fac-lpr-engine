@@ -39,17 +39,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export VCPKG_ROOT="${GITHUB_WORKSPACE}/build/perf-vcpkg-root-${GITHUB_RUN_ID}"
           export FAC_LPR_VCPKG_INSTALLED_DIR="${GITHUB_WORKSPACE}/build/perf-vcpkg-${GITHUB_RUN_ID}"
-          rm -rf "${FAC_LPR_VCPKG_INSTALLED_DIR}"
+          rm -rf "${VCPKG_ROOT}" "${FAC_LPR_VCPKG_INSTALLED_DIR}"
           bash scripts/bootstrap-dependencies.sh
       - name: Configure benchmark
         shell: bash
         run: |
           set -euo pipefail
+          VCPKG_ROOT="${GITHUB_WORKSPACE}/build/perf-vcpkg-root-${GITHUB_RUN_ID}"
           VCPKG_INSTALLED="${GITHUB_WORKSPACE}/build/perf-vcpkg-${GITHUB_RUN_ID}"
           cmake -S . -B build/perf -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_INSTALLED_DIR="${VCPKG_INSTALLED}" \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
             -DFAC_LPR_ONNXRUNTIME_ROOT="${GITHUB_WORKSPACE}/build/deps/onnxruntime" \
