@@ -74,6 +74,24 @@ TEST(TemporalPlateConsensusTests, RejectedAndLowConfidenceFramesDoNotAddVotingWe
     EXPECT_EQ(output.supporting_frames, 1U);
 }
 
+TEST(TemporalPlateConsensusTests, ReviewFramesNeverPromoteToAcceptedConsensus) {
+    TemporalPlateConsensus consensus{TemporalPlateConsensusConfig{
+        .max_history = 4U,
+        .minimum_supporting_frames = 2U,
+        .minimum_frame_confidence = 0.50F,
+        .stable_confidence_threshold = 0.60F}};
+    const auto now = TemporalPlateConsensus::Clock::now();
+
+    (void)consensus.observe(result("34ABC123", 0.95F, RecognitionStatus::review), now);
+    (void)consensus.observe(result("34ABC123", 0.96F, RecognitionStatus::review), now + std::chrono::milliseconds{10});
+    const auto output = consensus.observe(
+        result("34ABC123", 0.97F, RecognitionStatus::review),
+        now + std::chrono::milliseconds{20});
+
+    EXPECT_FALSE(output.stable_result.has_value());
+    EXPECT_EQ(output.supporting_frames, 0U);
+}
+
 TEST(TemporalPlateConsensusTests, HistoryIsBoundedAndExpires) {
     TemporalPlateConsensus consensus{TemporalPlateConsensusConfig{
         .max_history = 2U,
