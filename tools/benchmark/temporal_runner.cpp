@@ -3,7 +3,6 @@
 #include <fac_lpr/application/error.hpp>
 #include <fac_lpr/application/image_validation.hpp>
 #include <fac_lpr/application/recognition_stream_session.hpp>
-#include <fac_lpr/application/stable_plate_event_filter.hpp>
 
 #include <opencv2/imgcodecs.hpp>
 
@@ -225,7 +224,6 @@ int main(const int argc, char** argv) {
         const auto pipeline = fac_lpr::cli::build_pipeline_from_contract(
             options->model_dir, options->config, "error");
         fac_lpr::application::RecognitionStreamSession session{pipeline};
-        fac_lpr::application::StablePlateEventFilter event_filter{};
 
         Metrics metrics{};
         std::size_t max_history_observed = 0U;
@@ -251,13 +249,12 @@ int main(const int argc, char** argv) {
             if (result.ambiguous_frame) ++metrics.ambiguous_frames;
             max_history_observed = std::max(max_history_observed, result.temporal.history_size);
 
-            const auto filtered = event_filter.observe(result.temporal, timestamp);
-            if (filtered.duplicate_suppressed) ++metrics.duplicate_suppressed;
-            if (!filtered.emitted_result.has_value()) continue;
+            if (result.emission.duplicate_suppressed) ++metrics.duplicate_suppressed;
+            if (!result.emission.emitted_result.has_value()) continue;
 
             ++metrics.stable_emitted;
             const bool correct = !frame.expected_plate.empty() &&
-                                 filtered.emitted_result->plate == frame.expected_plate;
+                                 result.emission.emitted_result->plate == frame.expected_plate;
             if (correct) {
                 ++metrics.stable_correct;
                 if (metrics.first_correct_stable_frame == 0U) {
