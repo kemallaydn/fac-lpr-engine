@@ -4,9 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE_FILE="${ROOT_DIR}/cmake/vcpkg-baseline.txt"
 VCPKG_COMMIT="$(tr -d '[:space:]' < "${BASELINE_FILE}")"
+# CI callers may override both VCPKG_ROOT and FAC_LPR_VCPKG_INSTALLED_DIR so
+# concurrent jobs never mutate the same vcpkg Git checkout or installed tree.
+# The persistent VCPKG_BINARY_SOURCES cache may still be shared safely.
 VCPKG_ROOT="${VCPKG_ROOT:-${ROOT_DIR}/.tools/vcpkg}"
-# CI callers may isolate installed packages per run while still sharing the
-# vcpkg binary cache. Local callers keep the historical build/vcpkg_installed default.
 VCPKG_INSTALLED_DIR="${FAC_LPR_VCPKG_INSTALLED_DIR:-${ROOT_DIR}/build/vcpkg_installed}"
 
 OS_NAME="$(uname -s)"
