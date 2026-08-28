@@ -36,18 +36,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Restore dependencies
-        run: bash scripts/bootstrap-dependencies.sh
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FAC_LPR_VCPKG_INSTALLED_DIR="${GITHUB_WORKSPACE}/build/perf-vcpkg-${GITHUB_RUN_ID}"
+          rm -rf "${FAC_LPR_VCPKG_INSTALLED_DIR}"
+          bash scripts/bootstrap-dependencies.sh
       - name: Configure benchmark
-        run: >-
-          cmake -S . -B build/perf -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
-          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
-          -DVCPKG_TARGET_TRIPLET=x64-linux
-          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
-          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
-          -DFAC_LPR_WITH_OPENCV=ON
-          -DFAC_LPR_BUILD_BENCHMARK=ON
+        shell: bash
+        run: |
+          set -euo pipefail
+          VCPKG_INSTALLED="${GITHUB_WORKSPACE}/build/perf-vcpkg-${GITHUB_RUN_ID}"
+          cmake -S . -B build/perf -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="${VCPKG_INSTALLED}" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DFAC_LPR_ONNXRUNTIME_ROOT="${GITHUB_WORKSPACE}/build/deps/onnxruntime" \
+            -DFAC_LPR_WITH_ONNX_RUNTIME=ON \
+            -DFAC_LPR_WITH_OPENCV=ON \
+            -DFAC_LPR_BUILD_BENCHMARK=ON
       - name: Build benchmark
         run: cmake --build build/perf --target fac-lpr-benchmark --parallel 2
       - name: Run repeated benchmark samples
