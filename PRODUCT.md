@@ -1,8 +1,8 @@
 # FAC LPR Engine — Product and Architecture Specification
 
-This document is the canonical description of **what FAC LPR Engine is, what it owns, how it is structured, what runtime contracts are considered production-critical, and what must be true before a release is promoted**.
+This document is the canonical description of **what FAC LPR Engine is, what it owns, how it is structured, which runtime contracts are production-critical, and what must be true before a release is promoted**.
 
-Live code, tests and release evidence always override stale prose. This document should describe the product, not act as a running issue diary.
+Live code, tests and executed release evidence override stale prose. This document describes stable product/architecture intent; GitHub issues and PRs remain the implementation history.
 
 ---
 
@@ -10,7 +10,9 @@ Live code, tests and release evidence always override stale prose. This document
 
 FAC LPR Engine is an independent, reusable, production-grade native **license plate recognition engine**.
 
-Its responsibility is to turn an input image/frame into a technically justified recognition result:
+Its core responsibility is to turn an input image/frame into a technically justified recognition result.
+
+Canonical per-frame pipeline:
 
 ```text
 image / frame
@@ -34,7 +36,7 @@ technical decision
 PlateRecognitionResult
 ```
 
-The public technical outcomes are:
+Public technical outcomes:
 
 ```text
 ACCEPTED
@@ -42,7 +44,7 @@ REVIEW
 REJECTED
 ```
 
-`ACCEPTED` means the recognition evidence is technically strong enough under the configured policy. It never means “grant access”.
+`ACCEPTED` means recognition evidence is technically strong enough under the configured recognition policy. It never means “grant access”.
 
 ### The engine owns
 
@@ -53,24 +55,29 @@ REJECTED
 - recognition evidence collection
 - confidence calibration
 - plate-layout analysis
-- candidate fusion
+- within-frame candidate fusion
 - technical decision policy
+- optional bounded cross-frame temporal consensus
+- optional recognition-level stable emission / duplicate suppression
+- stateful recognition stream sessions
 - model activation/verification
 - bounded native execution
-- public C++/C integration surfaces
+- public C++ and stable C integration surfaces
 - diagnostics and stage timing
 
 ### The engine does not own
 
 - barrier/gate authorization
 - FAC Access business rules
+- registered-vehicle lookup
 - user/customer permissions
 - backend/database state
 - UI state
 - RTSP/camera lifecycle
-- camera discovery
+- camera discovery/reconnect
 - model training lifecycle
 - payment/licensing business logic
+- access-event cooldown/business deduplication
 - audit/business-event persistence
 
 That boundary is deliberate. FAC LPR Engine is a recognition component, not a complete access-control product.
@@ -81,27 +88,35 @@ That boundary is deliberate. FAC LPR Engine is a recognition component, not a co
 
 ### 2.1 Correctness over optimistic output
 
-The engine must prefer `REVIEW` or `REJECTED` over a fabricated high-confidence plate. Invalid or incomplete evidence must fail closed.
+The engine must prefer `REVIEW` or `REJECTED` over fabricated high-confidence output. Invalid, conflicting or incomplete evidence fails closed.
 
 ### 2.2 Deterministic runtime contracts
 
-Model tensor names, dimensions, preprocessing, charset, blank index, keypoint interpretation and decoder semantics are part of the production contract. They are never guessed at runtime.
+Tensor names, dimensions, preprocessing, charset, blank index, keypoint interpretation and decoder semantics are production contracts. They are never guessed at runtime.
 
 ### 2.3 Bounded native execution
 
-External input must never be allowed to cause uncontrolled allocation, queue growth, workspace growth or integer overflow. Resource limits are explicit and validated.
+External input must never cause uncontrolled allocation, queue growth, workspace growth or temporal-history growth. Resource limits are explicit and validated.
 
 ### 2.4 Stable integration boundary
 
-Consumers should not need to know about ONNX Runtime, OpenCV, internal C++ classes or ownership details. The public C ABI is versioned and intentionally flat.
+Consumers should not need to know about ONNX Runtime, OpenCV or internal C++ ownership details. The public C ABI is versioned and intentionally flat.
 
 ### 2.5 Vendor isolation
 
 ONNX Runtime and OpenCV are infrastructure details. Vendor-specific types must not leak into Domain, Application or the public C ABI.
 
-### 2.6 Truthful release evidence
+### 2.6 Stateless behavior remains canonical
 
-A source file existing is not proof that a platform works. A skipped job is not equivalent to a passed job. Production promotion is based on executed evidence for the exact candidate.
+`LprPipeline::recognize()` remains the canonical per-frame implementation. Stateful stream recognition is additive and must not silently change existing single-frame semantics.
+
+### 2.7 Stateful stream logic remains recognition-only
+
+Temporal consensus and duplicate suppression may stabilize recognition across adjacent frames, but they must never absorb authorization, barrier or customer business rules.
+
+### 2.8 Truthful release evidence
+
+A source file existing is not proof a platform works. A skipped/queued workflow is not equivalent to a passed job. Release promotion is based on executed evidence for the exact candidate.
 
 ---
 
@@ -121,11 +136,13 @@ Public API / Composition Root
 
 ### Domain
 
-Contains recognition concepts and value types only. It must remain independent from OpenCV, ONNX Runtime, filesystem/runtime adapters and public wire-format concerns.
+Contains vendor-independent recognition concepts/value types only. It must remain independent from OpenCV, ONNX Runtime, filesystem/runtime adapters and public wire-format concerns.
 
 ### Application
 
-Owns orchestration and vendor-neutral ports/policies, including the recognition pipeline and contracts such as:
+Owns recognition orchestration and vendor-neutral policies.
+
+Representative contracts/components:
 
 ```text
 IPlateDetector
@@ -136,6 +153,23 @@ IConfidenceCalibrator
 IPlateLayoutAnalyzer
 ICandidateFusion
 IDecisionPolicy
+LprPipeline
+TemporalPlateConsensus
+StablePlateEventFilter
+RecognitionStreamSession
+```
+
+The Application layer now has two deliberate modes:
+
+```text
+Stateless:
+frame -> LprPipeline -> per-frame result
+
+Stateful optional stream mode:
+frame -> LprPipeline
+      -> TemporalPlateConsensus
+      -> StablePlateEventFilter
+      -> RecognitionStreamSession result
 ```
 
 ### Infrastructure
@@ -147,17 +181,17 @@ Owns concrete runtime implementations:
 - detector/OCR adapters
 - model loading and checksum verification
 - native image/workspace implementation
-- concurrency primitives and concrete platform integrations
+- concrete concurrency/platform integration
 
 ### Public API / Composition Root
 
-Owns the stable integration boundary and concrete assembly of the production pipeline.
+Owns stable integration surfaces and concrete assembly of the production pipeline.
 
 ---
 
 ## 4. Production recognition pipeline
 
-The current production composition is conceptually:
+Current production per-frame composition is conceptually:
 
 ```text
 best.onnx
@@ -177,15 +211,122 @@ best.onnx
 → LprPipeline
 ```
 
-`LprPipelineResult` preserves more than the final string. It carries the technical evidence needed to understand the decision, including recognition results, stage timings, degraded state and provider failures.
+`LprPipelineResult` preserves more than a final string. It carries recognition results, stage timings, degraded state and provider failures.
 
-The pipeline must remain vendor-neutral at the application boundary even when concrete infrastructure uses OpenCV and ONNX Runtime.
+Do not create a hidden second inference implementation for stream recognition. Stateful behavior must consume the ordinary per-frame pipeline output.
 
 ---
 
-## 5. Detector contract
+## 5. Within-frame fusion vs cross-frame consensus
 
-The active detector model is:
+These concepts are intentionally separate.
+
+### Within-frame fusion
+
+`WeightedMultiCropCandidateFusion`, `RecognitionEnsemble` and related policies combine evidence produced from **one frame**.
+
+### Cross-frame temporal consensus
+
+`TemporalPlateConsensus` combines completed recognition results across **multiple ordered frames in one logical stream session**.
+
+Temporal consensus must not:
+
+- reimplement crop/provider fusion;
+- modify detector/OCR contracts;
+- change `LprPipeline::recognize()` semantics;
+- promote weak/review-only evidence merely because it repeats;
+- grow history without explicit bounds.
+
+---
+
+## 6. Stateful stream recognition
+
+`RecognitionStreamSession` is the application-layer owner of stream-local recognition state.
+
+Conceptual flow:
+
+```text
+already-decoded frame
+        ↓
+     LprPipeline
+        ↓
+   frame_result
+        ↓
+TemporalPlateConsensus
+        ↓
+StablePlateEventFilter
+        ↓
+RecognitionStreamSessionResult
+```
+
+Session rules:
+
+- one session owns one bounded temporal history;
+- one session owns one bounded stable-emission suppression state;
+- independent sessions cannot contaminate each other;
+- session methods serialize access to session-owned mutable state;
+- reset clears temporal/emission/timestamp state;
+- close is idempotent and rejects future work according to the defined contract;
+- out-of-order timestamps are rejected without corrupting state;
+- duplicate timestamps are allowed according to the tested contract;
+- no raw images are retained in temporal history;
+- no global mutable per-camera state exists.
+
+### Ambiguous multi-plate frames
+
+A frame containing multiple recognitions is returned normally in `frame_result`, but it is not fed into one single temporal plate identity. Without an explicit tracker identity, merging multiple vehicles would be unsafe.
+
+---
+
+## 7. Temporal consensus semantics
+
+Temporal consensus is bounded and deterministic for the same ordered input/configuration.
+
+The policy supports:
+
+- finite history/window;
+- stale-entry expiry;
+- configurable minimum support;
+- minimum accepted confidence;
+- confidence-weighted support;
+- recency weighting/decay;
+- deterministic conflict/tie handling;
+- reset;
+- bounded history size.
+
+Only suitable technical recognition results participate in stable voting. `REVIEW`/weak/rejected observations do not become `ACCEPTED` simply because they repeat.
+
+If a stable result is produced from degraded accepted observations, the stable result preserves the degraded state rather than laundering it into a normal result.
+
+---
+
+## 8. Stable recognition emission and duplicate suppression
+
+`StablePlateEventFilter` operates at **recognition emission level**, not business-event level.
+
+It may:
+
+- emit a stable recognition after temporal support is satisfied;
+- suppress repeated stable emissions of the same plate within a bounded cooldown;
+- allow a materially different plate to emit without waiting for the previous plate's cooldown;
+- preserve deterministic reset/expiry behavior;
+- expose non-sensitive emitted/suppressed diagnostics.
+
+It must not:
+
+- decide if a vehicle is authorized;
+- decide whether a barrier should open;
+- implement “same vehicle may enter again after N seconds” business policy;
+- hide meaningful recognition changes;
+- retain unbounded plate state.
+
+FAC Access remains responsible for business-level access-event deduplication/cooldown.
+
+---
+
+## 9. Detector contract
+
+Active detector model:
 
 ```text
 best.onnx
@@ -198,7 +339,7 @@ input  images   float32 [1,3,960,960]
 output output0  float32 [1,17,18900]
 ```
 
-Preprocessing/output assumptions:
+Assumptions:
 
 - RGB CHW
 - scale `1/255`
@@ -209,13 +350,13 @@ Preprocessing/output assumptions:
 - no separate objectness score
 - 4 keypoints, each `(x, y, confidence)`
 
-The geometry layer must normalize/reorder corners itself. It must not depend on an undocumented semantic keypoint order from the model.
+Geometry must normalize/reorder corners itself instead of trusting undocumented semantic keypoint ordering.
 
 ---
 
-## 6. OCR contract
+## 10. OCR contract
 
-The active OCR model is:
+Active OCR model:
 
 ```text
 lprnet_turkey.onnx
@@ -237,8 +378,6 @@ Training character order:
 0 1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P R S T U V Y Z -
 ```
 
-The final `-` is the CTC blank and is not a real output character.
-
 Native decoder contract:
 
 ```text
@@ -251,33 +390,23 @@ timesteps = 24
 Preprocessing:
 
 ```text
-resize: 160 x 40, linear interpolation
+resize: 160 x 40
 color order: BGR
 float32
 (img - 127.5) / 128
 HWC -> CHW
-batch dimension -> [1,3,40,160]
+batch -> [1,3,40,160]
 ```
 
-Equivalent native configuration:
-
-```text
-input_scale = 1.0
-mean = [127.5,127.5,127.5]
-std  = [128,128,128]
-```
-
-Deprecated model assumptions such as `[1,3,24,94]` input or `[1,34,18]` output are forbidden for the active production model.
-
-These contracts are regression locked. Any future model replacement must update the explicit contract and its tests instead of relying on compatibility by accident.
+Deprecated assumptions such as `[1,3,24,94]` input or `[1,34,18]` output are forbidden for the active model.
 
 ---
 
-## 7. Model lifecycle and integrity
+## 11. Model lifecycle and integrity
 
 Runtime model activation is all-or-nothing.
 
-A model manifest identifies and verifies model artifacts using metadata including:
+A model manifest identifies and verifies artifacts using metadata such as:
 
 - logical model identity/type
 - version
@@ -285,88 +414,66 @@ A model manifest identifies and verifies model artifacts using metadata includin
 - exact file size
 - SHA-256
 
-Activation rejects unsafe or ambiguous input, including:
+Activation rejects unsafe/ambiguous input including path traversal, canonical-path escape, duplicate identity, missing artifact, size mismatch, checksum mismatch or incomplete runtime contract.
 
-- absolute paths where not allowed
-- `..` traversal
-- canonical-path escape through symlinks/root manipulation
-- duplicate model identity
-- file-size mismatch
-- checksum mismatch
-- invalid/incomplete contract
-
-A partially valid model set must never become active. The previously valid runtime state must remain intact when a replacement fails validation.
+A failed replacement must not partially replace the previously valid active model set.
 
 ---
 
-## 8. Recognition evidence and decision semantics
+## 12. Recognition evidence and decision semantics
 
-A plate string alone is not the product contract. The engine evaluates multiple evidence sources.
+A plate string alone is not the product contract.
 
 Evidence may include:
 
 - detector confidence
 - geometry quality
 - crop quality
-- OCR provider evidence
+- OCR/provider evidence
 - calibrated candidate confidence
 - plate-layout evidence
 - alternative candidates
 - degraded provider state
 - explicit technical decision reasons
+- stage timing
 
-The decision policy must expose why a result became `ACCEPTED`, `REVIEW` or `REJECTED`. Typical reasons include weak detector evidence, weak geometry, weak crop quality, no valid candidate, low candidate confidence, conflicting strong candidates or degraded/fatal provider state.
+The decision policy must expose why a result became `ACCEPTED`, `REVIEW` or `REJECTED`.
 
-This information is intended for technical observability and downstream review flows, not for silently converting uncertainty into a positive authorization decision.
+Temporal consensus consumes this completed technical result; it does not replace the decision policy.
 
 ---
 
-## 9. Concurrency and resource model
+## 13. Concurrency and resource model
 
 ### Reusable inference workspace
 
 `NativeImageWorkspace` is bounded, RAII-managed and move-only. It supports reuse across inference operations and tracks capacity/growth telemetry.
 
-Relevant telemetry includes:
-
-```text
-tensor_capacity
-scratch_capacity
-tensor_growth_count
-scratch_growth_count
-```
-
-The goal is predictable steady-state behavior after warm-up rather than repeated large allocation churn.
-
 ### Worker pool
 
-The bounded worker pool supports:
+The bounded worker pool supports configurable worker count, bounded queue capacity, explicit backpressure, drain/discard shutdown, reusable workspace per worker and task/error telemetry.
 
-- configurable worker count
-- bounded queue capacity
-- reject-newest or blocking backpressure
-- drain/discard-pending shutdown semantics
-- one reusable workspace per worker
-- exception isolation between tasks
-- submitted/completed/failed/dropped/pending/active telemetry
+Stateful stream recognition does not introduce a duplicate worker-pool architecture.
+
+### Temporal state
+
+Temporal history and suppression state are explicitly bounded by count/time configuration. Session ownership prevents accidental global growth.
 
 ### Resource arithmetic
 
-External dimensions and allocation calculations are checked before allocation.
-
-For strided images, the required extent is calculated as:
+For strided images, required extent is equivalent to:
 
 ```text
 (height - 1) * stride + packed_row_bytes
 ```
 
-Integer overflow, impossible dimensions and budget violations must fail before allocation or memory access.
+Overflow/impossible dimensions fail before allocation or memory access.
 
 ---
 
-## 10. Public C ABI v1
+## 14. Public C ABI v1
 
-The stable C header is:
+Stable header:
 
 ```text
 include/fac_lpr/fac_lpr_engine.h
@@ -384,41 +491,26 @@ fac_lpr_get_last_error_v1
 Design rules:
 
 - opaque engine handle
-- explicit export/calling-convention macros
-- no C++ exception crosses the ABI
-- destroy is null/repeated-safe
-- pointer-to-handle destruction clears the caller slot
-- struct size/version contract is explicit
-- independent C11 compilation/layout validation protects the wire format
+- explicit export/calling convention
+- no C++ exception crosses ABI
+- struct size/version explicit
+- caller-owned flat result buffer
+- two-call required-size pattern
+- buffer-relative offsets/counts
+- explicit text offset + length
+- alignment/range/overflow validation
 
-### Result ownership
+### Stream API decision
 
-Recognition output is serialized into one **caller-owned flat byte buffer**.
+The new stream/session capability **does not modify C ABI v1**.
 
-No engine-owned nested string/pointer graph crosses the ABI.
+No stream fields were added to existing v1 config/result records and no existing symbol semantics were reinterpreted.
 
-Wire-layout families include:
-
-```text
-fac_lpr_result_v1
-fac_lpr_plate_result_v1[]
-fac_lpr_evidence_v1[]
-fac_lpr_candidate_v1[]
-decision reason values
-text slices
-```
-
-Nested data is represented with buffer-relative offsets/counts. Text uses explicit offset + length and is not assumed to be NUL-terminated.
-
-The API supports a two-call required-size pattern and returns `FAC_LPR_STATUS_BUFFER_TOO_SMALL` when appropriate.
-
-The ABI layer validates alignment, finite numeric values, probability ranges and wire-size overflow before returning data to the consumer.
+A future C ABI stream extension is allowed only when a real downstream need exists. It must be additive, separately versioned and use its own opaque stream handle/new symbols instead of resizing or reinterpreting v1 structures.
 
 ---
 
-## 11. Consumer integration
-
-The native engine is intended to support multiple integration surfaces without coupling consumer code to internal C++ implementation.
+## 15. Consumer integration
 
 Validated/covered consumer paths include:
 
@@ -428,82 +520,106 @@ Validated/covered consumer paths include:
 - Python `ctypes`
 - installed/exported CMake package consumption
 
-Consumer compatibility is a release concern. Internal refactoring is allowed only when the public contract remains compatible under the declared SemVer/ABI policy.
+`RecognitionStreamSession` is currently a C++ application-layer integration surface. Existing C/C#/Python consumers remain on stable C ABI v1 and continue unchanged.
+
+FAC Access consumes the engine through its public C ABI via the .NET Device Service Infrastructure layer.
 
 ---
 
-## 12. Offline CLI
+## 16. Offline CLI and benchmark tools
 
-Optional build target:
+Optional CLI build target:
 
 ```text
 FAC_LPR_BUILD_LPR_CLI=ON
 ```
 
-produces:
+The CLI executes the real application pipeline and is not a second recognition implementation.
+
+Optional benchmark build target:
 
 ```text
-fac-lpr-cli
+FAC_LPR_BUILD_BENCHMARK=ON
 ```
 
-It executes the real application pipeline against JPG/PNG input and supports:
+produces the ordinary performance benchmark and temporal sequence benchmark.
 
-```text
---json
---debug-evidence
---model-dir <path>
---config <path>
---log-level trace|debug|info|warn|error
-```
+The temporal benchmark feeds ordered frames through the normal production pipeline and `RecognitionStreamSession`, then reports metrics such as:
 
-JSON mode is a machine-readable contract. Third-party diagnostic logging must not contaminate stdout. Human diagnostics belong on stderr or behind the appropriate logging path.
-
-The CLI exists for real-pipeline validation, operations/debugging and offline acceptance. It is not a second implementation of recognition logic.
+- frames
+- expected plate frames
+- per-frame correct
+- stable emitted/correct
+- false stable
+- duplicate suppressed
+- first correct stable frame
+- maximum temporal history observed
 
 ---
 
-## 13. Error handling and failure policy
+## 17. Temporal regression strategy
+
+Temporal behavior is validated at two complementary levels.
+
+### Synthetic deterministic regression
+
+Covers scenarios including:
+
+- repeated agreement
+- OCR jitter
+- conflicting/alternating candidates
+- review-only sequences
+- degraded accepted results
+- duplicate suppression
+- expiry/reset
+- vehicle transition
+- bounded history
+- concurrent session calls
+
+### Real-model temporal smoke
+
+A versioned frame manifest feeds real fixture images through the production pipeline and session layer.
+
+The real-model gate keeps per-frame accuracy independently visible and asserts no false-stable output plus bounded state behavior.
+
+If production decision evidence remains `REVIEW`, the temporal layer is expected to stay fail-closed rather than forcing a stable `ACCEPTED` result.
+
+---
+
+## 18. Error handling and failure policy
 
 The engine follows fail-closed behavior at external boundaries.
 
 Examples:
 
-- malformed images are rejected
-- invalid model contracts are rejected
-- checksum mismatch blocks activation
-- provider failures are surfaced
-- invalid result values do not cross the C ABI
-- C++ exceptions are translated before crossing C boundaries
-- unsafe resource requests fail before allocation
-- cancellation/deadline semantics are explicit
-
-A degraded pipeline must communicate that state rather than silently presenting a normal successful execution.
+- malformed images are rejected;
+- invalid model contracts are rejected;
+- checksum mismatch blocks activation;
+- provider failures are surfaced;
+- invalid result values do not cross the C ABI;
+- C++ exceptions are translated before crossing C boundaries;
+- unsafe resource requests fail before allocation;
+- out-of-order temporal timestamps do not silently mutate history;
+- degraded execution is preserved as degraded.
 
 ---
 
-## 14. Privacy and logging
+## 19. Privacy and logging
 
 By default, the engine should not log:
 
 - raw input images
 - plate crops
 - full plate text as routine diagnostic payload
-- model secrets/credentials
-- consumer secrets
+- model/consumer secrets
 
-Technical observability should favor:
+Technical observability should favor stage timing, provider status, resource telemetry, model identity/checksum and non-sensitive decision reasons.
 
-- stage timing
-- provider status/failure code
-- resource telemetry
-- model identity/version/checksum metadata
-- non-sensitive decision reasons
-
-Any future persistence of sensitive recognition data belongs to the consuming product's explicit privacy/audit policy, not hidden inside the engine.
+Stable-emission metrics should expose counts without requiring full plate logging.
 
 ---
 
-## 15. Build and platform baseline
+## 20. Build and platform baseline
 
 Primary baseline:
 
@@ -513,31 +629,33 @@ Primary baseline:
 - Ninja where applicable
 - Windows x64 / MSVC
 - Linux x64 / GCC and Clang
-- macOS ARM64 self-hosted validation
+- macOS ARM64 self-hosted runner
+- Linux x64 validation/benchmark through `linux/amd64` Docker on that runner where applicable
 - ONNX Runtime
 - OpenCV
 - GoogleTest / CTest
 - spdlog
 
-Normal validation treats warnings as errors where configured. Platform-specific undefined behavior or compiler diagnostics are considered product defects, not cosmetic differences.
+Windows standalone benchmark executables must deploy the required ONNX Runtime DLL beside the executable; this is part of runtime validation, not an optional convenience.
 
 ---
 
-## 16. Validation strategy
+## 21. Validation strategy
 
-Production readiness is broader than “the unit tests passed”.
+Production readiness is broader than unit tests.
 
-The repository contains validation/gates for areas including:
+Repository validation includes areas such as:
 
 - unit tests
 - integration tests
+- temporal consensus/session regression
 - real-model execution
 - golden regression
+- temporal real-sequence smoke
 - Linux x64 Debug/Release Docker validation
-- macOS ARM64 validation
-- sanitizer paths
-- static analysis
-- fuzzing
+- Windows x64 native validation
+- macOS ARM64 host validation
+- sanitizer/static-analysis/fuzz paths
 - memory stress
 - performance regression
 - ABI compatibility
@@ -546,98 +664,96 @@ The repository contains validation/gates for areas including:
 - CMake package consumption
 - dependency/security scanning
 - SBOM/release metadata
-- release-readiness
-- production-readiness
+- release-readiness / production-readiness
 
-A workflow being present does not prove it passed. A workflow being skipped does not prove it passed either. The applicable release policy decides which evidence is mandatory for the exact candidate.
+A workflow existing does not prove it passed. A skipped, cancelled or permanently queued job is not a pass.
 
----
-
-## 17. Production release policy
-
-A production release must be promoted from an exact, validated candidate.
-
-The release process is fail-closed:
-
-1. candidate code is frozen by commit SHA;
-2. mandatory validation executes against that candidate;
-3. required evidence is collected;
-4. model artifacts/contracts/checksums are verified;
-5. ABI/package/security/readiness requirements are satisfied;
-6. candidate is promoted to the stable branch;
-7. the released commit is tagged/versioned according to release policy;
-8. release artifacts/metadata correspond to that exact commit.
-
-Missing, failed, cancelled or improperly skipped mandatory evidence must block promotion.
-
-Closing implementation roadmap issues does not automatically make every future candidate releasable.
+Performance regression runs on the existing FAC-LPR self-hosted macOS ARM64 runner and executes the benchmark in a `linux/amd64` Docker environment, avoiding dependency on a nonexistent dedicated `[self-hosted, linux, x64]` runner.
 
 ---
 
-## 18. Current release-candidate state
+## 22. Current project state
 
-Checkpoint: **2026-08-23**
+Snapshot: **2026-08-28**.
 
-Development state:
+Verify live GitHub state before acting because snapshots age.
+
+Completed foundation roadmap:
 
 ```text
-roadmap issues #1–#78: complete / closed
-open roadmap issues: none
-active release-candidate branch: dev
-promotion PR: #79 (dev -> main)
-PR state: ready for review, mergeable
-production v1 release: not yet tagged/released
+#1–#78: complete / closed
 ```
 
-The current `dev` release candidate has successful evidence for the final gates checked during this promotion cycle, including:
+Completed temporal/stream roadmap:
 
 ```text
-Linux x64 full validation via Docker
-production-readiness
-release-readiness
-abi-compatibility
-cmake-package-smoke
-resource-budget
-evaluation-tool
-release-metadata
+#111  bounded temporal plate consensus
+#112  stateful recognition stream session
+#113  stable recognition emission / duplicate suppression
+#114  optional stream API decision while preserving C ABI v1
+#115  multi-frame temporal regression benchmark
 ```
 
-Some workflows may be intentionally conditional/skipped for a specific event. Such skips are not described as passes; the production/release readiness policy remains the authority on mandatory evidence.
+Current live issue state at the time of this update:
 
-The next release action is promotion of the validated `dev` candidate to `main`, followed by exact-commit release/tag validation and publication under the repository release policy.
+```text
+open issues: none
+```
+
+The temporal/stream implementation has Windows and Linux full validation evidence for the relevant code path. The performance workflow runner mismatch discovered during final validation was corrected by moving the Linux x64 benchmark execution onto the existing FAC-LPR macOS ARM64 runner through `linux/amd64` Docker.
+
+This snapshot does **not** mean every future commit is automatically releasable. Every release candidate still requires exact-commit validation according to release policy.
 
 ---
 
-## 19. Roadmap and future evolution
+## 23. Roadmap and future evolution
 
-The initial production-hardening roadmap is complete. Future development should be driven by measurable product needs rather than reopening already-solved foundation work.
+The initial production-hardening and first temporal/stream recognition roadmap are complete.
 
-Likely future evolution areas include:
+Future work should be driven by measured product needs, for example:
 
-- additional detector/OCR model generations
 - improved confidence calibration from larger evaluation sets
+- stronger vehicle/plate tracking identity before multi-object temporal association
+- additional detector/OCR model generations
 - country/plate-format expansion behind explicit contracts
 - hardware-provider tuning and acceleration
 - throughput/latency optimization with unchanged decision semantics
 - improved operational diagnostics
-- stronger packaged-consumer automation
+- additive C ABI stream extension only if downstream consumers actually require it
 
-Any future model or provider upgrade must preserve the architecture boundary and pass the same class of contract, regression, resource, ABI and release checks.
+Do not reopen completed foundation work without evidence of a defect or a new requirement.
 
 ---
 
-## 20. Non-negotiable guardrails
+## 24. Non-negotiable guardrails
 
 Do not:
 
-- treat `ACCEPTED` as access authorization
-- guess model tensor/charset/preprocessing semantics
-- bypass checksum/model-contract verification
-- leak OpenCV/ONNX types into Domain/Application/public ABI
-- expose engine-owned nested pointers through the C ABI
-- allow unbounded queue/workspace/result growth
-- weaken warnings/tests/security/release gates merely to get a green build
-- call a skipped check “passed”
-- call a candidate “production released” before exact-commit promotion/tag evidence exists
+- treat `ACCEPTED` as access authorization;
+- guess model tensor/charset/preprocessing semantics;
+- bypass checksum/model-contract validation;
+- merge unrelated vehicles into one temporal identity without tracking evidence;
+- use temporal repetition to promote weak/review-only evidence to accepted;
+- duplicate `LprPipeline`, candidate fusion or worker-pool logic inside stream recognition;
+- put RTSP/camera lifecycle into the engine;
+- put FAC Access business cooldown/authorization into the engine;
+- change public C ABI v1 layouts or semantics for stream state;
+- allow queues, workspaces, temporal history or suppression state to become unbounded;
+- claim a queued/skipped workflow is successful;
+- weaken regression/resource/ABI gates merely to get green CI.
 
-The product is considered trustworthy only when its recognition behavior, resource behavior and release evidence remain explicit and reproducible.
+---
+
+## 25. Documentation ownership
+
+Use documents for distinct purposes:
+
+- `README.md` — human-facing product/build/integration overview.
+- `AGENTS.md` — continuity and operating rules for AI agents/new maintainers.
+- `PRODUCT.md` — canonical product, architecture, runtime, temporal and ABI contracts.
+- `docs/stream-recognition-api.md` — stream session lifecycle/integration details.
+- `docs/temporal-stream-recognition.md` — temporal consensus and stable-emission behavior.
+- GitHub issues — scoped work and acceptance criteria.
+- PRs/CI — implementation and executed evidence.
+
+If a change modifies a production model contract, public ABI, product responsibility boundary, temporal semantics or release rule, update `PRODUCT.md` and relevant tests/docs in the same coherent change.

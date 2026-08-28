@@ -4,7 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE_FILE="${ROOT_DIR}/cmake/vcpkg-baseline.txt"
 VCPKG_COMMIT="$(tr -d '[:space:]' < "${BASELINE_FILE}")"
+# CI callers may override both VCPKG_ROOT and FAC_LPR_VCPKG_INSTALLED_DIR so
+# concurrent jobs never mutate the same vcpkg Git checkout or installed tree.
+# The persistent VCPKG_BINARY_SOURCES cache may still be shared safely.
 VCPKG_ROOT="${VCPKG_ROOT:-${ROOT_DIR}/.tools/vcpkg}"
+VCPKG_INSTALLED_DIR="${FAC_LPR_VCPKG_INSTALLED_DIR:-${ROOT_DIR}/build/vcpkg_installed}"
 
 OS_NAME="$(uname -s)"
 ARCH_NAME="$(uname -m)"
@@ -59,10 +63,11 @@ fi
 git -C "${VCPKG_ROOT}" fetch --depth 1 origin "${VCPKG_COMMIT}"
 git -C "${VCPKG_ROOT}" checkout --detach "${VCPKG_COMMIT}"
 "${VCPKG_ROOT}/bootstrap-vcpkg.sh" -disableMetrics
+mkdir -p "${VCPKG_INSTALLED_DIR}"
 "${VCPKG_ROOT}/vcpkg" install \
   --x-manifest-root="${ROOT_DIR}" \
   --triplet="${TRIPLET}" \
-  --x-install-root="${ROOT_DIR}/build/vcpkg_installed"
+  --x-install-root="${VCPKG_INSTALLED_DIR}"
 
 if [[ ! -f "${ORT_ROOT}/include/onnxruntime_cxx_api.h" || ! -e "${ORT_LIBRARY}" ]]; then
   mkdir -p "${ORT_CACHE_DIR}"
@@ -98,4 +103,5 @@ fi
 
 echo "Dependencies restored for ${OS_NAME}/${ARCH_NAME}."
 echo "VCPKG_DEFAULT_TRIPLET=${TRIPLET}"
+echo "FAC_LPR_VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR}"
 echo "FAC_LPR_ONNXRUNTIME_ROOT=${ORT_ROOT}"

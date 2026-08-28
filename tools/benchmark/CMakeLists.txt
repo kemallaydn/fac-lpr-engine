@@ -11,45 +11,68 @@ add_executable(fac-lpr-benchmark
     runner.cpp
 )
 
-target_compile_features(fac-lpr-benchmark PRIVATE cxx_std_20)
-target_include_directories(fac-lpr-benchmark PRIVATE
-    ${OpenCV_INCLUDE_DIRS}
-    ${PROJECT_SOURCE_DIR}/tools/lpr-cli
-)
-target_link_libraries(fac-lpr-benchmark PRIVATE
-    fac_lpr::production_factory
-    fac_lpr::application
-    fac_lpr::model
-    fac_lpr::generic_onnx_ocr
-    fac_lpr::lprnet_onnx
-    fac_lpr::yolo_onnx
-    fac_lpr::geometry
-    fac_lpr::crop
-    fac_lpr::opencv_adapter
-    ${OpenCV_LIBS}
+add_executable(fac-lpr-temporal-benchmark
+    temporal_runner.cpp
 )
 
-if(MSVC)
-    target_compile_options(fac-lpr-benchmark PRIVATE
-        /W4
-        /permissive-
-        /EHsc
-        $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:/WX>
+foreach(_fac_lpr_benchmark_target IN ITEMS fac-lpr-benchmark fac-lpr-temporal-benchmark)
+    target_compile_features(${_fac_lpr_benchmark_target} PRIVATE cxx_std_20)
+    target_include_directories(${_fac_lpr_benchmark_target} PRIVATE
+        ${OpenCV_INCLUDE_DIRS}
+        ${PROJECT_SOURCE_DIR}/tools/lpr-cli
     )
-else()
-    target_compile_options(fac-lpr-benchmark PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
-        -Wconversion
-        -Wsign-conversion
-        $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:-Werror>
+    target_link_libraries(${_fac_lpr_benchmark_target} PRIVATE
+        fac_lpr::production_factory
+        fac_lpr::application
+        fac_lpr::model
+        fac_lpr::generic_onnx_ocr
+        fac_lpr::lprnet_onnx
+        fac_lpr::yolo_onnx
+        fac_lpr::geometry
+        fac_lpr::crop
+        fac_lpr::opencv_adapter
+        ${OpenCV_LIBS}
     )
-endif()
 
-set_target_properties(fac-lpr-benchmark PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${FAC_LPR_OUTPUT_ROOT}/bin"
-)
+    if(MSVC)
+        target_compile_options(${_fac_lpr_benchmark_target} PRIVATE
+            /W4
+            /permissive-
+            /EHsc
+            $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:/WX>
+        )
+    else()
+        target_compile_options(${_fac_lpr_benchmark_target} PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+            -Wconversion
+            -Wsign-conversion
+            $<$<BOOL:${FAC_LPR_WARNINGS_AS_ERRORS}>:-Werror>
+        )
+    endif()
+
+    set_target_properties(${_fac_lpr_benchmark_target} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${FAC_LPR_OUTPUT_ROOT}/bin"
+    )
+
+    # The benchmark executables are standalone native consumers. On Windows,
+    # linking against the ONNX Runtime import library is not enough: the runtime
+    # DLL must be discoverable when CTest launches the executable. Keep the
+    # benchmark deployment contract aligned with fac_lpr_native_tests.
+    if(WIN32 AND FAC_LPR_ONNXRUNTIME_ROOT)
+        set(_fac_lpr_benchmark_onnx_runtime_dll
+            "${FAC_LPR_ONNXRUNTIME_ROOT}/lib/onnxruntime.dll")
+        if(EXISTS "${_fac_lpr_benchmark_onnx_runtime_dll}")
+            add_custom_command(TARGET ${_fac_lpr_benchmark_target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_fac_lpr_benchmark_onnx_runtime_dll}"
+                    $<TARGET_FILE_DIR:${_fac_lpr_benchmark_target}>
+                VERBATIM
+            )
+        endif()
+    endif()
+endforeach()
 
 if(FAC_LPR_BUILD_TESTS AND
    EXISTS "${PROJECT_SOURCE_DIR}/models/best.onnx" AND
@@ -67,6 +90,26 @@ if(FAC_LPR_BUILD_TESTS AND
     )
     set_tests_properties(fac_lpr_benchmark_smoke PROPERTIES
         LABELS "integration;real-model;benchmark"
+        CONFIGURATIONS Release
         TIMEOUT 120
     )
+
+    if(EXISTS "${PROJECT_SOURCE_DIR}/tests/fixtures/real/plate_03.jpg" AND
+       EXISTS "${PROJECT_SOURCE_DIR}/tests/fixtures/real/temporal-sequence.tsv")
+        add_test(
+            NAME fac_lpr_temporal_benchmark_real_smoke
+            COMMAND ${CMAKE_COMMAND}
+                -DBENCHMARK=$<TARGET_FILE:fac-lpr-temporal-benchmark>
+                -DMANIFEST=${PROJECT_SOURCE_DIR}/tests/fixtures/real/temporal-sequence.tsv
+                -DMODEL_DIR=${PROJECT_SOURCE_DIR}/models
+                -DCONFIG=${PROJECT_SOURCE_DIR}/docs/lpr-cli-contract.example
+                -DREPORT=${CMAKE_BINARY_DIR}/artifacts/reports/temporal-benchmark-smoke.json
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/assert_temporal_report.cmake
+        )
+        set_tests_properties(fac_lpr_temporal_benchmark_real_smoke PROPERTIES
+            LABELS "integration;real-model;benchmark;temporal"
+            CONFIGURATIONS Release
+            TIMEOUT 180
+        )
+    endif()
 endif()
