@@ -218,12 +218,31 @@ std::vector<application::CropHypothesis> CropHypothesisGenerator::generate(
         });
     };
 
-    if (config_.prefer_source_when_detection_dominates_frame &&
-        detection_area_ratio(detection.bbox, source) >= config_.plate_dominant_min_area_ratio) {
+    const auto plate_dominant = config_.prefer_source_when_detection_dominates_frame &&
+        detection_area_ratio(detection.bbox, source) >= config_.plate_dominant_min_area_ratio;
+    if (plate_dominant) {
         try_add(source, CropGeneratorKind::plate_dominant_source, "source_image");
-        if (!hypotheses.empty()) {
-            return hypotheses;
+
+        const auto raw_region = bbox_region(detection.bbox, source, 0.0F, 0.0F);
+        if (!raw_region.empty()) {
+            try_add(
+                native_image::make_crop_view(source, raw_region),
+                CropGeneratorKind::raw_bbox,
+                "source_image");
         }
+
+        const auto padded_region = bbox_region(
+            detection.bbox,
+            source,
+            config_.horizontal_padding_ratio,
+            config_.vertical_padding_ratio);
+        if (!padded_region.empty()) {
+            try_add(
+                native_image::make_crop_view(source, padded_region),
+                CropGeneratorKind::padded_bbox,
+                "source_image");
+        }
+        return hypotheses;
     }
 
     for (const auto kind : config_.generator_order) {
