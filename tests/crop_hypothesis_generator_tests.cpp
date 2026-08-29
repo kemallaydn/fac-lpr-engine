@@ -76,8 +76,8 @@ TEST(CropGenerator, PlateDominantDetectionPreservesSourceAndAddsTextRegion) {
 
     EXPECT_EQ(result[1].type, "plate_dominant_text_region");
     EXPECT_EQ(result[1].source, "source_image");
-    EXPECT_EQ(result[1].image.width, 88U);
-    EXPECT_EQ(result[1].image.height, 46U);
+    EXPECT_EQ(result[1].image.width, 89U);
+    EXPECT_EQ(result[1].image.height, 48U);
     EXPECT_NE(result[1].fingerprint, result[0].fingerprint);
 }
 
