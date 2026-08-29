@@ -41,7 +41,7 @@ TEST(CropGenerator, DuplicateRectifiedAndRawCropIsProcessedOnce) {
     EXPECT_FALSE(result[0].source.empty());
 }
 
-TEST(CropGenerator, PlateDominantDetectionUsesUndistortedSourceFrameOnly) {
+TEST(CropGenerator, PlateDominantDetectionPreservesSourceAndAddsNonRectifiedFallbacks) {
     std::vector<std::byte> source_bytes(40U * 20U, std::byte{0});
     for (std::size_t index = 0U; index < source_bytes.size(); ++index) {
         source_bytes[index] = static_cast<std::byte>(index % 251U);
@@ -64,12 +64,17 @@ TEST(CropGenerator, PlateDominantDetectionUsesUndistortedSourceFrameOnly) {
     const Detection detection{.bbox = BoundingBox{1.0F, 1.0F, 38.0F, 18.0F}};
     const auto result = generator.generate(source, detection, aligned, OperationContext{});
 
-    ASSERT_EQ(result.size(), 1U);
+    ASSERT_EQ(result.size(), 3U);
     EXPECT_EQ(result[0].type, "plate_dominant_source");
     EXPECT_EQ(result[0].source, "source_image");
     EXPECT_EQ(result[0].image.width, source.width);
     EXPECT_EQ(result[0].image.height, source.height);
     EXPECT_EQ(result[0].image.bytes, source_bytes);
+    EXPECT_EQ(result[1].type, "raw_bbox");
+    EXPECT_EQ(result[2].type, "padded_bbox");
+    for (const auto& hypothesis : result) {
+        EXPECT_NE(hypothesis.type, "rectified");
+    }
 }
 
 TEST(CropGenerator, OrdinaryDetectionKeepsConfiguredCropPipeline) {
