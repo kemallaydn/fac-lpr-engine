@@ -26,6 +26,9 @@ void check_context(const application::OperationContext& context) {
 }
 
 void validate_config(const CropHypothesisGeneratorConfig& config) {
+    const auto valid_inset = [](const float value) {
+        return std::isfinite(value) && value >= 0.0F && value < 0.50F;
+    };
     if (config.generator_order.empty() || config.generator_order.size() > 32U ||
         config.maximum_hypotheses == 0U || config.maximum_hypotheses > 32U ||
         config.minimum_width == 0U || config.minimum_height == 0U ||
@@ -33,14 +36,20 @@ void validate_config(const CropHypothesisGeneratorConfig& config) {
         !std::isfinite(config.vertical_padding_ratio) || config.vertical_padding_ratio < 0.0F || config.vertical_padding_ratio > 0.50F ||
         !std::isfinite(config.plate_dominant_min_area_ratio) ||
         config.plate_dominant_min_area_ratio <= 0.0F ||
-        config.plate_dominant_min_area_ratio > 1.0F) {
+        config.plate_dominant_min_area_ratio > 1.0F ||
+        !valid_inset(config.plate_dominant_text_left_inset_ratio) ||
+        !valid_inset(config.plate_dominant_text_right_inset_ratio) ||
+        !valid_inset(config.plate_dominant_text_vertical_inset_ratio) ||
+        config.plate_dominant_text_left_inset_ratio + config.plate_dominant_text_right_inset_ratio >= 0.75F ||
+        config.plate_dominant_text_vertical_inset_ratio * 2.0F >= 0.75F) {
         throw application::ConfigurationError("crop hypothesis generator configuration is invalid");
     }
     std::unordered_set<int> seen{};
     for (const auto kind : config.generator_order) {
-        if (kind == CropGeneratorKind::plate_dominant_source) {
+        if (kind == CropGeneratorKind::plate_dominant_source ||
+            kind == CropGeneratorKind::plate_dominant_text_region) {
             throw application::ConfigurationError(
-                "plate-dominant source crop is automatic and must not be registered explicitly");
+                "plate-dominant crops are automatic and must not be registered explicitly");
         }
         if (!seen.insert(static_cast<int>(kind)).second) {
             throw application::ConfigurationError("crop generator registry contains duplicate generator kinds");
@@ -110,6 +119,29 @@ void validate_config(const CropHypothesisGeneratorConfig& config) {
         : application::ImageRegion{};
 }
 
+[[nodiscard]] application::ImageRegion plate_text_region(
+    const application::ImageView& source,
+    const CropHypothesisGeneratorConfig& config) {
+    if (source.width == 0U || source.height == 0U) {
+        return {};
+    }
+    const auto left = static_cast<std::size_t>(std::floor(
+        static_cast<double>(source.width) * config.plate_dominant_text_left_inset_ratio));
+    const auto right_inset = static_cast<std::size_t>(std::floor(
+        static_cast<double>(source.width) * config.plate_dominant_text_right_inset_ratio));
+    const auto vertical = static_cast<std::size_t>(std::floor(
+        static_cast<double>(source.height) * config.plate_dominant_text_vertical_inset_ratio));
+    if (left + right_inset >= source.width || vertical * 2U >= source.height) {
+        return {};
+    }
+    return application::ImageRegion{
+        left,
+        vertical,
+        source.width - left - right_inset,
+        source.height - (vertical * 2U),
+    };
+}
+
 [[nodiscard]] float detection_area_ratio(
     const domain::BoundingBox& box,
     const application::ImageView& source) noexcept {
@@ -142,6 +174,7 @@ void validate_config(const CropHypothesisGeneratorConfig& config) {
 [[nodiscard]] const char* kind_name(const CropGeneratorKind kind) noexcept {
     switch (kind) {
         case CropGeneratorKind::plate_dominant_source: return "plate_dominant_source";
+        case CropGeneratorKind::plate_dominant_text_region: return "plate_dominant_text_region";
         case CropGeneratorKind::rectified: return "rectified";
         case CropGeneratorKind::raw_bbox: return "raw_bbox";
         case CropGeneratorKind::padded_bbox: return "padded_bbox";
@@ -197,7 +230,7 @@ std::vector<application::CropHypothesis> CropHypothesisGenerator::generate(
     const application::OperationContext& context) {
     check_context(context);
     std::vector<application::CropHypothesis> hypotheses{};
-    hypotheses.reserve(std::min(config_.maximum_hypotheses, config_.generator_order.size() + 1U));
+    hypotheses.reserve(std::min(config_.maximum_hypotheses, config_.generator_order.size() + 2U));
     std::unordered_set<std::uint64_t> fingerprints{};
 
     const auto try_add = [&](const application::ImageView& view, const CropGeneratorKind kind, const char* source_name) {
@@ -222,24 +255,11 @@ std::vector<application::CropHypothesis> CropHypothesisGenerator::generate(
         detection_area_ratio(detection.bbox, source) >= config_.plate_dominant_min_area_ratio;
     if (plate_dominant) {
         try_add(source, CropGeneratorKind::plate_dominant_source, "source_image");
-
-        const auto raw_region = bbox_region(detection.bbox, source, 0.0F, 0.0F);
-        if (!raw_region.empty()) {
+        const auto text_region = plate_text_region(source, config_);
+        if (!text_region.empty()) {
             try_add(
-                native_image::make_crop_view(source, raw_region),
-                CropGeneratorKind::raw_bbox,
-                "source_image");
-        }
-
-        const auto padded_region = bbox_region(
-            detection.bbox,
-            source,
-            config_.horizontal_padding_ratio,
-            config_.vertical_padding_ratio);
-        if (!padded_region.empty()) {
-            try_add(
-                native_image::make_crop_view(source, padded_region),
-                CropGeneratorKind::padded_bbox,
+                native_image::make_crop_view(source, text_region),
+                CropGeneratorKind::plate_dominant_text_region,
                 "source_image");
         }
         return hypotheses;
@@ -252,6 +272,7 @@ std::vector<application::CropHypothesis> CropHypothesisGenerator::generate(
         }
         switch (kind) {
             case CropGeneratorKind::plate_dominant_source:
+            case CropGeneratorKind::plate_dominant_text_region:
                 break;
             case CropGeneratorKind::rectified:
                 if (aligned.has_value()) {
