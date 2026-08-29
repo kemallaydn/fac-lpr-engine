@@ -31,6 +31,7 @@ TEST(CropGenerator, DuplicateRectifiedAndRawCropIsProcessedOnce) {
     config.generator_order = {CropGeneratorKind::rectified, CropGeneratorKind::raw_bbox};
     config.minimum_width = 1U;
     config.minimum_height = 1U;
+    config.prefer_source_when_detection_dominates_frame = false;
     CropHypothesisGenerator generator{config};
     const Detection detection{.bbox = BoundingBox{0.0F, 0.0F, 20.0F, 10.0F}};
     const auto result = generator.generate(source, detection, aligned, OperationContext{});
@@ -38,6 +39,58 @@ TEST(CropGenerator, DuplicateRectifiedAndRawCropIsProcessedOnce) {
     EXPECT_NE(result[0].fingerprint, 0U);
     EXPECT_FALSE(result[0].type.empty());
     EXPECT_FALSE(result[0].source.empty());
+}
+
+TEST(CropGenerator, PlateDominantDetectionUsesUndistortedSourceFrameOnly) {
+    std::vector<std::byte> source_bytes(40U * 20U, std::byte{0});
+    for (std::size_t index = 0U; index < source_bytes.size(); ++index) {
+        source_bytes[index] = static_cast<std::byte>(index % 251U);
+    }
+    const ImageView source{source_bytes, 40U, 20U, 40U, PixelFormat::gray8};
+
+    ImageBuffer aligned{};
+    aligned.bytes.assign(24U * 8U, std::byte{99});
+    aligned.width = 24U;
+    aligned.height = 8U;
+    aligned.stride_bytes = 24U;
+    aligned.format = PixelFormat::gray8;
+
+    CropHypothesisGeneratorConfig config{};
+    config.minimum_width = 1U;
+    config.minimum_height = 1U;
+    config.plate_dominant_min_area_ratio = 0.65F;
+    CropHypothesisGenerator generator{config};
+
+    const Detection detection{.bbox = BoundingBox{1.0F, 1.0F, 38.0F, 18.0F}};
+    const auto result = generator.generate(source, detection, aligned, OperationContext{});
+
+    ASSERT_EQ(result.size(), 1U);
+    EXPECT_EQ(result[0].type, "plate_dominant_source");
+    EXPECT_EQ(result[0].source, "source_image");
+    EXPECT_EQ(result[0].image.width, source.width);
+    EXPECT_EQ(result[0].image.height, source.height);
+    EXPECT_EQ(result[0].image.bytes, source_bytes);
+}
+
+TEST(CropGenerator, OrdinaryDetectionKeepsConfiguredCropPipeline) {
+    std::vector<std::byte> bytes(40U * 20U, std::byte{11});
+    for (std::size_t index = 0U; index < bytes.size(); ++index) {
+        bytes[index] = static_cast<std::byte>(index % 251U);
+    }
+    const ImageView source{bytes, 40U, 20U, 40U, PixelFormat::gray8};
+    CropHypothesisGeneratorConfig config{};
+    config.generator_order = {CropGeneratorKind::raw_bbox};
+    config.minimum_width = 1U;
+    config.minimum_height = 1U;
+    CropHypothesisGenerator generator{config};
+
+    const Detection detection{.bbox = BoundingBox{5.0F, 5.0F, 20.0F, 10.0F}};
+    const auto result = generator.generate(source, detection, std::nullopt, OperationContext{});
+
+    ASSERT_EQ(result.size(), 1U);
+    EXPECT_EQ(result[0].type, "raw_bbox");
+    EXPECT_EQ(result[0].image.width, 20U);
+    EXPECT_EQ(result[0].image.height, 10U);
 }
 
 TEST(CropGenerator, MaximumHypothesisCountIsRespected) {
@@ -59,6 +112,18 @@ TEST(CropGenerator, MaximumHypothesisCountIsRespected) {
 TEST(CropGenerator, DuplicateGeneratorRegistrationIsRejected) {
     CropHypothesisGeneratorConfig config{};
     config.generator_order = {CropGeneratorKind::raw_bbox, CropGeneratorKind::raw_bbox};
+    EXPECT_THROW(CropHypothesisGenerator{config}, fac_lpr::application::ConfigurationError);
+}
+
+TEST(CropGenerator, AutomaticPlateDominantSourceCannotBeRegisteredExplicitly) {
+    CropHypothesisGeneratorConfig config{};
+    config.generator_order = {CropGeneratorKind::plate_dominant_source};
+    EXPECT_THROW(CropHypothesisGenerator{config}, fac_lpr::application::ConfigurationError);
+}
+
+TEST(CropGenerator, InvalidPlateDominantThresholdIsRejected) {
+    CropHypothesisGeneratorConfig config{};
+    config.plate_dominant_min_area_ratio = 0.0F;
     EXPECT_THROW(CropHypothesisGenerator{config}, fac_lpr::application::ConfigurationError);
 }
 
