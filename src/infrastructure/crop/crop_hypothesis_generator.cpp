@@ -30,11 +30,18 @@ void validate_config(const CropHypothesisGeneratorConfig& config) {
         config.maximum_hypotheses == 0U || config.maximum_hypotheses > 32U ||
         config.minimum_width == 0U || config.minimum_height == 0U ||
         !std::isfinite(config.horizontal_padding_ratio) || config.horizontal_padding_ratio < 0.0F || config.horizontal_padding_ratio > 0.50F ||
-        !std::isfinite(config.vertical_padding_ratio) || config.vertical_padding_ratio < 0.0F || config.vertical_padding_ratio > 0.50F) {
+        !std::isfinite(config.vertical_padding_ratio) || config.vertical_padding_ratio < 0.0F || config.vertical_padding_ratio > 0.50F ||
+        !std::isfinite(config.plate_dominant_min_area_ratio) ||
+        config.plate_dominant_min_area_ratio <= 0.0F ||
+        config.plate_dominant_min_area_ratio > 1.0F) {
         throw application::ConfigurationError("crop hypothesis generator configuration is invalid");
     }
     std::unordered_set<int> seen{};
     for (const auto kind : config.generator_order) {
+        if (kind == CropGeneratorKind::plate_dominant_source) {
+            throw application::ConfigurationError(
+                "plate-dominant source crop is automatic and must not be registered explicitly");
+        }
         if (!seen.insert(static_cast<int>(kind)).second) {
             throw application::ConfigurationError("crop generator registry contains duplicate generator kinds");
         }
@@ -103,8 +110,38 @@ void validate_config(const CropHypothesisGeneratorConfig& config) {
         : application::ImageRegion{};
 }
 
+[[nodiscard]] float detection_area_ratio(
+    const domain::BoundingBox& box,
+    const application::ImageView& source) noexcept {
+    if (!box.is_valid() || source.width == 0U || source.height == 0U) {
+        return 0.0F;
+    }
+    const auto left = std::clamp(box.x, 0.0F, static_cast<float>(source.width));
+    const auto top = std::clamp(box.y, 0.0F, static_cast<float>(source.height));
+    const auto right = std::clamp(
+        box.x + box.width,
+        0.0F,
+        static_cast<float>(source.width));
+    const auto bottom = std::clamp(
+        box.y + box.height,
+        0.0F,
+        static_cast<float>(source.height));
+    if (!(right > left && bottom > top)) {
+        return 0.0F;
+    }
+    const auto detection_area = static_cast<double>(right - left) *
+                                static_cast<double>(bottom - top);
+    const auto source_area = static_cast<double>(source.width) *
+                             static_cast<double>(source.height);
+    if (!(source_area > 0.0)) {
+        return 0.0F;
+    }
+    return static_cast<float>(std::clamp(detection_area / source_area, 0.0, 1.0));
+}
+
 [[nodiscard]] const char* kind_name(const CropGeneratorKind kind) noexcept {
     switch (kind) {
+        case CropGeneratorKind::plate_dominant_source: return "plate_dominant_source";
         case CropGeneratorKind::rectified: return "rectified";
         case CropGeneratorKind::raw_bbox: return "raw_bbox";
         case CropGeneratorKind::padded_bbox: return "padded_bbox";
@@ -160,7 +197,7 @@ std::vector<application::CropHypothesis> CropHypothesisGenerator::generate(
     const application::OperationContext& context) {
     check_context(context);
     std::vector<application::CropHypothesis> hypotheses{};
-    hypotheses.reserve(std::min(config_.maximum_hypotheses, config_.generator_order.size()));
+    hypotheses.reserve(std::min(config_.maximum_hypotheses, config_.generator_order.size() + 1U));
     std::unordered_set<std::uint64_t> fingerprints{};
 
     const auto try_add = [&](const application::ImageView& view, const CropGeneratorKind kind, const char* source_name) {
@@ -181,12 +218,22 @@ std::vector<application::CropHypothesis> CropHypothesisGenerator::generate(
         });
     };
 
+    if (config_.prefer_source_when_detection_dominates_frame &&
+        detection_area_ratio(detection.bbox, source) >= config_.plate_dominant_min_area_ratio) {
+        try_add(source, CropGeneratorKind::plate_dominant_source, "source_image");
+        if (!hypotheses.empty()) {
+            return hypotheses;
+        }
+    }
+
     for (const auto kind : config_.generator_order) {
         check_context(context);
         if (hypotheses.size() >= config_.maximum_hypotheses) {
             break;
         }
         switch (kind) {
+            case CropGeneratorKind::plate_dominant_source:
+                break;
             case CropGeneratorKind::rectified:
                 if (aligned.has_value()) {
                     try_add(aligned->view(), kind, "perspective_aligner");
