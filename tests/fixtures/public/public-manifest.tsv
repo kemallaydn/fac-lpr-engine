@@ -1,3 +1,3 @@
 # filename	expected_status	required_plates	optional_plates	download_url	expected_sha1	source_page	license	author
 38_VU_055.jpg	ANY	38VU055		https://upload.wikimedia.org/wikipedia/commons/7/7f/Turkey_licenceplate.JPG	790095caf25739f07c00c55c7a513f70e8b7ef02	https://commons.wikimedia.org/wiki/File:Turkey_licenceplate.JPG	CC-BY-SA-3.0	Dickelbers
-34_VZ_7387.jpg	ANY	34VZ7387		https://upload.wikimedia.org/wikipedia/commons/c/c2/Turkeylicenseplate.jpg	PENDING	https://commons.wikimedia.org/wiki/File:Turkeylicenseplate.jpg	Public-Domain	Dantadd
+34_VZ_7387.jpg	ANY	34VZ7387		https://upload.wikimedia.org/wikipedia/commons/c/c2/Turkeylicenseplate.jpg	6684fe7e4a6a0e742194ec12b08c980257512858	https://commons.wikimedia.org/wiki/File:Turkeylicenseplate.jpg	Public-Domain	Dantadd
