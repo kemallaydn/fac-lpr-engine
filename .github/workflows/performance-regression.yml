@@ -130,24 +130,38 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ github.api_url }}
         shell: bash
         run: |
           set -euo pipefail
           PERF_ROOT="build/perf-${GITHUB_RUN_ID}"
-          run_id=$(gh api "/repos/${REPOSITORY}/actions/workflows/performance-regression.yml/runs?branch=dev&event=push&status=success&per_page=20" \
-            --jq '.workflow_runs[0].id')
-          if [[ -z "$run_id" || "$run_id" == "null" ]]; then
+          auth_header="Authorization: Bearer ${GH_TOKEN}"
+          accept_header="Accept: application/vnd.github+json"
+          api_version_header="X-GitHub-Api-Version: 2022-11-28"
+
+          runs_json=$(curl --fail --silent --show-error \
+            -H "$auth_header" -H "$accept_header" -H "$api_version_header" \
+            "${GITHUB_API_URL}/repos/${REPOSITORY}/actions/workflows/performance-regression.yml/runs?branch=dev&event=push&status=success&per_page=20")
+          run_id=$(printf '%s' "$runs_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); runs=data.get("workflow_runs", []); print(runs[0]["id"] if runs else "")')
+          if [[ -z "$run_id" ]]; then
             echo "No successful dev performance baseline exists. Run the workflow on dev first." >&2
             exit 3
           fi
-          artifact_id=$(gh api "/repos/${REPOSITORY}/actions/runs/${run_id}/artifacts" \
-            --jq '.artifacts[] | select(.name | startswith("performance-baseline-linux-x64-")) | .id' | head -n1)
+
+          artifacts_json=$(curl --fail --silent --show-error \
+            -H "$auth_header" -H "$accept_header" -H "$api_version_header" \
+            "${GITHUB_API_URL}/repos/${REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100")
+          artifact_id=$(printf '%s' "$artifacts_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); matches=[a for a in data.get("artifacts", []) if a.get("name", "").startswith("performance-baseline-linux-x64-") and not a.get("expired", False)]; print(matches[0]["id"] if matches else "")')
           if [[ -z "$artifact_id" ]]; then
-            echo "Baseline workflow has no benchmark artifact." >&2
+            echo "Baseline workflow has no non-expired benchmark artifact." >&2
             exit 4
           fi
+
           mkdir -p "${PERF_ROOT}/baseline"
-          gh api "/repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "${PERF_ROOT}/baseline.zip"
+          curl --fail --silent --show-error --location \
+            -H "$auth_header" -H "$accept_header" -H "$api_version_header" \
+            "${GITHUB_API_URL}/repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+            --output "${PERF_ROOT}/baseline.zip"
           unzip -q "${PERF_ROOT}/baseline.zip" -d "${PERF_ROOT}/baseline"
           echo "BASELINE_RUN_ID=${run_id}" >> "$GITHUB_ENV"
 
