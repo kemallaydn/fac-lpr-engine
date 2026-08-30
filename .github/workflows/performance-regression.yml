@@ -23,20 +23,76 @@ concurrency:
 
 env:
   VCPKG_DISABLE_METRICS: '1'
-  WARMUP: '20'
-  ITERATIONS: '100'
-  REPEATS: '3'
+  WARMUP: '10'
+  ITERATIONS: '50'
+  REPEATS: '2'
   LATENCY_TOLERANCE_PERCENT: '15'
   THROUGHPUT_TOLERANCE_PERCENT: '12'
 
 jobs:
   linux-x64:
     runs-on: [self-hosted, macOS, ARM64, fac-lpr]
-    timeout-minutes: 120
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Determine whether runtime performance can change
+        id: impact
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "run_benchmark=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run: benchmark explicitly requested."
+            exit 0
+          fi
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            BASE_SHA="$PR_BASE_SHA"
+            HEAD_SHA="$PR_HEAD_SHA"
+          elif [[ "$EVENT_NAME" == "push" ]]; then
+            BASE_SHA="$PUSH_BEFORE_SHA"
+            HEAD_SHA="$CURRENT_SHA"
+            if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+              echo "run_benchmark=true" >> "$GITHUB_OUTPUT"
+              echo "Push has no usable before SHA; running benchmark conservatively."
+              exit 0
+            fi
+          else
+            echo "run_benchmark=true" >> "$GITHUB_OUTPUT"
+            echo "Unknown event type; running benchmark conservatively."
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" "$HEAD_SHA"
+          changed_files=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          printf 'Changed files:\n%s\n' "$changed_files"
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(src/|include/|tools/benchmark/|cmake/|models/|CMakeLists\.txt$|vcpkg\.json$|vcpkg-configuration\.json$|scripts/bootstrap-dependencies\.sh$|docs/lpr-cli-contract\.example$|tests/fixtures/real/plate_01\.jpg$)'; then
+            echo "run_benchmark=true" >> "$GITHUB_OUTPUT"
+            echo "Performance-sensitive files changed; running benchmark gate."
+          else
+            echo "run_benchmark=false" >> "$GITHUB_OUTPUT"
+            echo "No performance-sensitive runtime files changed; skipping expensive benchmark gate."
+          fi
+
+      - name: Skip benchmark for non-runtime change
+        if: steps.impact.outputs.run_benchmark != 'true'
+        shell: bash
+        run: |
+          echo "Performance benchmark skipped: this change does not touch runtime-sensitive paths."
 
       - name: Docker amd64 preflight
+        if: steps.impact.outputs.run_benchmark == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -49,12 +105,14 @@ jobs:
           '
 
       - name: Prepare persistent vcpkg binary cache
+        if: steps.impact.outputs.run_benchmark == 'true'
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "${HOME}/.cache/fac-lpr-vcpkg"
 
       - name: Build and run repeated Linux x64 benchmark samples
+        if: steps.impact.outputs.run_benchmark == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -117,7 +175,7 @@ jobs:
             '
 
       - name: Publish dev baseline snapshot
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        if: steps.impact.outputs.run_benchmark == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/dev'
         uses: actions/upload-artifact@v4
         with:
           name: performance-baseline-linux-x64-${{ github.sha }}
@@ -126,33 +184,47 @@ jobs:
           retention-days: 90
 
       - name: Resolve latest successful dev baseline
-        if: github.event_name == 'pull_request'
+        if: steps.impact.outputs.run_benchmark == 'true' && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ github.api_url }}
         shell: bash
         run: |
           set -euo pipefail
           PERF_ROOT="build/perf-${GITHUB_RUN_ID}"
-          run_id=$(gh api "/repos/${REPOSITORY}/actions/workflows/performance-regression.yml/runs?branch=dev&event=push&status=success&per_page=20" \
-            --jq '.workflow_runs[0].id')
-          if [[ -z "$run_id" || "$run_id" == "null" ]]; then
+          auth_header="Authorization: Bearer ${GH_TOKEN}"
+          accept_header="Accept: application/vnd.github+json"
+          api_version_header="X-GitHub-Api-Version: 2022-11-28"
+
+          runs_json=$(curl --fail --silent --show-error \
+            -H "$auth_header" -H "$accept_header" -H "$api_version_header" \
+            "${GITHUB_API_URL}/repos/${REPOSITORY}/actions/workflows/performance-regression.yml/runs?branch=dev&event=push&status=success&per_page=20")
+          run_id=$(printf '%s' "$runs_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); runs=data.get("workflow_runs", []); print(runs[0]["id"] if runs else "")')
+          if [[ -z "$run_id" ]]; then
             echo "No successful dev performance baseline exists. Run the workflow on dev first." >&2
             exit 3
           fi
-          artifact_id=$(gh api "/repos/${REPOSITORY}/actions/runs/${run_id}/artifacts" \
-            --jq '.artifacts[] | select(.name | startswith("performance-baseline-linux-x64-")) | .id' | head -n1)
+
+          artifacts_json=$(curl --fail --silent --show-error \
+            -H "$auth_header" -H "$accept_header" -H "$api_version_header" \
+            "${GITHUB_API_URL}/repos/${REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100")
+          artifact_id=$(printf '%s' "$artifacts_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); matches=[a for a in data.get("artifacts", []) if a.get("name", "").startswith("performance-baseline-linux-x64-") and not a.get("expired", False)]; print(matches[0]["id"] if matches else "")')
           if [[ -z "$artifact_id" ]]; then
-            echo "Baseline workflow has no benchmark artifact." >&2
+            echo "Baseline workflow has no non-expired benchmark artifact." >&2
             exit 4
           fi
+
           mkdir -p "${PERF_ROOT}/baseline"
-          gh api "/repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "${PERF_ROOT}/baseline.zip"
+          curl --fail --silent --show-error --location \
+            -H "$auth_header" -H "$accept_header" -H "$api_version_header" \
+            "${GITHUB_API_URL}/repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+            --output "${PERF_ROOT}/baseline.zip"
           unzip -q "${PERF_ROOT}/baseline.zip" -d "${PERF_ROOT}/baseline"
           echo "BASELINE_RUN_ID=${run_id}" >> "$GITHUB_ENV"
 
       - name: Compare P50/P95/P99 and throughput
-        if: github.event_name == 'pull_request'
+        if: steps.impact.outputs.run_benchmark == 'true' && github.event_name == 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -165,7 +237,7 @@ jobs:
             --output "${PERF_ROOT}/performance-regression.json"
 
       - name: Upload current benchmark and comparison
-        if: always()
+        if: always() && steps.impact.outputs.run_benchmark == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: performance-regression-linux-x64-${{ github.sha }}

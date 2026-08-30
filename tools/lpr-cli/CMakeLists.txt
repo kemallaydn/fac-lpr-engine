@@ -54,6 +54,7 @@ if(FAC_LPR_BUILD_TESTS)
     set(FAC_LPR_REAL_FIXTURE_DIR "${PROJECT_SOURCE_DIR}/tests/fixtures/real")
     set(FAC_LPR_REAL_EXPECTATIONS "${FAC_LPR_REAL_FIXTURE_DIR}/expected-results.txt")
     set(FAC_LPR_GOLDEN_MANIFEST "${FAC_LPR_REAL_FIXTURE_DIR}/golden-manifest.tsv")
+    set(FAC_LPR_PUBLIC_MANIFEST "${PROJECT_SOURCE_DIR}/tests/fixtures/public/public-manifest.tsv")
     set(FAC_LPR_CLI_CONTRACT "${PROJECT_SOURCE_DIR}/docs/lpr-cli-contract.example")
     set(FAC_LPR_DETECTOR_MODEL "${PROJECT_SOURCE_DIR}/models/best.onnx")
     set(FAC_LPR_OCR_MODEL "${PROJECT_SOURCE_DIR}/models/lprnet_turkey.onnx")
@@ -97,6 +98,24 @@ if(FAC_LPR_BUILD_TESTS)
             LABELS "integration;real-model;golden;regression"
             TIMEOUT 180
         )
+
+        if(EXISTS "${FAC_LPR_PUBLIC_MANIFEST}")
+            add_test(
+                NAME fac_lpr_public_fixture_regression
+                COMMAND ${CMAKE_COMMAND}
+                    -DCLI_PATH=$<TARGET_FILE:fac-lpr-cli>
+                    -DMODEL_DIR=${PROJECT_SOURCE_DIR}/models
+                    -DCONTRACT_PATH=${FAC_LPR_CLI_CONTRACT}
+                    -DPUBLIC_MANIFEST=${FAC_LPR_PUBLIC_MANIFEST}
+                    -DDOWNLOAD_DIR=${CMAKE_BINARY_DIR}/artifacts/public-fixtures
+                    -DREPORT_PATH=${CMAKE_BINARY_DIR}/artifacts/reports/public-fixture-regression.json
+                    -P ${PROJECT_SOURCE_DIR}/tests/public_fixture_regression.cmake
+            )
+            set_tests_properties(fac_lpr_public_fixture_regression PROPERTIES
+                LABELS "integration;real-model;golden;regression;public-fixture"
+                TIMEOUT 240
+            )
+        endif()
         message(STATUS "FAC LPR real CLI E2E and golden regression tests enabled")
     else()
         message(STATUS
