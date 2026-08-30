@@ -1,24 +1,70 @@
-<div align="center">
-
 # 🚘 FAC LPR Engine
 
-### Türkiye plakaları için production-ready, gömülebilir plaka tanıma motoru
+FAC LPR Engine, **Türkiye plakaları için geliştirilmiş production-ready, gömülebilir bir plaka tanıma motorudur**.
 
-**C++20 · ONNX Runtime · OpenCV · CMake · Stable C ABI**
+**C++20 · ONNX Runtime · OpenCV · CMake · Stable C ABI v1**
 
-**Görüntüyü ver. Plakayı bulsun, düzeltsin, okusun ve sonucun ne kadar güvenilir olduğunu söylesin.**
+Bir görüntü veya video karesini alır; plakayı tespit eder, geometrisini değerlendirir, uygun crop adaylarını üretir, OCR çalıştırır, kanıtları birleştirir ve teknik olarak gerekçelendirilmiş bir tanıma sonucu üretir.
 
-</div>
+> En önemli sınır: `ACCEPTED`, plakanın teknik olarak güvenilir biçimde tanındığı anlamına gelir. **Aracın içeri alınabileceği veya bariyerin açılabileceği anlamına gelmez.** Yetkilendirme FAC Access gibi tüketici uygulamanın sorumluluğudur.
 
 ---
 
-## FAC LPR Engine nedir?
+## İçindekiler
 
-FAC LPR Engine, kamera görüntüsü veya tekil bir görsel içerisindeki araç plakasını tespit etmek ve okumak için geliştirilmiş bağımsız bir **License Plate Recognition (LPR)** motorudur.
+- [Projenin amacı](#projenin-amacı)
+- [Tanıma akışı](#tanıma-akışı)
+- [Güncel yetenekler](#güncel-yetenekler)
+- [Gerçek plaka regresyonları](#gerçek-plaka-regresyonları)
+- [Stateless ve stream tanıma](#stateless-ve-stream-tanıma)
+- [Mimari](#mimari)
+- [Model sözleşmeleri](#model-sözleşmeleri)
+- [Entegrasyon yüzeyleri](#entegrasyon-yüzeyleri)
+- [Build ve test](#build-ve-test)
+- [CI ve production doğrulama](#ci-ve-production-doğrulama)
+- [Proje sınırı](#proje-sınırı)
+- [Dokümantasyon haritası](#dokümantasyon-haritası)
+- [Branch ve release modeli](#branch-ve-release-modeli)
 
-Motor yalnızca OCR yapan ince bir wrapper değildir. Detection, geometri, perspective correction, crop üretimi, OCR, confidence/layout evidence, candidate fusion ve teknik karar aşamalarını tek bir production pipeline içerisinde yönetir.
+---
 
-Tek kare için canonical akış:
+## Projenin amacı
+
+Motorun temel sorusu şudur:
+
+> **“Bu görüntüde hangi plaka var ve bu sonuca teknik olarak ne kadar güvenebilirim?”**
+
+FAC LPR Engine yalnızca OCR yapan ince bir wrapper değildir. Production pipeline içerisinde şunları birlikte yönetir:
+
+- plaka detection;
+- keypoint/geometri değerlendirmesi;
+- perspective alignment;
+- crop hypothesis üretimi;
+- OCR inference;
+- confidence ve layout evidence;
+- aynı frame içindeki candidate fusion;
+- teknik karar politikası;
+- optional multi-frame temporal consensus;
+- bounded recognition-level duplicate suppression;
+- model/runtime contract doğrulaması;
+- bounded native kaynak kullanımı;
+- stage timing ve teknik diagnostics.
+
+Public teknik kararlar:
+
+| Karar | Anlamı |
+| --- | --- |
+| `ACCEPTED` | Recognition evidence teknik olarak yeterince güçlü. |
+| `REVIEW` | Sonuç var ancak belirsizlik nedeniyle ek kontrol gerekebilir. |
+| `REJECTED` | Güvenilir bir plaka sonucu üretilemedi. |
+
+Motor fail-closed davranır. Zayıf veya çelişkili evidence sırf bir sonuç üretmek uğruna iyimser biçimde kabul edilmez.
+
+---
+
+## Tanıma akışı
+
+Canonical tek-frame production akışı:
 
 ```text
 Görüntü / Frame
@@ -27,9 +73,7 @@ Plate Detection
       ↓
 Geometry Validation
       ↓
-Perspective Alignment
-      ↓
-Crop / Enhancement
+Perspective / Crop Hypotheses
       ↓
 OCR
       ↓
@@ -42,27 +86,89 @@ Technical Decision
 ACCEPTED / REVIEW / REJECTED
 ```
 
-Motorun çıktısı yalnızca `34ABC123` gibi bir metin değildir. Sonuç; plate text, confidence, evidence, degraded state, decision reason ve stage timing gibi teknik bilgileri taşıyabilir.
+Production composition; detector, geometri/crop, OCR, evidence ve karar katmanlarını tek bir `LprPipeline` altında birleştirir. CLI ve consumer testleri ayrı bir recognition implementation kullanmaz; aynı production pipeline üzerinden çalışır.
 
 ---
 
-## Stateless ve stateful kullanım
+## Güncel yetenekler
 
-FAC LPR Engine iki farklı ama birbirini bozmayan kullanım biçimine sahiptir.
+### 🇹🇷 Türkiye plakalarına özel OCR
 
-### Stateless per-frame recognition
+Aktif OCR modeli Türkiye plaka karakter seti ve production runtime contract'ına göre çalışır.
 
-`LprPipeline::recognize()` her çağrıyı bağımsız işler. Bu mevcut ve temel davranıştır.
+### 🎯 Detection + keypoint geometri
+
+Detector yalnızca bounding box üretmez. Keypoint evidence perspective ve crop aşamalarında kullanılır.
+
+### 🔍 Multi-crop ve candidate fusion
+
+Tek crop/tek OCR sonucuna körü körüne bağlı kalınmaz. Aynı frame içindeki farklı hipotezler ve evidence deterministic biçimde değerlendirilir.
+
+### 🖼️ Plate-dominant görüntü koruması
+
+Detector kutusu kaynak görüntünün çok büyük bölümünü kapladığında gereksiz rectification/cropping OCR evidence'ını bozmasın diye full source frame birincil hipotez olarak korunur. Normal sahnelerde mevcut crop stratejisi devam eder.
+
+### 🧭 Multi-frame temporal consensus
+
+Video/kamera senaryolarında optional `RecognitionStreamSession`, art arda gelen frame sonuçlarını bounded history içinde birleştirebilir.
+
+### 🔁 Stable recognition emission
+
+Aynı stabil plakanın komşu frame'lerde gereksiz tekrar emit edilmesi bounded, session-local suppression ile azaltılabilir. Bu mekanizma business-level giriş/çıkış deduplication değildir.
+
+### 🔒 Model integrity ve runtime contract
+
+Bir ONNX dosyasının açılması tek başına yeterli kabul edilmez. Tensor adları, shape, preprocessing, charset, blank semantics ve model bütünlüğü explicit contract olarak doğrulanır.
+
+### 🔌 Stable entegrasyon
+
+- C++
+- C / Stable C ABI v1
+- C# / P/Invoke
+- Python / `ctypes`
+- installed/exported CMake package
+
+Stream/session özelliği mevcut C ABI v1 wire layout'ını değiştirmez.
+
+---
+
+## Gerçek plaka regresyonları
+
+Production detector/crop/OCR yolunu gerçek, lisanslı public görüntülerle doğrulayan deterministic regression gate bulunmaktadır.
+
+Exact beklenen plakalar:
+
+```text
+38VU055
+34VZ7387
+```
+
+Fixture'lar binary olarak repoya kopyalanmaz. Test sırasında lisanslı Wikimedia kaynaklarından indirilir, **pinned SHA-1** ile doğrulanır ve production `fac-lpr-cli` üzerinden çalıştırılır.
+
+```text
+38_VU_055.jpg   790095caf25739f07c00c55c7a513f70e8b7ef02
+34_VZ_7387.jpg  6684fe7e4a6a0e742194ec12b08c980257512858
+```
+
+Bu testin amacı “bir şey okudu” demek değildir. Beklenen exact plate text korunur. Gelecekte model veya pipeline gerilerse test beklentisi mevcut yanlış çıktıya göre gevşetilmemelidir.
+
+Fixture provenance ve lisans bilgileri: `tests/fixtures/public/README.md` ve `tests/fixtures/public/public-manifest.tsv`.
+
+---
+
+## Stateless ve stream tanıma
+
+### Stateless
+
+`LprPipeline::recognize()` her çağrıyı bağımsız işler:
 
 ```text
 frame -> LprPipeline -> PlateRecognitionResult
 ```
 
-Tek görsel, API isteği veya birbirinden bağımsız frame senaryolarında bu yol kullanılır.
+Tek görsel, API isteği veya bağımsız frame senaryoları için canonical yoldur.
 
-### Optional stateful stream recognition
-
-Video/kamera akışlarında art arda gelen frame'ler aynı plakaya ait olabilir. Bunun için Application katmanında optional stateful stream desteği vardır:
+### Optional stateful stream
 
 ```text
 frame
@@ -78,243 +184,22 @@ StablePlateEventFilter
 RecognitionStreamSession
 ```
 
-`RecognitionStreamSession`:
+Stream katmanı:
 
-- mevcut `LprPipeline`ı yeniden kullanır;
-- per-frame recognition davranışını değiştirmez;
-- session başına bounded temporal history tutar;
-- confidence ve recency tabanlı multi-frame consensus uygular;
-- aynı stabil plakanın art arda gereksiz tekrar emit edilmesini bounded cooldown ile azaltır;
-- farklı session'ların state'ini birbirinden izole eder;
-- reset/close lifecycle sağlar;
-- birden fazla plaka içeren ambiguous frame'i tek bir temporal identity içine karıştırmaz.
+- bounded temporal history tutar;
+- confidence/recency tabanlı consensus uygular;
+- session state'lerini izole eder;
+- reset/close lifecycle sunar;
+- ambiguous multi-plate frame'leri tek identity altında karıştırmaz;
+- zayıf `REVIEW` sonuçlarını tekrar sayısıyla sessizce `ACCEPTED` yapmaz.
 
-Bu katman **FAC Access business deduplication değildir**. Engine yalnızca recognition-level tekrarları yönetir. “Aynı araç tekrar kapı açabilir mi?” gibi kurallar consuming product'a aittir.
-
-Detay: `docs/stream-recognition-api.md` ve `docs/temporal-stream-recognition.md`.
+Detaylar: `docs/stream-recognition-api.md` ve `docs/temporal-stream-recognition.md`.
 
 ---
 
-## Ne işe yarar?
+## Mimari
 
-FAC LPR Engine, plaka tanımaya ihtiyaç duyan başka uygulamaların içine gömülmek üzere tasarlanmıştır.
-
-Örnek kullanım alanları:
-
-- otopark ve bariyer sistemleri
-- site / plaza araç giriş sistemleri
-- fabrika ve tesis girişleri
-- güvenlik uygulamaları
-- araç takip sistemleri
-- edge cihazları
-- masaüstü uygulamalar
-- backend veya servis tabanlı LPR çözümleri
-
-Engine'in görevi:
-
-> **“Görüntüde hangi plaka var ve bu tanımaya teknik olarak ne kadar güvenebilirim?”**
-
-Engine'in görevi değildir:
-
-> “Bu araç içeri girebilir mi?”
-
-`ACCEPTED`, yalnızca recognition evidence'ın teknik olarak yeterince güçlü olduğunu söyler. Access authorization ayrı bir business decision'dır.
-
----
-
-## Tanıma kararları
-
-| Karar | Anlamı |
-| --- | --- |
-| **ACCEPTED** | Plaka tanıma evidence'ı teknik olarak yeterince güçlü. |
-| **REVIEW** | Sonuç mevcut ancak belirsizlik nedeniyle ek kontrol gerekebilir. |
-| **REJECTED** | Güvenilir bir plaka sonucu üretilemedi. |
-
-Temporal consensus da bu semantiği korur. Zayıf veya `REVIEW` sonuçları sırf çok tekrarlandı diye sessizce `ACCEPTED` yapılmaz.
-
----
-
-## Öne çıkan özellikler
-
-### 🇹🇷 Türkiye plakalarına özel pipeline
-
-Production OCR modeli Türkiye plaka karakter seti ve plaka yapısı dikkate alınarak çalışır.
-
-### 🎯 Detection + keypoint tabanlı geometri
-
-Plaka yalnızca bounding-box olarak bulunmaz. Detector/keypoint çıktıları perspective correction ve crop üretim aşamalarında kullanılır.
-
-### 🔍 Multi-crop ve candidate fusion
-
-Tek bir crop ve tek OCR sonucuna bağımlı kalmak yerine aynı frame içindeki farklı aday/evidence birleştirilir.
-
-### 🧭 Multi-frame temporal consensus
-
-Stateful stream modunda birbirini takip eden frame'lerden gelen sonuçlar bounded history içinde değerlendirilir. Bu, **within-frame candidate fusion'dan ayrı bir katmandır**.
-
-### 🔁 Stable recognition emission
-
-Aynı stabil plakanın komşu frame'lerde tekrar tekrar emit edilmesi session-local bounded suppression ile azaltılabilir. Business-level event cooldown consuming product'ta kalır.
-
-### 📊 Confidence ve evidence tabanlı karar
-
-Engine yalnızca plate text üretmez. Detection, geometry, OCR, layout ve candidate evidence birlikte değerlendirilir.
-
-### 🔒 Model integrity ve runtime contract kontrolü
-
-Bir `.onnx` dosyasının yüklenebilmesi production için yeterli kabul edilmez. Tensor isimleri, shape, preprocessing, charset, blank semantics, keypoint davranışı ve SHA-256 bütünlüğü explicit contract olarak doğrulanır.
-
-### 🧠 Kontrollü native kaynak kullanımı
-
-Queue, workspace, buffer ve temporal history davranışları bounded olacak şekilde tasarlanmıştır. Native ownership RAII ile yönetilir.
-
-### 🛡️ Fail-closed yaklaşımı
-
-Engine belirsiz veya bozuk veriyi iyimser şekilde kabul etmek yerine `REVIEW`, `REJECTED` veya explicit error/degraded state üretir.
-
-### 🔌 Uygulamadan bağımsız entegrasyon
-
-- **C++**
-- **C / Stable C ABI v1**
-- **C# / P/Invoke**
-- **Python / ctypes**
-- diğer FFI destekleyen runtime'lar
-
-Stateful stream session şu an C++ Application API olarak sunulur. **C ABI v1 değiştirilmemiştir.** Future stream C ABI ancak gerçek downstream ihtiyaç oluşursa additive/versioned olarak tasarlanacaktır.
-
----
-
-## Teknoloji
-
-| Alan | Teknoloji |
-| --- | --- |
-| Ana dil | **C++20** |
-| Inference | **ONNX Runtime** |
-| Görüntü işleme | **OpenCV** |
-| Build sistemi | **CMake 3.25+ / Ninja** |
-| Test | **GoogleTest / CTest** |
-| Logging | **spdlog** |
-| Public native interface | **C11-compatible C ABI v1** |
-| Ana hedef | **Windows x64 / Linux x64** |
-| Ek validation | **macOS ARM64 host + Linux x64 Docker** |
-
----
-
-## Production modelleri
-
-```text
-models/
-├── best.onnx             # Plaka detector + keypoints
-└── lprnet_turkey.onnx    # Türkiye plaka OCR modeli
-```
-
-OCR runtime contract:
-
-```text
-input   : float32 [1,3,40,160]
-output  : float32 [1,34,24]
-layout  : BCT
-blank   : 33
-charset : 0123456789ABCDEFGHIJKLMNOPRSTUVYZ
-```
-
-Bu değerler implementation detayı değil, production model contract'ının parçasıdır.
-
----
-
-# Hızlı başlangıç
-
-## Gereksinimler
-
-```text
-C++20 uyumlu compiler
-CMake 3.25+
-Ninja
-ONNX Runtime
-OpenCV
-```
-
-## Linux
-
-```bash
-cmake --preset linux-gcc-debug
-cmake --build --preset linux-gcc-debug
-ctest --preset linux-gcc-debug --output-on-failure
-```
-
-Release:
-
-```bash
-cmake --preset linux-gcc-release
-cmake --build --preset linux-gcc-release
-ctest --preset linux-gcc-release --output-on-failure
-```
-
-## Windows
-
-```powershell
-cmake --preset windows-msvc
-cmake --build --preset windows-msvc-debug
-cmake --build --preset windows-msvc-release
-```
-
-Repository gerçek Windows x64 self-hosted validation akışına sahiptir.
-
----
-
-# CLI ile plaka okutmak
-
-Optional build flag:
-
-```text
-FAC_LPR_BUILD_LPR_CLI=ON
-```
-
-Örnek:
-
-```bash
-fac-lpr-cli plate.jpg \
-  --model-dir ./models \
-  --config ./docs/lpr-cli-contract.example \
-  --json
-```
-
-CLI gerçek production pipeline'ını kullanır; ikinci bir recognition implementation değildir.
-
----
-
-# Stable C ABI
-
-Ana header:
-
-```text
-include/fac_lpr/fac_lpr_engine.h
-```
-
-Temel lifecycle:
-
-```c
-fac_lpr_engine_create_v1(...);
-fac_lpr_engine_recognize_v1(...);
-fac_lpr_engine_destroy_v1(...);
-fac_lpr_get_last_error_v1(...);
-```
-
-C ABI tasarımında:
-
-- opaque engine handle
-- C++ exception ABI dışına çıkmaz
-- caller-owned flat result buffer
-- required-size için two-call pattern
-- explicit version/size contract
-- nested veriler buffer-relative offset/count
-- ABI compatibility regression validation
-
-Temporal/stream özelliği mevcut v1 wire layout'a eklenmemiştir. Bu bilinçli bir compatibility kararıdır.
-
----
-
-# Mimari
+Dependency yönü içeri doğrudur:
 
 ```text
 Public API / Composition Root
@@ -328,99 +213,277 @@ Public API / Composition Root
 
 ### Domain
 
-Vendor bağımsız recognition kavramları ve value type'ları.
+Vendor bağımsız recognition kavramları ve value type'ları. ONNX Runtime/OpenCV tipleri buraya sızmaz.
 
 ### Application
 
-Orchestration ve vendor-neutral policies. Burada hem stateless `LprPipeline` hem de optional stateful `TemporalPlateConsensus`, `StablePlateEventFilter` ve `RecognitionStreamSession` bulunur.
+Recognition orchestration ve vendor-neutral policy/port'lar. `LprPipeline`, temporal consensus, stable emission ve stream session burada yaşar.
 
 ### Infrastructure
 
-ONNX Runtime, OpenCV, model loader, concrete detector/OCR adapter'ları ve native runtime ayrıntıları.
+ONNX Runtime, OpenCV, model loader, detector/OCR adapter'ları ve native runtime ayrıntıları.
 
 ### Public API / Composition Root
 
-Stable integration surfaces ve production composition.
+Stable integration yüzeyleri ve production assembly.
 
-> ONNX Runtime/OpenCV vendor tipleri Domain, Application veya C ABI içine sızmamalıdır.
+Daha ayrıntılı mimari için `PRODUCT.md`, `AGENTS.md` ve `docs/architecture.md` canonical kaynaklardır.
 
 ---
 
-# Repository yapısı
+## Model sözleşmeleri
+
+Production modelleri:
+
+```text
+models/
+├── best.onnx
+└── lprnet_turkey.onnx
+```
+
+Detector contract:
+
+```text
+input  images   float32 [1,3,960,960]
+output output0  float32 [1,17,18900]
+```
+
+OCR contract:
+
+```text
+input   input   float32 [1,3,40,160]
+output  output  float32 [1,34,24]
+layout  BCT
+blank   33
+charset 0123456789ABCDEFGHIJKLMNOPRSTUVYZ
+```
+
+Bu değerler örnek değil, production contract'ıdır. Model değişikliğinde tensor adı/shape/preprocessing/charset/blank semantics/checksum birlikte değerlendirilmelidir.
+
+---
+
+## Entegrasyon yüzeyleri
+
+Stable public C header:
+
+```text
+include/fac_lpr/fac_lpr_engine.h
+```
+
+Temel C ABI lifecycle:
+
+```c
+fac_lpr_engine_create_v1(...);
+fac_lpr_engine_recognize_v1(...);
+fac_lpr_engine_destroy_v1(...);
+fac_lpr_get_last_error_v1(...);
+```
+
+C ABI v1 tasarım ilkeleri:
+
+- opaque engine handle;
+- C11-compatible surface;
+- C++ exception ABI dışına çıkmaz;
+- caller-owned flat result buffer;
+- required-size için two-call pattern;
+- explicit size/version contract;
+- nested veriler buffer-relative offset/count kullanır.
+
+FAC Access, engine'i .NET Device Service Infrastructure katmanından bu stable C ABI üzerinden tüketir. Engine `ACCEPTED` üretti diye bariyer açılmaz; backend authorization ayrıca `ALLOWED` vermelidir.
+
+---
+
+## Build ve test
+
+### Gereksinimler
+
+```text
+C++20 uyumlu compiler
+CMake 3.25+
+Ninja
+ONNX Runtime
+OpenCV
+```
+
+### Linux Debug
+
+```bash
+cmake --preset linux-gcc-debug
+cmake --build --preset linux-gcc-debug
+ctest --preset linux-gcc-debug --output-on-failure
+```
+
+### Linux Release
+
+```bash
+cmake --preset linux-gcc-release
+cmake --build --preset linux-gcc-release
+ctest --preset linux-gcc-release --output-on-failure
+```
+
+### Windows
+
+```powershell
+cmake --preset windows-msvc
+cmake --build --preset windows-msvc-debug
+cmake --build --preset windows-msvc-release
+```
+
+### CLI
+
+```text
+FAC_LPR_BUILD_LPR_CLI=ON
+```
+
+```bash
+fac-lpr-cli plate.jpg \
+  --model-dir ./models \
+  --config ./docs/lpr-cli-contract.example \
+  --json
+```
+
+---
+
+## CI ve production doğrulama
+
+Repository yalnızca unit test çalıştırıp kendini production-ready ilan etmez. Validation yüzeyleri arasında şunlar bulunur:
+
+- unit/integration tests;
+- temporal/session regression;
+- real-model inference;
+- golden regression;
+- licensed public real-image regression;
+- Linux x64 Debug/Release Docker validation;
+- Windows x64 native Debug/Release validation;
+- Release DLL clean-load;
+- C ABI consumer smoke;
+- C# P/Invoke consumer validation;
+- Python `ctypes` consumer validation;
+- package/ABI/security/resource checks;
+- memory/resource stress;
+- performance regression.
+
+### Performance CI
+
+Linux x64 benchmark, FAC-LPR macOS ARM64 self-hosted runner üzerinde `linux/amd64` Docker ile çalışır.
+
+Runtime/performance-sensitive değişikliklerde gerçek benchmark çalışır. PR veya push yalnızca dokümantasyon, test metadata'sı veya runtime'ı etkileyemeyen CI alanlarına dokunuyorsa workflow bunu path-aware olarak belirler ve pahalı benchmark aşamalarını skip eder.
+
+Mevcut sampling:
+
+```text
+warmup: 10
+iterations: 50
+repeats: 2
+```
+
+Performance threshold'ları sırf CI yeşil olsun diye gevşetilmez.
+
+CI ayrıntıları: `docs/ci.md` ve `docs/ci-budget.md`.
+
+---
+
+## Proje sınırı
+
+FAC LPR Engine şunları **yapmaz**:
+
+- RTSP bağlantı yönetimi;
+- kamera discovery/reconnect;
+- araç yetkilendirme;
+- kayıtlı araç lookup;
+- bariyer açma kararı;
+- customer/business event cooldown;
+- audit persistence;
+- UI/backend business state;
+- model training lifecycle.
+
+Bu sorumluluklar consuming product'a aittir.
+
+---
+
+## Repository yapısı
 
 ```text
 fac-lpr-engine/
-├── include/          Public C++ ve C ABI header'ları
+├── include/          Public C++ / C ABI header'ları
 ├── src/              Domain / Application / Infrastructure
-├── tests/            Unit, integration, temporal ve regression testleri
-├── tools/            CLI, benchmark, evaluation, resource araçları
+├── tests/            Unit, integration, temporal, golden ve public regression
+├── tools/            CLI, benchmark, evaluation ve resource araçları
 ├── samples/          Consumer entegrasyon örnekleri
 ├── cmake/            Package/export yardımcıları
 ├── scripts/          Bootstrap/validation/release scriptleri
 ├── docs/             Teknik ve operasyonel dokümantasyon
 ├── models/           Runtime model artifact'ları
-├── README.md         İnsan odaklı giriş
-├── PRODUCT.md        Canonical ürün + mimari specification
-└── AGENTS.md         AI/maintainer proje rehberi
+├── README.md         İnsan odaklı Türkçe giriş
+├── PRODUCT.md        Canonical ürün/mimari/runtime specification
+└── AGENTS.md         AI/maintainer çalışma ve continuity rehberi
 ```
 
 ---
 
-# Test ve production validation
+## Dokümantasyon haritası
 
-Validation yalnızca unit test değildir. Repository şu sınıflarda evidence üretir:
+Bir insan veya yapay zekâ projeyi devralırken dosyaları şu sırayla okumalıdır:
 
-- unit/integration tests
-- temporal consensus/session regression tests
-- real-model inference
-- golden regression
-- multi-frame temporal benchmark
-- Linux x64 Debug/Release Docker validation
-- Windows x64 native validation
-- C ABI / C# / Python consumer validation
-- memory/resource stress
-- performance regression
-- ABI/package/security/release checks
+1. **`AGENTS.md`**: AI/maintainer için çalışma kuralları, değişmemesi gereken invariant'lar ve repo haritası.
+2. **`README.md`**: Türkçe, insan odaklı ürün ve kullanım özeti.
+3. **`PRODUCT.md`**: canonical ürün, mimari, model/runtime, ABI ve release specification.
+4. **`docs/current-state.md`**: güncel doğrulanmış implementation/release snapshot'ı.
+5. İlgili `docs/*.md`: konuya özel detaylar.
+6. İlgili source/header/test dosyaları.
+7. GitHub issue/PR ve **executed CI evidence**.
 
-Windows standalone benchmark runtime packaging'i ONNX Runtime DLL'i ile doğrulanır; Linux performance workflow'u mevcut FAC-LPR self-hosted runner üzerinde `linux/amd64` Docker kullanır.
+Önemli authority kuralı:
 
----
+> Dokümantasyon ile source/test/CI çelişirse tahmin yürütme. Canlı implementation ve executed evidence'ı doğrula, sonra stale dokümanı düzelt.
 
-# Temporal regression yaklaşımı
+Özellikle AI agent'ları eski sohbet bağlamını veya eski issue açıklamasını repository gerçeğinin üstünde authority kabul etmemelidir.
 
-Temporal davranış iki seviyede test edilir:
+### Başlıca teknik belgeler
 
-1. **Synthetic deterministic sequences**: OCR jitter, conflict, review-only, duplicate suppression ve vehicle transition gibi semantik davranışları doğrudan test eder.
-2. **Real-model temporal sequence smoke**: gerçek production pipeline üzerinden per-frame correctness, false-stable ve bounded history gibi metrikleri doğrular.
-
-Real-model fixture'da per-frame sonuçlar `REVIEW` kalıyorsa temporal katman bunları zorla `ACCEPTED` yapmaz. Bu fail-closed davranış tasarımın parçasıdır.
-
----
-
-# Proje sınırı
-
-FAC LPR Engine şunları **yapmaz**:
-
-- RTSP bağlantı yönetimi
-- kamera discovery/reconnect
-- araç yetkilendirme
-- bariyer açma kararı
-- registered vehicle lookup
-- customer/business event cooldown
-- audit persistence
-- UI/backend business state
-
-Bunlar consuming product'a aittir.
+- `AGENTS.md` — AI/maintainer continuity ve çalışma rehberi
+- `PRODUCT.md` — canonical product/architecture specification
+- `docs/current-state.md` — güncel operasyonel snapshot
+- `docs/architecture.md` — dependency/mimari özeti
+- `docs/c-api-v1.md` — C ABI v1 contract
+- `docs/abi-versioning.md` — ABI versioning kuralları
+- `docs/stream-recognition-api.md` — stateful stream API
+- `docs/temporal-stream-recognition.md` — temporal semantics
+- `docs/ci.md` — CI topology ve gate'ler
+- `docs/ci-budget.md` — CI maliyet/runner davranışı
+- `docs/lpr-cli.md` — CLI kullanımı
 
 ---
 
-# Dokümantasyon kaynakları
+## Branch ve release modeli
 
-- `README.md` — hızlı giriş, kullanım ve genel mimari
-- `PRODUCT.md` — canonical ürün/mimari/runtime contract
-- `AGENTS.md` — AI ve maintainer çalışma kuralları
-- `docs/stream-recognition-api.md` — stateful stream API ve lifecycle
-- `docs/temporal-stream-recognition.md` — temporal consensus/emission semantiği
-- GitHub issues/PR/CI — implementation history ve executed evidence
+- `dev`: aktif geliştirme ve release-candidate branch'i.
+- `main`: stable/release branch'i.
 
-Kod/test ile prose çelişirse önce gerçek implementation ve executed CI doğrulanmalı, sonra stale doküman güncellenmelidir.
+Normal akış:
+
+```text
+feature/fix
+   ↓
+dev
+   ↓
+applicable validation
+   ↓
+validated dev candidate
+   ↓
+main
+```
+
+Kod/runtime değişiklikleri applicable validation evidence olmadan `main`e taşınmamalıdır.
+
+Dokümantasyon-only değişiklikler runtime davranışını değiştirmez; yine de branch farkı açıkça incelenmeli ve yalnız beklenen Markdown/prose değişikliklerinin taşındığı doğrulanmalıdır.
+
+---
+
+## Güncel durum
+
+Güncel doğrulanmış proje snapshot'ı için **`docs/current-state.md`** dosyasını kullanın. GitHub issue/PR/CI durumu zamanla değişebileceği için canlı GitHub state her yeni çalışma oturumunda yeniden doğrulanmalıdır.
+
+FAC LPR Engine'in temel mimari kuralı değişmez:
+
+> **Engine plakayı tanır. Consuming product erişime karar verir.**
