@@ -2,25 +2,34 @@
 
 Snapshot date: **2026-08-30**
 
-This document is a concise operational snapshot. `PRODUCT.md` remains the canonical product/architecture specification; code, tests and executed CI evidence remain authoritative when a snapshot becomes stale.
+Bu dosya FAC LPR Engine'in kısa operasyonel snapshot'ıdır. `PRODUCT.md` canonical ürün/mimari specification'dır; source, public header, tests/model contracts ve executed CI evidence bir snapshot eskidiğinde authority kabul edilir.
 
-## Branch model
+## Branch modeli
 
-- `dev` is the active validated development/release-candidate branch.
-- `main` is the stable/release branch.
-- Promotion is `dev` -> `main` only after the exact `dev` candidate has applicable successful validation evidence.
+- `dev`: aktif development/release-candidate branch.
+- `main`: stable/release branch.
+- Normal promotion: `dev -> main`.
 
-At this snapshot, the latest validated implementation is on `dev` and is awaiting promotion to `main`.
+2026-08-30 tarihinde önceki validated `dev` candidate, PR #123 üzerinden `main`e promote edildi. Promotion merge commit'i:
 
-## Product boundary
+```text
+5516d9e26ae5bc254e225e654dd637f971639ec4
+```
 
-FAC LPR Engine performs technical license-plate recognition. It does not authorize vehicles or open barriers.
+Bu promotion sonrasında `main` ile promote edilen `dev` arasında dosya farkı yoktu. Daha sonra yapılan documentation-only synchronization çalışması tekrar `dev` üzerinde hazırlanmıştır; promotion öncesi `main...dev` diff yalnız beklenen Markdown/prose değişikliklerini içermelidir.
 
-`ACCEPTED` means the recognition evidence is technically strong enough. Authorization remains the responsibility of FAC Access or another consuming product.
+## Ürün sınırı
 
-## Current recognition pipeline
+FAC LPR Engine teknik license-plate recognition yapar. Araç yetkilendirmez ve bariyer açmaz.
 
-The production per-frame path remains:
+```text
+ACCEPTED = recognition evidence teknik olarak güçlü
+ACCEPTED != access allowed
+```
+
+Authorization FAC Access veya başka consuming product'a aittir.
+
+## Production recognition pipeline
 
 ```text
 image/frame
@@ -34,7 +43,7 @@ image/frame
   -> ACCEPTED / REVIEW / REJECTED
 ```
 
-The optional stream path remains additive:
+Optional stream path:
 
 ```text
 LprPipeline
@@ -43,56 +52,56 @@ LprPipeline
   -> RecognitionStreamSession
 ```
 
-C ABI v1 is unchanged by the stream/session features.
+C ABI v1 stream/session özellikleri nedeniyle değiştirilmemiştir.
 
-## Latest recognition hardening
+## Son recognition hardening
 
-The plate-dominant crop path was hardened so a detector box occupying most of the source image does not destroy useful OCR evidence through unnecessary rectification/cropping. The full source frame is preserved as the primary hypothesis for these inputs while the normal crop strategy remains available for ordinary scenes.
+Plate-dominant input'larda detector bbox kaynak görüntünün büyük bölümünü kapladığında gereksiz rectification/cropping OCR evidence'ını bozmasın diye full source frame primary hypothesis olarak korunur. Ordinary scene crop stratejileri devam eder.
 
-Deterministic public real-image regression now verifies exact recognition for:
+Bu davranış plate-specific hardcoded karakter düzeltmesi değildir.
+
+Deterministic licensed public regression exact olarak şunları doğrular:
 
 ```text
 38VU055
 34VZ7387
 ```
 
-The fixtures are downloaded from their licensed Wikimedia sources at test time, verified against pinned SHA-1 checksums, and then executed through the production `fac-lpr-cli` detector/crop/OCR path.
-
-Pinned fixture SHA-1 values:
+Fixture'lar test sırasında Wikimedia kaynaklarından indirilir, pinned SHA-1 ile doğrulanır ve production `fac-lpr-cli` detector/crop/OCR yolundan geçirilir.
 
 ```text
 38_VU_055.jpg   790095caf25739f07c00c55c7a513f70e8b7ef02
 34_VZ_7387.jpg  6684fe7e4a6a0e742194ec12b08c980257512858
 ```
 
-Recognition expectations must not be weakened merely to match a future regression.
+Expected plate text future regression'a uydurulmak için gevşetilmemelidir.
 
-## Current validation evidence
+## Validation evidence
 
-The latest pre-documentation code candidate was validated with the relevant self-hosted gates, including:
+Promote edilen runtime candidate için doğrulanan başlıca gate'ler:
 
-- Windows x64 Debug build and tests;
-- Windows x64 Release build and tests;
-- Release DLL clean-load validation;
-- .NET P/Invoke consumer validation;
-- Python `ctypes` consumer validation;
-- macOS ARM64 C ABI / installed-package consumer validation;
-- production lifecycle and real inference smoke;
-- public licensed fixture regression with exact expected plate text.
+- Linux x64 Debug/Release full Docker validation: success;
+- Windows x64 Debug/Release native validation: success;
+- Release DLL clean-load: success;
+- .NET P/Invoke consumer: success;
+- Python `ctypes` consumer: success;
+- macOS ARM64 C ABI / installed-package consumer: success;
+- production lifecycle + real inference smoke: success;
+- licensed public fixture exact regression: success.
 
-The documentation-only synchronization commits that follow the validated code candidate must still be checked by the workflows applicable to their changed paths before promotion.
+Dokümantasyon-only değişiklik runtime davranışını değiştirmez. Bu tür bir promotion'da full runtime CI'ı yeniden koşturmak yerine diff'in yalnız beklenen Markdown/prose dosyalarından oluştuğu doğrulanabilir.
 
-## Performance CI behavior
+## Performance CI
 
-Performance validation runs Linux x64 inside `linux/amd64` Docker on the FAC LPR macOS ARM64 self-hosted runner.
+Linux x64 performance validation, FAC-LPR macOS ARM64 self-hosted runner üzerinde `linux/amd64` Docker kullanır.
 
-Pull-request performance validation is path-aware:
+Workflow path-aware'dir:
 
-- runtime/performance-sensitive changes run the real benchmark and comparison;
-- documentation/test-metadata/CI-only changes that cannot change runtime performance explicitly skip the expensive benchmark work;
-- a skip decision is produced by the workflow itself and is not confused with a benchmark pass for a runtime change.
+- runtime/performance-sensitive change -> real benchmark/comparison;
+- docs/test-metadata/runtime'ı etkileyemeyen CI change -> expensive benchmark skip;
+- skip kararı runtime benchmark pass olarak yorumlanmaz.
 
-Current benchmark sampling defaults:
+Sampling:
 
 ```text
 warmup: 10
@@ -100,32 +109,65 @@ iterations: 50
 repeats: 2
 ```
 
-Regression thresholds remain explicit and must not be relaxed simply to obtain green CI.
+Threshold'lar green CI uğruna gevşetilmez.
 
-## GitHub work state at snapshot
+## Software work state
 
-FAC LPR Engine software backlog after the latest hardening work:
+Son doğrulanan engine hardening çalışmaları:
+
+- plate-dominant production crop fix;
+- licensed public exact fixture regression;
+- Windows CLI regression registration;
+- C ABI/consumer validation;
+- GitHub CLI bağımlılığı kaldırılmış performance baseline resolution;
+- path-aware performance execution;
+- CI/documentation synchronization.
+
+Son canlı kontrolde:
 
 ```text
-open issues: 0
-open pull requests: 0
+open engine issues: 0
+open engine pull requests: 0
 ```
 
-The most recent completed engine work includes the plate-dominant production recognition fix and the licensed public fixture regression gate.
+Bu sayıları gelecek oturumlarda sabit gerçek kabul etme; canlı GitHub state'i yeniden sorgula.
 
-## FAC Access relationship
+## FAC Access ilişkisi
 
-FAC Access consumes the engine through the stable public C ABI in its .NET Device Service infrastructure.
+FAC Access engine'i stable C ABI üzerinden .NET Device Service Infrastructure katmanında tüketir.
 
-FAC Access still has physical-hardware release gates that cannot be closed by repository-only evidence, including real-camera E2E/soak validation and ONVIF real-camera onboarding validation. Those gates do not indicate missing FAC LPR Engine software work.
+FAC Access tarafında real-camera E2E/soak/outage recovery ve ONVIF real-camera onboarding gibi fiziksel hardware release gate'leri bulunabilir. Bunlar repo-only evidence ile kapatılmamalıdır ve engine software backlog'u ile karıştırılmamalıdır.
 
-## Promotion rule
+## AI/maintainer için authority kuralı
 
-Before promoting `dev` to `main`:
+Yeni bir oturumda:
 
-1. verify the exact `dev` head;
-2. verify applicable workflows for that exact head;
-3. ensure there are no unexpected open engine issues/PRs;
-4. compare `main...dev` and review the complete promotion delta;
-5. promote the validated candidate without rewriting or dropping accumulated `dev` changes;
-6. verify `main` contains the promoted candidate and post-promotion workflows behave as expected.
+1. `AGENTS.md`;
+2. `README.md`;
+3. `PRODUCT.md`;
+4. `docs/current-state.md`;
+5. ilgili source/header/test/docs;
+6. live GitHub issue/PR/CI
+
+sırasıyla doğrulanmalıdır.
+
+Eski sohbet bağlamı, eski issue body veya stale snapshot source/test/executed CI evidence'ın üstünde authority değildir.
+
+## Promotion checklist
+
+Runtime/code promotion:
+
+1. exact `dev` head'i doğrula;
+2. applicable exact-head CI evidence'ını doğrula;
+3. open issue/PR state'i kontrol et;
+4. `main...dev` delta'yı incele;
+5. validated candidate'ı `main`e promote et;
+6. `main`in promoted candidate'ı içerdiğini doğrula.
+
+Documentation-only promotion:
+
+1. `main...dev` diff'i incele;
+2. yalnız beklenen Markdown/prose değişiklikleri olduğundan emin ol;
+3. runtime/model/build/test davranışını değiştiren dosya olmadığını doğrula;
+4. full runtime CI tekrarı olmadan documentation promotion yapılabilir;
+5. promotion sonrası branch içerik farkını yeniden kontrol et.
