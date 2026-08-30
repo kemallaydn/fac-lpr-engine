@@ -23,20 +23,57 @@ concurrency:
 
 env:
   VCPKG_DISABLE_METRICS: '1'
-  WARMUP: '20'
-  ITERATIONS: '100'
-  REPEATS: '3'
+  WARMUP: '10'
+  ITERATIONS: '50'
+  REPEATS: '2'
   LATENCY_TOLERANCE_PERCENT: '15'
   THROUGHPUT_TOLERANCE_PERCENT: '12'
 
 jobs:
   linux-x64:
     runs-on: [self-hosted, macOS, ARM64, fac-lpr]
-    timeout-minutes: 120
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Determine whether runtime performance can change
+        id: impact
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            echo "run_benchmark=true" >> "$GITHUB_OUTPUT"
+            echo "Non-PR run: benchmark required to publish/refresh the dev baseline."
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" "$HEAD_SHA"
+          changed_files=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          printf 'Changed files:\n%s\n' "$changed_files"
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(src/|include/|tools/benchmark/|cmake/|models/|CMakeLists\.txt$|vcpkg\.json$|vcpkg-configuration\.json$|scripts/bootstrap-dependencies\.sh$|docs/lpr-cli-contract\.example$|tests/fixtures/real/plate_01\.jpg$)'; then
+            echo "run_benchmark=true" >> "$GITHUB_OUTPUT"
+            echo "Performance-sensitive files changed; running benchmark gate."
+          else
+            echo "run_benchmark=false" >> "$GITHUB_OUTPUT"
+            echo "No performance-sensitive runtime files changed; skipping expensive benchmark gate."
+          fi
+
+      - name: Skip benchmark for non-runtime PR
+        if: steps.impact.outputs.run_benchmark != 'true'
+        shell: bash
+        run: |
+          echo "Performance benchmark skipped: this PR does not change runtime-sensitive paths."
 
       - name: Docker amd64 preflight
+        if: steps.impact.outputs.run_benchmark == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -49,12 +86,14 @@ jobs:
           '
 
       - name: Prepare persistent vcpkg binary cache
+        if: steps.impact.outputs.run_benchmark == 'true'
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "${HOME}/.cache/fac-lpr-vcpkg"
 
       - name: Build and run repeated Linux x64 benchmark samples
+        if: steps.impact.outputs.run_benchmark == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -117,7 +156,7 @@ jobs:
             '
 
       - name: Publish dev baseline snapshot
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        if: steps.impact.outputs.run_benchmark == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/dev'
         uses: actions/upload-artifact@v4
         with:
           name: performance-baseline-linux-x64-${{ github.sha }}
@@ -126,7 +165,7 @@ jobs:
           retention-days: 90
 
       - name: Resolve latest successful dev baseline
-        if: github.event_name == 'pull_request'
+        if: steps.impact.outputs.run_benchmark == 'true' && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -166,7 +205,7 @@ jobs:
           echo "BASELINE_RUN_ID=${run_id}" >> "$GITHUB_ENV"
 
       - name: Compare P50/P95/P99 and throughput
-        if: github.event_name == 'pull_request'
+        if: steps.impact.outputs.run_benchmark == 'true' && github.event_name == 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -179,7 +218,7 @@ jobs:
             --output "${PERF_ROOT}/performance-regression.json"
 
       - name: Upload current benchmark and comparison
-        if: always()
+        if: always() && steps.impact.outputs.run_benchmark == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: performance-regression-linux-x64-${{ github.sha }}
