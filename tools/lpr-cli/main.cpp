@@ -172,8 +172,13 @@ void emit_human(
     }
 }
 
-void emit_json(const fac_lpr::application::LprPipelineResult& result) {
-    std::cout << "{\"totalLatencyMs\":" << result.total_latency_ms
+void emit_json(
+    const fac_lpr::application::LprPipelineResult& result,
+    const int image_width,
+    const int image_height) {
+    std::cout << "{\"imageWidth\":" << image_width
+              << ",\"imageHeight\":" << image_height
+              << ",\"totalLatencyMs\":" << result.total_latency_ms
               << ",\"degraded\":" << (result.degraded ? "true" : "false")
               << ",\"providerFailureCount\":" << result.provider_failure_count
               << ",\"failures\":[";
@@ -211,8 +216,40 @@ void emit_json(const fac_lpr::application::LprPipelineResult& result) {
                   << ",\"detectorConfidence\":" << recognition.detector_confidence
                   << ",\"geometryScore\":" << recognition.geometry_score
                   << ",\"cropQuality\":" << recognition.crop_quality
-                  << ",\"degraded\":" << (recognition.degraded ? "true" : "false")
-                  << ",\"reasons\":[";
+                  << ",\"degraded\":" << (recognition.degraded ? "true" : "false");
+
+        if (recognition.bbox) {
+            const auto& bbox = *recognition.bbox;
+            std::cout << ",\"bbox\":{\"x1\":" << bbox.x
+                      << ",\"y1\":" << bbox.y
+                      << ",\"x2\":" << (bbox.x + bbox.width)
+                      << ",\"y2\":" << (bbox.y + bbox.height)
+                      << ",\"width\":" << bbox.width
+                      << ",\"height\":" << bbox.height << '}';
+        } else {
+            std::cout << ",\"bbox\":null";
+        }
+
+        if (recognition.quadrilateral) {
+            std::cout << ",\"keypoints\":[";
+            const auto& quad = *recognition.quadrilateral;
+            for (std::size_t point_index = 0U;
+                 point_index < fac_lpr::domain::PlateQuadrilateral::point_count;
+                 ++point_index) {
+                if (point_index != 0U) {
+                    std::cout << ',';
+                }
+                const auto& point = quad.points[point_index];
+                std::cout << "{\"x\":" << point.x
+                          << ",\"y\":" << point.y
+                          << ",\"confidence\":" << quad.confidences[point_index] << '}';
+            }
+            std::cout << ']';
+        } else {
+            std::cout << ",\"keypoints\":null";
+        }
+
+        std::cout << ",\"reasons\":[";
         for (std::size_t reason_index = 0U;
              reason_index < recognition.decision_reasons.size(); ++reason_index) {
             if (reason_index != 0U) {
@@ -277,7 +314,7 @@ int main(const int argc, char** argv) {
             options->log_level);
         const auto result = pipeline->recognize(view);
         if (options->json) {
-            emit_json(result);
+            emit_json(result, image.cols, image.rows);
         } else {
             emit_human(result, options->debug_evidence);
         }
