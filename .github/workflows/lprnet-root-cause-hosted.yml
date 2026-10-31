@@ -1,0 +1,64 @@
+name: lprnet-root-cause-hosted
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - 'tools/ocr-compare/lprnet_root_cause.py'
+      - 'tools/ocr-compare/native_beam_diagnose.cpp'
+      - '.github/workflows/lprnet-root-cause-hosted.yml'
+permissions:
+  contents: read
+jobs:
+  lprnet-diagnostics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install inference/test prerequisites
+        run: |
+          python -m pip install 'numpy==1.26.4' 'Pillow==11.3.0' \
+            'opencv-python-headless==4.11.0.86' 'onnxruntime==1.22.1'
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-dejavu-core g++
+      - name: Generate the same 32 pinned synthetic crops
+        run: python tools/synthetic-plates/generate.py --out artifacts/root-cause-crops
+      - name: Infer 128 actual ONNX logits with preprocessing ablations
+        run: |
+          python tools/ocr-compare/lprnet_root_cause.py \
+            --fixture-dir artifacts/root-cause-crops \
+            --model-dir models \
+            --contract docs/lpr-cli-contract.example \
+            --out artifacts/root-cause-intermediate
+      - name: Compile actual native CTC greedy and constrained beam decoder
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -Iinclude \
+            tools/ocr-compare/native_beam_diagnose.cpp \
+            src/infrastructure/lprnet/constrained_ctc_beam_search.cpp \
+            src/infrastructure/lprnet/ctc_decoder.cpp \
+            src/application/turkish_plate_grammar.cpp \
+            -o /tmp/native-beam-diagnose
+      - name: Compare native greedy, production beam and preprocessing
+        run: |
+          mkdir -p artifacts/root-cause-report
+          /tmp/native-beam-diagnose \
+            artifacts/root-cause-intermediate/native-beam-input.tsv \
+            docs/lpr-cli-contract.example \
+            artifacts/root-cause-report/cases.json \
+            artifacts/root-cause-report/report.md
+          cat artifacts/root-cause-report/report.md
+          cat artifacts/root-cause-report/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload root cause metrics, examples, logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lprnet-native-beam-root-cause
+          path: artifacts/root-cause-report/
+          if-no-files-found: warn
+          retention-days: 14
