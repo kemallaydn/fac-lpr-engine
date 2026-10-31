@@ -1,0 +1,84 @@
+name: synthetic-ocr-real-models
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - 'tools/synthetic-plates/**'
+      - 'tools/paddle-worker/worker.py'
+      - 'tools/ocr-compare/**'
+      - 'models/**'
+      - 'docs/lpr-cli-contract.example'
+      - '.github/workflows/synthetic-ocr-real-models.yml'
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - 'tools/synthetic-plates/**'
+      - 'tools/paddle-worker/worker.py'
+      - 'tools/ocr-compare/**'
+      - 'models/**'
+      - 'docs/lpr-cli-contract.example'
+      - '.github/workflows/synthetic-ocr-real-models.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  real-ocr-compare:
+    # Always run on GitHub-hosted Linux. No self-hosted runner or skip flag.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: 'True'
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install model inference and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            'numpy==1.26.4' 'Pillow==11.3.0' \
+            'opencv-python-headless==4.11.0.86' 'onnxruntime==1.22.1' \
+            'paddlepaddle==3.2.0' 'paddleocr==3.3.0'
+          sudo apt-get update
+          sudo apt-get install -y fonts-dejavu-core
+      - name: Verify real model sizes and SHA-256
+        run: |
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          p = Path("tools/ocr-compare/compare_real_ocr.py")
+          spec = importlib.util.spec_from_file_location("compare_real_ocr", p)
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          conf = mod.parse_contract(Path("docs/lpr-cli-contract.example"))
+          print("LPRNet sha256:", mod.validate_model(Path("models") / conf["ocr.model"], conf))
+          PY
+      - name: Test comparison logic and synthetic fixture generation
+        run: |
+          python -m unittest discover -s tools/ocr-compare -p 'test_*.py' -v
+          python -m unittest discover -s tools/synthetic-plates -p 'test_*.py' -v
+      - name: Generate 32 known-label plate crops
+        run: python tools/synthetic-plates/generate.py --out artifacts/ocr-crops
+      - name: Run actual LPRNet ONNX and PaddleOCR predictions
+        run: |
+          python tools/ocr-compare/compare_real_ocr.py \
+            --fixture-dir artifacts/ocr-crops \
+            --model-dir models \
+            --contract docs/lpr-cli-contract.example \
+            --json-out artifacts/ocr-reports/compare.json \
+            --md-out artifacts/ocr-reports/compare.md
+      - name: Upload inference results (not a synthetic generator pass)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-ocr-synthetic-crop-comparison
+          path: artifacts/ocr-reports/
+          if-no-files-found: warn
+          retention-days: 14
