@@ -124,6 +124,8 @@ domain::RecognitionEvidence LprNetOnnxOcrAdapter::decode(
     const auto decoded = decoder_.decode(logits, timesteps, classes);
     domain::RecognitionEvidence evidence{};
     evidence.source = config_.provider_name;
+    evidence.greedy_text = decoded.greedy.text;
+    evidence.greedy_character_confidences = decoded.greedy.character_confidences;
     evidence.candidates = decoded.candidates;
     for (auto& candidate : evidence.candidates) {
         candidate.calibrated_confidence = candidate.confidence;
