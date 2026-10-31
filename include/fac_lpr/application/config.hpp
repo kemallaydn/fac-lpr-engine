@@ -45,6 +45,8 @@ struct DecisionConfig final {
     float minimum_crop_quality{0.28F};
     float minimum_geometry_score{0.20F};
     float minimum_effective_detector_confidence{0.50F};
+    // Opt-in secondary OCR suggestion. Never permits automatic acceptance.
+    bool enable_paddle_review_suggestions{false};
     bool allow_accept_when_degraded{false};
     bool fail_closed{true};
 };

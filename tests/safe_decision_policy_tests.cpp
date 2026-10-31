@@ -174,4 +174,117 @@ TEST(SafeDecisionPolicy, WeakGeometryAndCropQualityRequireReviewWithReasons) {
         domain::RecognitionDecisionReason::crop_quality_below_minimum));
 }
 
+
+application::SafeRecognitionDecisionPolicy paddle_policy() {
+    application::DecisionConfig config{};
+    config.enable_paddle_review_suggestions = true;
+    return application::SafeRecognitionDecisionPolicy{config};
+}
+
+domain::RecognitionEvidence paddle_reading(
+    const std::string& text, const float score = 0.96F) {
+    auto value = good_evidence();
+    value.source = "paddleocr";
+    value.candidates = {{text, score, score, false}};
+    return value;
+}
+
+TEST(SafeDecisionPolicy, PaddleReviewOnlyFallbackWhenPrimaryHasNoValidPlate) {
+    const std::vector evidence{good_evidence(), paddle_reading("34ABC123")};
+    const std::vector<domain::PlateCandidate> fused{};
+    const auto result = paddle_policy().decide(good_detection(), evidence, fused, {});
+    EXPECT_EQ(result.status, domain::RecognitionStatus::review);
+    EXPECT_EQ(result.plate, "34ABC123");
+    EXPECT_FLOAT_EQ(result.confidence, 0.0F);
+    EXPECT_TRUE(has_reason(
+        result, domain::RecognitionDecisionReason::secondary_ocr_review_suggestion));
+}
+
+TEST(SafeDecisionPolicy, PaddleSuggestsOnWeakPrimaryWithoutAutoAccept) {
+    auto primary = good_evidence();
+    primary.greedy_text = "34ABC128";
+    primary.greedy_character_confidences = {0.8F, 0.8F, 0.8F, 0.8F, 0.8F, 0.8F, 0.8F, 0.2F};
+    const std::vector evidence{primary, paddle_reading("34ABC123")};
+    const std::vector<domain::PlateCandidate> fused{{"34ABC128", 0.74F, 0.74F, true}};
+    const auto result = paddle_policy().decide(good_detection(), evidence, fused, {});
+    EXPECT_EQ(result.plate, "34ABC123");
+    EXPECT_EQ(result.status, domain::RecognitionStatus::review);
+    EXPECT_EQ(result.confidence, 0.0F);
+    EXPECT_TRUE(has_reason(result, domain::RecognitionDecisionReason::secondary_ocr_review_suggestion));
+}
+
+TEST(SafeDecisionPolicy, PaddleSingleWeakCharacterMaySuggestEvenWithStrongPrimary) {
+    auto primary = good_evidence();
+    primary.greedy_text = "34ABC128";
+    primary.greedy_character_confidences = {0.99F, 0.99F, 0.99F, 0.99F, 0.99F, 0.99F, 0.99F, 0.30F};
+    const std::vector evidence{primary, paddle_reading("34ABC123")};
+    const std::vector<domain::PlateCandidate> fused{{"34ABC128", 0.92F, 0.92F, true}};
+    const auto result = paddle_policy().decide(good_detection(), evidence, fused, {});
+    EXPECT_EQ(result.status, domain::RecognitionStatus::review);
+    EXPECT_EQ(result.plate, "34ABC123");
+}
+
+TEST(SafeDecisionPolicy, StrongLprnetConflictKeepsPrimaryButRequiresReview) {
+    auto primary = good_evidence();
+    primary.greedy_text = "34ABC128";
+    primary.greedy_character_confidences = std::vector<float>(8U, 0.99F);
+    const std::vector evidence{primary, paddle_reading("34ABC123")};
+    const std::vector<domain::PlateCandidate> fused{{"34ABC128", 0.91F, 0.91F, true}};
+    const auto result = paddle_policy().decide(good_detection(), evidence, fused, {});
+    EXPECT_EQ(result.status, domain::RecognitionStatus::review);
+    EXPECT_EQ(result.plate, "34ABC128");
+    EXPECT_TRUE(has_reason(result, domain::RecognitionDecisionReason::conflicting_strong_candidates));
+}
+
+TEST(SafeDecisionPolicy, MultiCropPaddleConflictCannotChooseArbitraryPlate) {
+    const std::vector evidence{
+        good_evidence(), paddle_reading("34ABC123"), paddle_reading("34ABC128")};
+    const std::vector<domain::PlateCandidate> fused{};
+    const auto result = paddle_policy().decide(good_detection(), evidence, fused, {});
+    EXPECT_EQ(result.status, domain::RecognitionStatus::rejected);
+    EXPECT_TRUE(result.plate.empty());
+}
+
+TEST(SafeDecisionPolicy, PaddleWeakOrInvalidCannotRescueInvalidPrimary) {
+    const std::vector<domain::PlateCandidate> fused{};
+    for (const auto& secondary : {
+             paddle_reading("34ABC123", 0.60F),
+             paddle_reading("00ABC123", 0.98F),
+             paddle_reading("34A8C123", 0.98F)}) {
+        const std::vector evidence{good_evidence(), secondary};
+        const auto result = paddle_policy().decide(good_detection(), evidence, fused, {});
+        EXPECT_EQ(result.status, domain::RecognitionStatus::rejected);
+    }
+}
+
+TEST(SafeDecisionPolicy, PaddleMatchingPrimaryDoesNotInflateLprnetConfidence) {
+    const std::vector evidence{good_evidence(), paddle_reading("34ABC123")};
+    const std::vector<domain::PlateCandidate> fused{{"34ABC123", 0.91F, 0.91F, true}};
+    const auto result = paddle_policy().decide(good_detection(), evidence, fused, {});
+    EXPECT_EQ(result.status, domain::RecognitionStatus::accepted);
+    EXPECT_EQ(result.plate, "34ABC123");
+    EXPECT_FLOAT_EQ(result.confidence, 0.91F);
+}
+
+TEST(SafeDecisionPolicy, PaddleFeatureDisabledKeepsOldBehavior) {
+    const std::vector evidence{good_evidence(), paddle_reading("34ABC128")};
+    const std::vector<domain::PlateCandidate> fused{{"34ABC123", 0.91F, 0.91F, true}};
+    const auto result = policy().decide(good_detection(), evidence, fused, {});
+    EXPECT_EQ(result.status, domain::RecognitionStatus::accepted);
+    EXPECT_EQ(result.plate, "34ABC123");
+}
+
+TEST(SafeDecisionPolicy, PaddleNeverOverridesFatalProviderOrDetectorFailure) {
+    const std::vector evidence{good_evidence(), paddle_reading("34ABC123")};
+    const std::vector<domain::PlateCandidate> fused{};
+    auto weak = good_detection();
+    weak.confidence = 0.1F;
+    EXPECT_EQ(paddle_policy().decide(weak, evidence, fused, {}).status,
+              domain::RecognitionStatus::rejected);
+    application::RecognitionDecisionContext context{};
+    context.fatal_provider_failure = true;
+    EXPECT_EQ(paddle_policy().decide(good_detection(), evidence, fused, context).status,
+              domain::RecognitionStatus::rejected);
+}
+
 } // namespace

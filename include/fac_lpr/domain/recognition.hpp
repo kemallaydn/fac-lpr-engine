@@ -24,7 +24,8 @@ enum class RecognitionDecisionReason {
     no_valid_candidate,
     candidate_confidence_below_review,
     candidate_confidence_below_accept,
-    conflicting_strong_candidates
+    conflicting_strong_candidates,
+    secondary_ocr_review_suggestion
 };
 
 struct PlateCandidate final {

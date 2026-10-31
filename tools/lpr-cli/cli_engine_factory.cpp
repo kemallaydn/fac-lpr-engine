@@ -434,6 +434,8 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
 #endif
     }
 
+    application::DecisionConfig decision_config{};
+    decision_config.enable_paddle_review_suggestions = paddle_enabled;
     application::LprEngineBuilder builder{};
     builder.detector(std::move(detector))
         .geometry("plate_geometry", std::make_shared<infrastructure::geometry::PlateGeometryEvaluatorAdapter>())
@@ -454,7 +456,7 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
             std::make_shared<application::WeightedMultiCropCandidateFusion>(fusion_config))
         .decision_policy(
             "safe_default",
-            std::make_shared<application::SafeRecognitionDecisionPolicy>());
+            std::make_shared<application::SafeRecognitionDecisionPolicy>(decision_config));
 
 #if defined(FAC_LPR_WITH_PADDLE_HTTP_WORKER)
     if (paddle_enabled) {

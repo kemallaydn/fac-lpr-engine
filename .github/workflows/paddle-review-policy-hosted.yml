@@ -1,0 +1,48 @@
+name: paddle-review-policy-hosted
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/application/safe_decision_policy.cpp'
+      - 'src/application/turkish_plate_grammar.cpp'
+      - 'include/fac_lpr/application/**'
+      - 'include/fac_lpr/domain/**'
+      - 'tools/lpr-cli/**'
+      - 'tests/safe_decision_policy_tests.cpp'
+      - '.github/workflows/paddle-review-policy-hosted.yml'
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - 'src/application/safe_decision_policy.cpp'
+      - 'src/application/turkish_plate_grammar.cpp'
+      - 'include/fac_lpr/application/**'
+      - 'include/fac_lpr/domain/**'
+      - 'tools/lpr-cli/**'
+      - 'tests/safe_decision_policy_tests.cpp'
+      - '.github/workflows/paddle-review-policy-hosted.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GoogleTest and C++ compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ libgtest-dev
+      - name: Compile native policy with -Werror
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror \
+            -Iinclude \
+            src/application/safe_decision_policy.cpp \
+            src/application/turkish_plate_grammar.cpp \
+            tests/safe_decision_policy_tests.cpp \
+            -lgtest_main -lgtest -pthread -o /tmp/fac-lpr-paddle-policy-tests
+      - name: Execute old and new decision regressions
+        run: /tmp/fac-lpr-paddle-policy-tests --gtest_color=no

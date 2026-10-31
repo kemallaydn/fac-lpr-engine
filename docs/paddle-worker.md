@@ -98,12 +98,20 @@ geçerlidir.
 - YOLO plakayı bulur, **LPRNet ana OCR** olarak kalır.
 - PaddleOCR aynı kırpılmış plakayı bağımsız okur, C++ içindeki
   `RecognitionEnsemble` kanıtları taşır.
-- Başlangıç aşamasında PaddleOCR'ın **candidate fusion ağırlığı 0**'dır:
-  tek başına plaka kabul ettiremez, güven puanı yükseltemez.
+- PaddleOCR'ın **candidate fusion ağırlığı 0**'dır: LPRNet'in kalibre edilmemiş
+  skoruyla toplanmaz, otomatik ACCEPTED üretemez.
+- **paddle.enabled=true** iken yeni güvenli karar mantığı devrededir.
+  Plaka formatına uygun, >=0.85 güvenli ve çelişmeyen Paddle sonucu;
+  LPRNet adayının bulunmadığı, zayıf olduğu veya tek bir eşleşen greedy
+  karakterinin güveni <0.65 olduğu hallerde **REVIEW-only** önerilebilir.
+  Önerinin confidence alanı 0'dır; Paddle skoru LPRNet skoru diye sunulmaz.
+  Güçlü LPRNet/Paddle uyuşmazlığında özgün aday korunur, sonuç REVIEW olur.
+  Birden fazla güçlü Paddle alternatifi varsa seçim yapılmaz.
 - LPRNet'in ham CTC dizisi seçili sonuçla birebir eşleşiyorsa karakter
   skorları kullanılabilir. Farklı beam-search adaylarına yanlış skor
   atanmaz.
 - İki sağlayıcı güçlü şekilde **çelişirse** karar `REVIEW`e düşebilir.
+  Yeni reason: `secondary_ocr_review_suggestion` (sadece inceleme, asla ACCEPTED).
   Bu nedenle mod tam anlamıyla pasif gözlemci değildir.
 - PaddleOCR worker'ı etkin ama erişilemezse provider optional olsa da
   sonuç `degraded` olur ve `REVIEW`e düşebilir. İstenmeyen gecikmeler
