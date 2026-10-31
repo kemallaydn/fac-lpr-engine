@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string_view>
 #include <vector>
 
 namespace fac_lpr::application {
@@ -24,9 +25,10 @@ namespace {
 // probabilities: a strong disagreement merely prevents automatic acceptance.
 [[nodiscard]] bool has_strong_character_disagreement(
     const std::span<const domain::RecognitionEvidence> evidence,
+    const std::string_view selected_plate,
     const float threshold) {
     for (const auto& primary : evidence) {
-        if (primary.greedy_text.empty() ||
+        if (primary.greedy_text.empty() || primary.greedy_text != selected_plate ||
             primary.greedy_text.size() != primary.greedy_character_confidences.size()) {
             continue;
         }
@@ -145,7 +147,8 @@ domain::PlateRecognitionResult SafeRecognitionDecisionPolicy::decide(
         review = true;
         result.decision_reasons.push_back(domain::RecognitionDecisionReason::conflicting_strong_candidates);
     }
-    if (has_strong_character_disagreement(evidence, config_.strong_conflict_threshold)) {
+    if (has_strong_character_disagreement(
+            evidence, result.plate, config_.strong_conflict_threshold)) {
         review = true;
         if (std::find(result.decision_reasons.begin(), result.decision_reasons.end(),
                       domain::RecognitionDecisionReason::conflicting_strong_candidates) ==
