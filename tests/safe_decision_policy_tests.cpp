@@ -58,6 +58,40 @@ TEST(SafeDecisionPolicy, StrongConflictingOcrCannotAutoAccept) {
         domain::RecognitionDecisionReason::conflicting_strong_candidates));
 }
 
+TEST(SafeDecisionPolicy, StrongCrossProviderCharacterConflictRequiresReview) {
+    auto primary = good_evidence();
+    primary.greedy_text = "34ABL489";
+    primary.greedy_character_confidences = {0.99F, 0.99F, 0.99F, 0.97F,
+                                            0.99F, 0.99F, 0.99F, 0.99F};
+    auto secondary = good_evidence();
+    secondary.source = "paddleocr";
+    secondary.candidates = {{"34A8L489", 0.92F, 0.92F, false}};
+    const std::vector evidence{primary, secondary};
+    const std::vector<domain::PlateCandidate> fused{{"34ABL489", 0.95F, 0.95F, true}};
+    const auto result = policy().decide(good_detection(), evidence, fused, {});
+    EXPECT_EQ(result.status, domain::RecognitionStatus::review);
+    EXPECT_TRUE(has_reason(result, domain::RecognitionDecisionReason::conflicting_strong_candidates));
+}
+
+TEST(SafeDecisionPolicy, WeakOrSameSourceCharacterConflictDoesNotInventReview) {
+    auto primary = good_evidence();
+    primary.greedy_text = "34ABL489";
+    primary.greedy_character_confidences = {0.99F, 0.99F, 0.99F, 0.97F,
+                                            0.99F, 0.99F, 0.99F, 0.99F};
+    auto secondary = good_evidence();
+    secondary.source = "paddleocr";
+    secondary.candidates = {{"34A8L489", 0.40F, 0.40F, false}};
+    const std::vector<domain::PlateCandidate> fused{{"34ABL489", 0.95F, 0.95F, true}};
+    EXPECT_EQ(policy().decide(good_detection(), std::vector{primary, secondary}, fused, {}).status,
+              domain::RecognitionStatus::accepted);
+
+    secondary.source = primary.source;
+    secondary.candidates.front().confidence = 0.95F;
+    secondary.candidates.front().calibrated_confidence = 0.95F;
+    EXPECT_EQ(policy().decide(good_detection(), std::vector{primary, secondary}, fused, {}).status,
+              domain::RecognitionStatus::accepted);
+}
+
 TEST(SafeDecisionPolicy, DegradedProviderSetIsAtMostReview) {
     const std::vector evidence{good_evidence()};
     const std::vector<domain::PlateCandidate> candidates{{"34ABC123", 0.95F, 0.95F, true}};
