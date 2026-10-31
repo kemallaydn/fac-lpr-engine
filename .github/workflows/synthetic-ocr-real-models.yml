@@ -65,14 +65,46 @@ jobs:
           python -m unittest discover -s tools/synthetic-plates -p 'test_*.py' -v
       - name: Generate 32 known-label plate crops
         run: python tools/synthetic-plates/generate.py --out artifacts/ocr-crops
+      - name: Compile real-inference native C++ decision harness
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -Iinclude \
+            tools/ocr-compare/native_policy_replay.cpp \
+            src/application/candidate_fusion.cpp \
+            src/application/safe_decision_policy.cpp \
+            src/application/turkish_plate_grammar.cpp \
+            -o /tmp/native-policy-replay
       - name: Run actual LPRNet ONNX and PaddleOCR predictions
         run: |
           python tools/ocr-compare/compare_real_ocr.py \
             --fixture-dir artifacts/ocr-crops \
             --model-dir models \
             --contract docs/lpr-cli-contract.example \
+            --native-input artifacts/ocr-reports/native-input.tsv \
             --json-out artifacts/ocr-reports/compare.json \
             --md-out artifacts/ocr-reports/compare.md
+      - name: Apply actual C++ fusion and decision policy to all real-model outputs
+        run: |
+          /tmp/native-policy-replay \
+            artifacts/ocr-reports/native-input.tsv \
+            artifacts/ocr-reports/native-policy.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          r = json.loads(Path("artifacts/ocr-reports/native-policy.json").read_text())
+          keys = ("lprnetGreedyCorrect", "paddleCorrect", "acceptedCorrect",
+                  "acceptedWrong", "reviewCorrect", "reviewWrong", "rejected",
+                  "reviewSuggestionCorrect", "reviewSuggestionWrong")
+          summary = "# Actual C++ decision policy on 32 synthetic crops\n\n"
+          summary += "Real OCR inference, native C++ replay. NOT YOLO/camera E2E or beam-search accuracy.\n\n"
+          summary += "| Metric | Count / 32 |\n|---|---:|\n"
+          summary += "".join("| %s | %s / 32 |\n" % (k, r[k]) for k in keys)
+          Path("artifacts/ocr-reports/native-policy.md").write_text(summary)
+          print(summary)
+          if "GITHUB_STEP_SUMMARY" in os.environ:
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+                  out.write(summary)
+          PY
       - name: Upload inference results (not a synthetic generator pass)
         if: always()
         uses: actions/upload-artifact@v4

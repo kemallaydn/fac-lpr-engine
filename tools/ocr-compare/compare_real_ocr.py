@@ -240,6 +240,21 @@ def run(args):
         "paddleModelName": "PP-OCRv5_mobile_rec",
         "summary": summary, "cases": cases,
     }
+    if args.native_input is not None:
+        args.native_input.parent.mkdir(parents=True, exist_ok=True)
+        with args.native_input.open("w", encoding="utf-8") as output:
+            for case in cases:
+                lpr = case["lprnet"]
+                paddle = case["paddle"]
+                values = [
+                    case["file"], case["expected"], lpr["text"],
+                    format(lpr["confidence"], ".9f"),
+                    ";".join(format(n, ".9f") for n in lpr["characterConfidences"]),
+                    paddle["text"], format(paddle["confidence"], ".9f"),
+                ]
+                if any("\t" in value or "\n" in value for value in values):
+                    raise ValueError("Unexpected delimiter in OCR model output")
+                output.write("\t".join(values) + "\n")
     args.json_out.parent.mkdir(parents=True, exist_ok=True)
     args.md_out.parent.mkdir(parents=True, exist_ok=True)
     args.json_out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -258,6 +273,7 @@ def main():
     p.add_argument("--fixture-dir", type=Path, required=True)
     p.add_argument("--model-dir", type=Path, default=ROOT / "models")
     p.add_argument("--contract", type=Path, default=ROOT / "docs/lpr-cli-contract.example")
+    p.add_argument("--native-input", type=Path, help="Write actual model predictions for compiled C++ policy")
     p.add_argument("--json-out", type=Path, required=True)
     p.add_argument("--md-out", type=Path, required=True)
     args = p.parse_args()
