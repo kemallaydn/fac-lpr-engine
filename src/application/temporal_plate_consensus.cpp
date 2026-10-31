@@ -108,7 +108,7 @@ TemporalConsensusResult TemporalPlateConsensus::observe(
 
     auto stable = *winner->second.best;
     stable.plate = winner->first;
-    stable.confidence = output.support;
+    // Keep the best frame's OCR confidence; consensus agreement is output.support.
     stable.status = domain::RecognitionStatus::accepted;
     stable.decision_reasons.clear();
     stable.decision_reasons.push_back(domain::RecognitionDecisionReason::accepted_consensus);
