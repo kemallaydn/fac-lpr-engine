@@ -25,6 +25,17 @@ target_compile_features(fac_lpr_paddle_adapter PUBLIC cxx_std_20)
 target_include_directories(fac_lpr_paddle_adapter PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_link_libraries(fac_lpr_paddle_adapter PUBLIC fac_lpr::application fac_lpr::crypto)
 
+# Optional local PaddleOCR Python worker transport; disabled for existing builds.
+option(FAC_LPR_WITH_PADDLE_HTTP_WORKER "Enable localhost PaddleOCR HTTP worker transport" OFF)
+if(FAC_LPR_WITH_PADDLE_HTTP_WORKER)
+    find_package(CURL REQUIRED)
+    find_package(nlohmann_json CONFIG REQUIRED)
+    target_sources(fac_lpr_paddle_adapter PRIVATE paddle/curl_paddle_ocr_worker.cpp)
+    target_link_libraries(fac_lpr_paddle_adapter PRIVATE
+        CURL::libcurl nlohmann_json::nlohmann_json)
+    target_compile_definitions(fac_lpr_paddle_adapter PUBLIC FAC_LPR_WITH_PADDLE_HTTP_WORKER=1)
+endif()
+
 add_library(fac_lpr_yolo STATIC yolo/yolo_pose_preprocessor.cpp yolo/yolo_pose_parser.cpp)
 add_library(fac_lpr::yolo ALIAS fac_lpr_yolo)
 target_compile_features(fac_lpr_yolo PUBLIC cxx_std_20)
@@ -143,6 +154,7 @@ if(FAC_LPR_WITH_ONNX_RUNTIME AND FAC_LPR_WITH_OPENCV)
         fac_lpr::geometry
         fac_lpr::crop
         fac_lpr::opencv_adapter
+        fac_lpr::paddle_adapter
     )
     if(MSVC)
         target_compile_options(fac_lpr_production_factory PRIVATE
