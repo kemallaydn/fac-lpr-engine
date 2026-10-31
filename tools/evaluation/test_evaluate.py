@@ -117,5 +117,47 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(report['metrics']['falseAcceptCount'], 1)
 
 
+
+    def test_multi_plate_accuracy_counts_all_required_plates(self):
+        rows = [{
+            'filename': 'multi.jpg', 'expected_status': 'ACCEPTED',
+            'required': ['34ABC123', '06DEF456', '35XYZ789'], 'optional': [],
+        }]
+        output = {
+            'recognitions': [
+                {'plate': '07WRONG', 'status': 'ACCEPTED'},
+                {'plate': '34ABC123', 'status': 'ACCEPTED'},
+                {'plate': '06DEF456', 'status': 'ACCEPTED'},
+            ],
+            'totalLatencyMs': 10.0,
+        }
+        with patch.object(evaluate, 'run_cli', return_value=output):
+            report = evaluate.score_run(
+                'candidate', rows, Path('.'), Path('cli'),
+                Path('models'), Path('contract'), 'v1',
+            )
+        metrics = report['metrics']
+        self.assertEqual(metrics['requiredPlateCount'], 3)
+        self.assertAlmostEqual(metrics['exactPlateAccuracy'], 2 / 3)
+        self.assertEqual(metrics['falseAcceptCount'], 1)
+
+    def test_duplicate_predictions_cannot_satisfy_multiple_required_plates(self):
+        rows = [{
+            'filename': 'duplicates.jpg', 'expected_status': 'ACCEPTED',
+            'required': ['34ABC123', '34ABC123'], 'optional': [],
+        }]
+        output = {
+            'recognitions': [{'plate': '34ABC123', 'status': 'ACCEPTED'}],
+            'totalLatencyMs': 10.0,
+        }
+        with patch.object(evaluate, 'run_cli', return_value=output):
+            report = evaluate.score_run(
+                'candidate', rows, Path('.'), Path('cli'),
+                Path('models'), Path('contract'), 'v1',
+            )
+        self.assertEqual(report['metrics']['requiredPlateCount'], 2)
+        self.assertAlmostEqual(report['metrics']['exactPlateAccuracy'], 0.5)
+
+
 if __name__ == '__main__':
     unittest.main()
