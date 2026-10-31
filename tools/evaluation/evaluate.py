@@ -80,10 +80,10 @@ def score_run(name, rows, fixture_dir, cli, model_dir, config, version):
             best = min((levenshtein(top, gt) / max(1, len(gt)) for gt in required), default=1.0)
             char_scores.append(max(0.0, 1.0 - best))
 
-        if accepted and not any(r.get('plate') in expected for r in accepted):
-            false_accepts += 1
-        if reviews and not any(r.get('plate') in expected for r in reviews):
-            false_reviews += 1
+        # Count incorrect recognition decisions, not frames containing only errors.
+        # A correct plate in the same frame must not mask an incorrect acceptance.
+        false_accepts += sum(r.get('plate') not in expected for r in accepted)
+        false_reviews += sum(r.get('plate') not in expected for r in reviews)
 
         latency = float(result.get('totalLatencyMs', math.inf))
         if math.isfinite(latency):
