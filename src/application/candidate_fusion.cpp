@@ -102,7 +102,9 @@ float WeightedMultiCropCandidateFusion::source_weight(
 std::vector<domain::PlateCandidate> WeightedMultiCropCandidateFusion::fuse(
     const std::span<const domain::RecognitionEvidence> evidence,
     const std::span<const LayoutEvidence> layout_evidence) const {
-    std::map<std::string, Aggregate> aggregate{};
+    // Crops produced by one recognizer on the same plate are correlated.
+    // Keep only its strongest evidence per text before combining providers.
+    std::map<std::string, std::map<std::string, Aggregate>> per_recognizer{};
     const auto total_weight = config_.recognition_weight +
                               config_.crop_quality_weight +
                               config_.candidate_margin_weight +
@@ -147,10 +149,20 @@ std::vector<domain::PlateCandidate> WeightedMultiCropCandidateFusion::fuse(
         }
 
         for (const auto& [text, local] : per_crop_support) {
+            auto& target = per_recognizer[source_evidence.source][text];
+            target.support = std::max(target.support, local.first);
+            target.format_valid = target.format_valid || local.second;
+        }
+    }
+
+    std::map<std::string, Aggregate> aggregate{};
+    for (const auto& [provider, candidates] : per_recognizer) {
+        (void)provider;
+        for (const auto& [text, local] : candidates) {
             auto& target = aggregate[text];
             target.support = clamp01(
-                1.0F - ((1.0F - target.support) * (1.0F - local.first)));
-            target.format_valid = target.format_valid || local.second;
+                1.0F - ((1.0F - target.support) * (1.0F - local.support)));
+            target.format_valid = target.format_valid || local.format_valid;
         }
     }
 
