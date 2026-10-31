@@ -45,6 +45,34 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+
+  synthetic-self-hosted:
+    # Run on the repo's existing Mac runner when hosted CI spending is disabled.
+    # This is still a fixture-generation test, not OCR inference validation.
+    if: ${{ github.event_name != 'workflow_dispatch' && vars.FAC_LPR_HOSTED_CI_ENABLED != 'true' }}
+    runs-on: [self-hosted, macOS, ARM64, fac-lpr]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create Python environment
+        shell: bash
+        run: |
+          python3 -m venv .venv-synthetic
+          .venv-synthetic/bin/python -m pip install 'Pillow==11.3.0'
+      - name: Check generator and deterministic PNG fixtures
+        shell: bash
+        run: .venv-synthetic/bin/python -m unittest discover -s tools/synthetic-plates -p 'test_*.py' -v
+      - name: Generate labelled fixtures
+        shell: bash
+        run: .venv-synthetic/bin/python tools/synthetic-plates/generate.py --out artifacts/synthetic-plates
+      - name: Upload synthetic PNGs and known-truth manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-ocr-fixtures-self-hosted
+          path: artifacts/synthetic-plates/
+          retention-days: 14
+          if-no-files-found: error
+
 # This checks fixture generation only. It does not claim that YOLO, LPRNet,
 # PaddleOCR or character fusion recognize these fixtures correctly.
 # Real-model accuracy must be evaluated separately with tools/evaluation.
