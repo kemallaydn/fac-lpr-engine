@@ -39,6 +39,12 @@ struct RecognitionEvidence final {
     std::vector<PlateCandidate> candidates{};
     float crop_quality{0.0F};
     double latency_ms{0.0};
+
+    // Raw CTC greedy result, separate from grammar-constrained plate candidates.
+    // Each confidence belongs to the character at the same index in greedy_text.
+    // Empty for OCR providers without character-level evidence.
+    std::string greedy_text{};
+    std::vector<float> greedy_character_confidences{};
 };
 
 struct PlateRecognitionResult final {
