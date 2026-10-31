@@ -8,6 +8,7 @@ on:
       - 'tools/synthetic-plates/**'
       - 'tools/paddle-worker/worker.py'
       - 'tools/ocr-compare/**'
+      - 'tests/fixtures/real/**'
       - 'models/**'
       - 'docs/lpr-cli-contract.example'
       - '.github/workflows/synthetic-ocr-real-models.yml'
@@ -17,6 +18,7 @@ on:
       - 'tools/synthetic-plates/**'
       - 'tools/paddle-worker/worker.py'
       - 'tools/ocr-compare/**'
+      - 'tests/fixtures/real/**'
       - 'models/**'
       - 'docs/lpr-cli-contract.example'
       - '.github/workflows/synthetic-ocr-real-models.yml'
@@ -105,6 +107,29 @@ jobs:
               with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
                   out.write(summary)
           PY
+      - name: Run real vehicle photos through YOLO and both OCRs
+        run: |
+          python tools/ocr-compare/evaluate_real_photos.py \
+            --fixture-dir tests/fixtures/real \
+            --model-dir models \
+            --contract docs/lpr-cli-contract.example \
+            --out artifacts/real-photo-reports
+      - name: Archive all 32 generated test images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-32-plate-test-images
+          path: artifacts/ocr-crops/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Archive real-photo detections and OCR outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-3-photos-yolo-ocr
+          path: artifacts/real-photo-reports/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload inference results (not a synthetic generator pass)
         if: always()
         uses: actions/upload-artifact@v4

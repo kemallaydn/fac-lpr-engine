@@ -54,6 +54,14 @@ jobs:
             artifacts/root-cause-report/report.md
           cat artifacts/root-cause-report/report.md
           cat artifacts/root-cause-report/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Archive all 32 root-cause test images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lprnet-root-cause-32-images
+          path: artifacts/root-cause-crops/
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload root cause metrics, examples, logs
         if: always()
         uses: actions/upload-artifact@v4
