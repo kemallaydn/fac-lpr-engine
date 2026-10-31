@@ -1,0 +1,102 @@
+name: real-photos-beam-paddle-policy-hosted
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/application/safe_decision_policy.cpp'
+      - 'tools/ocr-compare/native_real_paddle_policy.cpp'
+      - '.github/workflows/real-photos-beam-paddle-policy-hosted.yml'
+      - 'tests/fixtures/real/**'
+
+permissions:
+  contents: read
+
+jobs:
+  real-native-cpp-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: 'True'
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU inference dependencies
+        run: |
+          python -m pip install 'numpy==1.26.4' 'Pillow==11.3.0' \
+            'opencv-python-headless==4.11.0.86' 'onnxruntime==1.22.1' \
+            'paddlepaddle==3.2.0' 'paddleocr==3.3.0'
+      - name: Export real YOLO crops and actual LPRNet ONNX logits
+        run: |
+          python tools/ocr-compare/export_real_photo_logits.py \
+            --fixtures tests/fixtures/real --models models \
+            --contract docs/lpr-cli-contract.example \
+            --out artifacts/real-native-policy
+      - name: Run independent real PaddleOCR inference on those three crops
+        run: |
+          python tools/ocr-compare/evaluate_real_photos.py \
+            --fixture-dir tests/fixtures/real --model-dir models \
+            --contract docs/lpr-cli-contract.example \
+            --out artifacts/real-paddle-photos
+      - name: Join actual model outputs by filename, not by guessed plate
+        run: |
+          python - <<'PY'
+          import csv
+          import json
+          from pathlib import Path
+          root = Path("artifacts/real-native-policy")
+          a = json.loads((root / "export.json").read_text())
+          b = json.loads(Path("artifacts/real-paddle-photos/results.json").read_text())
+          left = {case["file"]: case for case in a["cases"]}
+          right = {case["file"]: case for case in b["cases"]}
+          if set(left) != {"plate_01.jpg", "plate_02.jpg", "plate_03.jpg"} or set(left) != set(right):
+              raise RuntimeError("Incorrect real fixture mapping")
+          with (root / "real-policy-input.tsv").open("w", newline="") as file:
+              writer = csv.writer(file, delimiter="\t", lineterminator="\n")
+              for filename in sorted(left):
+                  record = right[filename]
+                  if record["expectedRequired"] != [left[filename]["truth"]] or len(record["readings"]) != 1:
+                      raise RuntimeError("Cannot identify unambiguous YOLO crop")
+                  reading = record["readings"][0]
+                  writer.writerow([
+                      filename, left[filename]["truth"],
+                      str(root / "ctc" / (Path(filename).stem + ".f32")),
+                      reading["paddle"], reading["paddleConfidence"],
+                      left[filename]["detectorConfidence"]])
+          PY
+      - name: Compile production beam, fusion and native review policy with strict warnings
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Wconversion \
+            -Wsign-conversion -Werror -Iinclude \
+            tools/ocr-compare/native_real_paddle_policy.cpp \
+            src/infrastructure/lprnet/constrained_ctc_beam_search.cpp \
+            src/infrastructure/lprnet/ctc_decoder.cpp \
+            src/application/candidate_fusion.cpp \
+            src/application/safe_decision_policy.cpp \
+            src/application/turkish_plate_grammar.cpp \
+            -o /tmp/native-real-paddle-policy
+      - name: Check three independent model readings and zero unsafe acceptances
+        run: |
+          /tmp/native-real-paddle-policy \
+            artifacts/real-native-policy/real-policy-input.tsv \
+            docs/lpr-cli-contract.example \
+            artifacts/real-native-policy/report.md
+          cat artifacts/real-native-policy/report.md
+          cat artifacts/real-native-policy/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Archive actual model diagnostics and extracted crops
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-photo-paddle-beam-native-policy
+          path: |
+            artifacts/real-native-policy/report.md
+            artifacts/real-native-policy/export.json
+            artifacts/real-native-policy/crops/
+            artifacts/real-paddle-photos/results.json
+          if-no-files-found: warn
+          retention-days: 14
