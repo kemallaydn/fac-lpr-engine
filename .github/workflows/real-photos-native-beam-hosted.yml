@@ -7,6 +7,8 @@ on:
     paths:
       - 'tools/ocr-compare/export_real_photo_logits.py'
       - 'tools/ocr-compare/native_real_beam_replay.cpp'
+      - 'tools/ocr-compare/ctc_error_diagnostics.py'
+      - 'tools/ocr-compare/test_ctc_error_diagnostics.py'
       - 'tests/fixtures/real/**'
       - '.github/workflows/real-photos-native-beam-hosted.yml'
 
@@ -29,6 +31,8 @@ jobs:
         run: |
           python -m pip install 'numpy==1.26.4' \
             'opencv-python-headless==4.11.0.86' 'onnxruntime==1.22.1'
+      - name: Unit test general CTC character-loss analysis
+        run: python -m unittest discover -s tools/ocr-compare -p 'test_ctc_error_diagnostics.py' -v
       - name: Run actual YOLO detection, crop and LPRNet ONNX inference on three real JPEGs
         run: |
           python tools/ocr-compare/export_real_photo_logits.py \
@@ -53,6 +57,16 @@ jobs:
             artifacts/real-native-beam/beam-result.md
           cat artifacts/real-native-beam/beam-result.md
           cat artifacts/real-native-beam/beam-result.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Explain CTC character deletions using known real-photo labels
+        run: |
+          python tools/ocr-compare/ctc_error_diagnostics.py \
+            --kind real \
+            --rows artifacts/real-native-beam/native-real-input.tsv \
+            --native-report artifacts/real-native-beam/beam-result.json \
+            --contract docs/lpr-cli-contract.example \
+            --json-out artifacts/real-native-beam/ctc-character-loss.json \
+            --md-out artifacts/real-native-beam/ctc-character-loss.md
+          cat artifacts/real-native-beam/ctc-character-loss.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload real-photo native beam results and extracted crops
         if: always()
         uses: actions/upload-artifact@v4
@@ -61,6 +75,8 @@ jobs:
           path: |
             artifacts/real-native-beam/beam-result.json
             artifacts/real-native-beam/beam-result.md
+            artifacts/real-native-beam/ctc-character-loss.json
+            artifacts/real-native-beam/ctc-character-loss.md
             artifacts/real-native-beam/export.json
             artifacts/real-native-beam/crops/
           if-no-files-found: error

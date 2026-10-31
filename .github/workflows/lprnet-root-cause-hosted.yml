@@ -6,6 +6,8 @@ on:
     paths:
       - 'tools/ocr-compare/lprnet_root_cause.py'
       - 'tools/ocr-compare/native_beam_diagnose.cpp'
+      - 'tools/ocr-compare/ctc_error_diagnostics.py'
+      - 'tools/ocr-compare/test_ctc_error_diagnostics.py'
       - '.github/workflows/lprnet-root-cause-hosted.yml'
 permissions:
   contents: read
@@ -27,6 +29,8 @@ jobs:
             'opencv-python-headless==4.11.0.86' 'onnxruntime==1.22.1'
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends fonts-dejavu-core g++
+      - name: Unit test general CTC character-loss analysis
+        run: python -m unittest discover -s tools/ocr-compare -p 'test_ctc_error_diagnostics.py' -v
       - name: Generate the same 32 pinned synthetic crops
         run: python tools/synthetic-plates/generate.py --out artifacts/root-cause-crops
       - name: Infer 128 actual ONNX logits with preprocessing ablations
@@ -54,6 +58,16 @@ jobs:
             artifacts/root-cause-report/report.md
           cat artifacts/root-cause-report/report.md
           cat artifacts/root-cause-report/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Diagnose missed characters using real ONNX logits and native beam
+        run: |
+          python tools/ocr-compare/ctc_error_diagnostics.py \
+            --kind synthetic \
+            --rows artifacts/root-cause-intermediate/native-beam-input.tsv \
+            --native-report artifacts/root-cause-report/cases.json \
+            --contract docs/lpr-cli-contract.example \
+            --json-out artifacts/root-cause-report/ctc-character-loss.json \
+            --md-out artifacts/root-cause-report/ctc-character-loss.md
+          cat artifacts/root-cause-report/ctc-character-loss.md >> "$GITHUB_STEP_SUMMARY"
       - name: Archive all 32 root-cause test images
         if: always()
         uses: actions/upload-artifact@v4
