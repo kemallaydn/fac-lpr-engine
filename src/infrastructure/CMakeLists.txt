@@ -145,6 +145,10 @@ if(FAC_LPR_WITH_ONNX_RUNTIME AND FAC_LPR_WITH_OPENCV)
         PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/tools/lpr-cli>
         PRIVATE ${OpenCV_INCLUDE_DIRS}
     )
+    if(FAC_LPR_WITH_PADDLE_HTTP_WORKER)
+        find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs)
+        target_link_libraries(fac_lpr_production_factory PRIVATE ${OpenCV_LIBS})
+    endif()
     target_link_libraries(fac_lpr_production_factory PUBLIC
         fac_lpr::application
         fac_lpr::model
