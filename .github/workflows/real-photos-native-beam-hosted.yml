@@ -1,0 +1,67 @@
+name: real-photos-native-beam-hosted
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - 'tools/ocr-compare/export_real_photo_logits.py'
+      - 'tools/ocr-compare/native_real_beam_replay.cpp'
+      - 'tests/fixtures/real/**'
+      - '.github/workflows/real-photos-native-beam-hosted.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  native-real-beam:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real-model CPU inference dependencies
+        run: |
+          python -m pip install 'numpy==1.26.4' \
+            'opencv-python-headless==4.11.0.86' 'onnxruntime==1.22.1'
+      - name: Run actual YOLO detection, crop and LPRNet ONNX inference on three real JPEGs
+        run: |
+          python tools/ocr-compare/export_real_photo_logits.py \
+            --fixtures tests/fixtures/real \
+            --models models \
+            --contract docs/lpr-cli-contract.example \
+            --out artifacts/real-native-beam
+      - name: Compile actual production C++ CTC and beam search
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -Iinclude \
+            tools/ocr-compare/native_real_beam_replay.cpp \
+            src/infrastructure/lprnet/constrained_ctc_beam_search.cpp \
+            src/infrastructure/lprnet/ctc_decoder.cpp \
+            src/application/turkish_plate_grammar.cpp \
+            -o /tmp/native-real-beam
+      - name: Test native beam search on exported real-model logits
+        run: |
+          /tmp/native-real-beam \
+            artifacts/real-native-beam/native-real-input.tsv \
+            docs/lpr-cli-contract.example \
+            artifacts/real-native-beam/beam-result.json \
+            artifacts/real-native-beam/beam-result.md
+          cat artifacts/real-native-beam/beam-result.md
+          cat artifacts/real-native-beam/beam-result.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload real-photo native beam results and extracted crops
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-3-photo-native-beam-diagnostics
+          path:
+            artifacts/real-native-beam/beam-result.json
+            artifacts/real-native-beam/beam-result.md
+            artifacts/real-native-beam/export.json
+            artifacts/real-native-beam/crops/
+          if-no-files-found: warn
+          retention-days: 14
