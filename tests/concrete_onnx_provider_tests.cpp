@@ -189,6 +189,12 @@ TEST(LprNetOnnxOcrAdapter, ActiveV2MixedEpoch7DecodesBct34By24Contract) {
     const auto evidence = adapter.decode(outputs, {});
     ASSERT_FALSE(evidence.candidates.empty());
     EXPECT_EQ(evidence.candidates.front().text, "34ABC123");
+    EXPECT_EQ(evidence.greedy_text, "34ABC123");
+    ASSERT_EQ(evidence.greedy_character_confidences.size(), evidence.greedy_text.size());
+    for (const auto confidence : evidence.greedy_character_confidences) {
+        EXPECT_GT(confidence, 0.99F);
+        EXPECT_LE(confidence, 1.0F);
+    }
 }
 
 } // namespace
