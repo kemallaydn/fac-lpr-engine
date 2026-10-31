@@ -1,0 +1,86 @@
+name: lprnet-character-loss-diagnostics
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - 'tools/ocr-compare/ctc_root_cause_report.py'
+      - 'tools/ocr-compare/test_ctc_root_cause_report.py'
+      - '.github/workflows/lprnet-character-loss-diagnostics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  actual-onnx-ctc-diagnostics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned CPU model dependencies
+        run: |
+          python -m pip install 'numpy==1.26.4' 'Pillow==11.3.0' \
+            'opencv-python-headless==4.11.0.86' 'onnxruntime==1.22.1'
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-dejavu-core g++
+      - name: Unit test CTC path probabilities and forced alignment
+        run: |
+          python -m unittest discover -s tools/ocr-compare \
+            -p 'test_ctc_root_cause_report.py' -v
+      - name: Generate 32 labeled synthetic plate crops
+        run: python tools/synthetic-plates/generate.py --out artifacts/ctc-crops
+      - name: Infer 128 genuine ONNX outputs with four crop/color variants
+        run: |
+          python tools/ocr-compare/lprnet_root_cause.py \
+            --fixture-dir artifacts/ctc-crops \
+            --model-dir models --contract docs/lpr-cli-contract.example \
+            --out artifacts/ctc-synthetic-logits
+      - name: Infer three real vehicle JPEGs using pinned YOLO and LPRNet
+        run: |
+          python tools/ocr-compare/export_real_photo_logits.py \
+            --fixtures tests/fixtures/real --models models \
+            --contract docs/lpr-cli-contract.example \
+            --out artifacts/ctc-real-logits
+      - name: Compile the actual native C++ CTC beam decoder
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -Iinclude \
+            tools/ocr-compare/native_real_beam_replay.cpp \
+            src/infrastructure/lprnet/constrained_ctc_beam_search.cpp \
+            src/infrastructure/lprnet/ctc_decoder.cpp \
+            src/application/turkish_plate_grammar.cpp \
+            -o /tmp/native-real-ctc-beam
+      - name: Read actual model logits with native C++ beam search
+        run: |
+          mkdir -p artifacts/ctc-root-cause
+          /tmp/native-real-ctc-beam \
+            artifacts/ctc-real-logits/native-real-input.tsv \
+            docs/lpr-cli-contract.example \
+            artifacts/ctc-root-cause/real-beam.json \
+            artifacts/ctc-root-cause/real-beam.md
+      - name: Analyze blank, missing characters and CTC sequence likelihoods
+        run: |
+          python tools/ocr-compare/ctc_root_cause_report.py \
+            --contract docs/lpr-cli-contract.example \
+            --real-input artifacts/ctc-real-logits/native-real-input.tsv \
+            --synthetic-input artifacts/ctc-synthetic-logits/native-beam-input.tsv \
+            --beam-json artifacts/ctc-root-cause/real-beam.json \
+            --out artifacts/ctc-root-cause
+          cat artifacts/ctc-root-cause/ctc-diagnostics.md
+          cat artifacts/ctc-root-cause/ctc-diagnostics.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Archive root cause evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctc-character-loss-real-and-synthetic
+          path: |
+            artifacts/ctc-root-cause/
+            artifacts/ctc-real-logits/crops/
+          if-no-files-found: warn
+          retention-days: 14
