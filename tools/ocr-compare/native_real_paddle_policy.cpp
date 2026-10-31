@@ -16,6 +16,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -98,25 +99,30 @@ const char* status(domain::RecognitionStatus s) {
 } // namespace
 
 int main(int argc,char** argv) {
-    if (argc!=4) {
-        std::cerr<<"usage: native-real-paddle rows.tsv contract.ini summary.md\n";
+    if (argc!=4 && argc!=5) {
+        std::cerr<<"usage: native-real-paddle rows.tsv contract.ini summary.md [--conditional]\n";
         return 2;
     }
     try {
+        const bool conditional = argc==5 && std::string_view{argv[4]}=="--conditional";
+        if (argc==5 && !conditional) throw std::runtime_error("unexpected policy mode");
         auto decoder=beam(read_contract(argv[2]));
         app::CandidateFusionConfig fusion_config{};
         fusion_config.source_weights["paddleocr"]=0.0F;
         const app::WeightedMultiCropCandidateFusion fusion{fusion_config};
         app::DecisionConfig dc{};
         dc.enable_paddle_review_suggestions=true;
+        dc.enable_paddle_conditional_accept=conditional;
         const app::SafeRecognitionDecisionPolicy policy{dc};
         const app::TurkishPlateGrammar grammar{};
         std::ifstream rows{argv[1]};
         std::ofstream report{argv[3]};
         if (!rows || !report) throw std::runtime_error("input/report unavailable");
-        report<<"# Real photos: production C++ beam + Paddle REVIEW corroboration\n\n"
+        report<<(conditional ? "# Experimental conditional ACCEPT (opt-in)\n\n" :
+               "# Default Paddle REVIEW-only policy\n\n")
               <<"Real YOLO box crops + ONNX model + native beam and policy. "
-              <<"Not production perspective/multi-crop or confidence calibration.\n\n"
+              <<"Not production perspective/multi-crop or confidence calibration. "
+               <<"Crops use fixed diagnostic quality 0.9; NOT camera release evidence.\n\n"
               <<"| File | Expected | Greedy | Beam top-1 | Paddle | Decision | Status | Suggestion |\n"
               <<"|---|---|---|---|---|---|---|---|\n";
         unsigned n=0U,greedy=0U,top1=0U,final_correct=0U,
