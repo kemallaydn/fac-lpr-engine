@@ -75,3 +75,10 @@ ocr.beam_width=16
 ocr.result_limit=5
 ocr.classes_per_step=6
 ocr.confusion_weight=0.15
+
+# Optional PaddleOCR second opinion, served by tools/paddle-worker/worker.py.
+# Default OFF: existing LPRNet-only recognition remains unchanged.
+# To activate, enable FAC_LPR_WITH_PADDLE_HTTP_WORKER at CMake configure
+# and set paddle.enabled=true in your local copy of this contract.
+paddle.enabled=false
+paddle.port=8765
