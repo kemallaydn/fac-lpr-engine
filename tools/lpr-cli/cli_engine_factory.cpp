@@ -4,6 +4,14 @@
 #include <fac_lpr/application/candidate_fusion.hpp>
 #include <fac_lpr/application/confidence_calibration.hpp>
 #include <fac_lpr/application/engine_builder.hpp>
+#include <fac_lpr/application/image_validation.hpp>
+#if defined(FAC_LPR_WITH_PADDLE_HTTP_WORKER)
+#include <fac_lpr/infrastructure/paddle/curl_paddle_ocr_worker.hpp>
+#include <fac_lpr/infrastructure/paddle/paddle_ocr_adapter.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#endif
 #include <fac_lpr/application/error.hpp>
 #include <fac_lpr/application/safe_decision_policy.hpp>
 #include <fac_lpr/infrastructure/crop/crop_hypothesis_generator.hpp>
@@ -22,6 +30,9 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstring>
+#include <cstdint>
+#include <limits>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -39,6 +50,54 @@ namespace fac_lpr::cli {
 namespace {
 
 using Contract = std::unordered_map<std::string, std::string>;
+
+#if defined(FAC_LPR_WITH_PADDLE_HTTP_WORKER)
+class OpenCvPaddleImageEncoder final : public infrastructure::paddle::IImageEncoder {
+public:
+    [[nodiscard]] infrastructure::paddle::EncodedImage encode(
+        const application::ImageView& image,
+        const application::OperationContext& context) override {
+        if (context.cancellation_requested()) {
+            throw application::CancelledError("PaddleOCR encoding cancelled");
+        }
+        const auto validated = application::validate_image(image, application::PerformanceConfig{});
+        if (validated.view.width > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+            validated.view.height > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+            throw application::InvalidImageError("PaddleOCR crop dimensions exceed OpenCV limits");
+        }
+        const auto channels = validated.view.format == application::PixelFormat::gray8
+            ? CV_8UC1 : CV_8UC3;
+        cv::Mat source{
+            static_cast<int>(validated.view.height),
+            static_cast<int>(validated.view.width),
+            channels,
+            const_cast<std::byte*>(validated.view.bytes.data()),
+            validated.view.stride_bytes};
+        cv::Mat prepared{};
+        if (validated.view.format == application::PixelFormat::rgb8) {
+            cv::cvtColor(source, prepared, cv::COLOR_RGB2BGR);
+        } else {
+            prepared = source;
+        }
+        std::vector<uchar> png{};
+        try {
+            if (!cv::imencode(".png", prepared, png) || png.empty()) {
+                throw application::ProviderError("PaddleOCR PNG encoding failed");
+            }
+        } catch (const cv::Exception&) {
+            throw application::ProviderError("PaddleOCR PNG encoding failed");
+        }
+        if (context.cancellation_requested() || context.deadline_exceeded()) {
+            throw application::TimeoutError("PaddleOCR encoding deadline exceeded");
+        }
+        infrastructure::paddle::EncodedImage encoded{};
+        encoded.mime_type = "image/png";
+        encoded.bytes.resize(png.size());
+        std::memcpy(encoded.bytes.data(), png.data(), png.size());
+        return encoded;
+    }
+};
+#endif
 
 [[nodiscard]] std::string trim(std::string value) {
     const auto not_space = [](const unsigned char ch) { return std::isspace(ch) == 0; };
@@ -357,6 +416,24 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
     auto recognizer = std::make_shared<infrastructure::onnx::GenericOnnxOcrRecognizer>(
         ocr_session, ocr_adapter);
 
+    const auto paddle_setting = contract.find("paddle.enabled");
+    const auto paddle_mode = paddle_setting == contract.end() ? std::string{"false"} : paddle_setting->second;
+    if (paddle_mode != "true" && paddle_mode != "false") {
+        throw application::ConfigurationError("paddle.enabled must be true or false");
+    }
+    const bool paddle_enabled = paddle_mode == "true";
+    application::CandidateFusionConfig fusion_config{};
+    if (paddle_enabled) {
+#if defined(FAC_LPR_WITH_PADDLE_HTTP_WORKER)
+        // Observation-only initial rollout. Paddle cannot inflate LPRNet confidence
+        // or independently become ACCEPTED before field-data calibration.
+        fusion_config.source_weights["paddleocr"] = 0.0F;
+#else
+        throw application::ConfigurationError(
+            "paddle.enabled requires FAC_LPR_WITH_PADDLE_HTTP_WORKER=ON");
+#endif
+    }
+
     application::LprEngineBuilder builder{};
     builder.detector(std::move(detector))
         .geometry("plate_geometry", std::make_shared<infrastructure::geometry::PlateGeometryEvaluatorAdapter>())
@@ -374,10 +451,35 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
             std::make_shared<infrastructure::opencv::ConnectedComponentPlateLayoutAnalyzer>())
         .candidate_fusion(
             "weighted_multi_crop",
-            std::make_shared<application::WeightedMultiCropCandidateFusion>())
+            std::make_shared<application::WeightedMultiCropCandidateFusion>(fusion_config))
         .decision_policy(
             "safe_default",
             std::make_shared<application::SafeRecognitionDecisionPolicy>());
+
+#if defined(FAC_LPR_WITH_PADDLE_HTTP_WORKER)
+    if (paddle_enabled) {
+        auto port = static_cast<std::size_t>(8765U);
+        if (contract.contains("paddle.port")) {
+            port = parse_size(contract, "paddle.port");
+        }
+        if (port < 1024U || port > 65535U) {
+            throw application::ConfigurationError("paddle.port must be in [1024,65535]");
+        }
+        auto worker = std::make_shared<infrastructure::paddle::CurlPaddleOcrWorker>(
+            static_cast<std::uint16_t>(port));
+        auto encoder = std::make_shared<OpenCvPaddleImageEncoder>();
+        infrastructure::paddle::PaddleOcrProviderConfig paddle_config{};
+        paddle_config.timeout = std::chrono::milliseconds{1200};
+        auto paddle_provider = std::make_shared<infrastructure::paddle::PaddleOcrAdapter>(
+            paddle_config, std::move(encoder), std::move(worker));
+        builder.recognizer(application::RecognizerRegistration{
+            .provider = std::move(paddle_provider),
+            .weight = 1.0F,
+            .timeout = std::chrono::milliseconds{1300},
+            .required = false,
+            .enabled = true});
+    }
+#endif
 
     auto pipeline = builder.build();
     activate_production_pipeline(pipeline, model_directory, contract_path);
