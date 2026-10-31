@@ -102,8 +102,13 @@ geçerlidir.
   skoruyla toplanmaz, otomatik ACCEPTED üretemez.
 - **paddle.enabled=true** iken yeni güvenli karar mantığı devrededir.
   Plaka formatına uygun, >=0.85 güvenli ve çelişmeyen Paddle sonucu;
-  LPRNet adayının bulunmadığı, zayıf olduğu veya tek bir eşleşen greedy
-  karakterinin güveni <0.65 olduğu hallerde **REVIEW-only** önerilebilir.
+  LPRNet adayının bulunmadığı, zayıf olduğu, tek bir eşleşen greedy
+  karakterinin güveni <0.65 olduğu **veya Paddle metni LPRNet'in geçerli
+  beam-search alternatiflerinden biriyle birebir eşleştiğinde** yalnızca
+  **REVIEW-only** önerilebilir. İkinci durumda güçlü bir LPRNet top-1
+  adayı bile Paddle ile eşleşen top-5 alternatifi engellemez; fakat
+  güçlü iki sağlayıcıdan çelişkili okumalar varsa otomatik ACCEPTED
+  üretilmez.
   Önerinin confidence alanı 0'dır; Paddle skoru LPRNet skoru diye sunulmaz.
   Güçlü LPRNet/Paddle uyuşmazlığında özgün aday korunur, sonuç REVIEW olur.
   Birden fazla güçlü Paddle alternatifi varsa seçim yapılmaz.

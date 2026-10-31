@@ -109,6 +109,28 @@ struct PaddleReview final {
     return review;
 }
 
+// Verify that Paddle's independently read text was actually produced as a
+// grammar-valid candidate by LPRNet's native beam search, including its
+// non-top-1 candidates. Never infer this from Paddle alone, a greedy string,
+// or another provider's candidates. The source model's score remains separate
+// from Paddle's score and must not be interpreted as calibrated probability.
+[[nodiscard]] bool lprnet_beam_supports(
+    const std::span<const domain::RecognitionEvidence> evidence,
+    const std::string_view paddle_text) {
+    for (const auto& source : evidence) {
+        if (source.source != "lprnet" && source.source != "lprnet_onnx") {
+            continue;
+        }
+        for (const auto& candidate : source.candidates) {
+            if (candidate.format_valid && candidate.text == paddle_text) {
+                (void)effective_confidence(candidate);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // A position score can only be used for the exact greedy text that produced
 // it. If any aligned LPR crop is confident in the disputed position, do not
 // silently replace that character.
@@ -215,9 +237,11 @@ domain::PlateRecognitionResult SafeRecognitionDecisionPolicy::decide(
     }
 
     // Opt-in second opinion: a single grammar-valid Paddle reading can be
-    // exposed as a REVIEW-only candidate when LPRNet is missing/weak, or a
-    // single aligned greedy character is explicitly uncertain. Never upgrade
-    // to ACCEPTED or claim the two providers' scores are calibrated alike.
+    // exposed as a REVIEW-only candidate when LPRNet is missing/weak, a
+    // single aligned greedy character is explicitly uncertain, OR the exact
+    // Paddle text is one of the native LPRNet beam's valid alternatives.
+    // This is independent corroboration of a *candidate*, not calibrated
+    // evidence for automatic acceptance. Never promote a disagreement to ACCEPTED.
     bool paddle_disagreement = false;
     if (config_.enable_paddle_review_suggestions) {
         const auto paddle = paddle_review_evidence(
@@ -226,11 +250,16 @@ domain::PlateRecognitionResult SafeRecognitionDecisionPolicy::decide(
         const bool primary_ambiguous =
             valid.size() > 1U && valid[1]->text != valid.front()->text &&
             effective_confidence(*valid[1]) >= config_.strong_conflict_threshold;
+        const bool independent_beam_match =
+            paddle.unanimous &&
+            lprnet_beam_supports(evidence, paddle.unanimous->text);
         if (!paddle.ambiguous && paddle.unanimous &&
-            paddle.unanimous->text != result.plate && !primary_ambiguous &&
-            (valid.empty() || result.confidence < config_.accepted_confidence_threshold ||
-             weak_single_character_disagreement(
-                 evidence, result.plate, paddle.unanimous->text))) {
+            paddle.unanimous->text != result.plate &&
+            (independent_beam_match ||
+             (!primary_ambiguous &&
+              (valid.empty() || result.confidence < config_.accepted_confidence_threshold ||
+               weak_single_character_disagreement(
+                   evidence, result.plate, paddle.unanimous->text))))) {
             result.plate = paddle.unanimous->text;
             result.confidence = 0.0F; // not calibrated as LPRNet confidence
             result.alternatives.push_back(*paddle.unanimous);
