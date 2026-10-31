@@ -18,6 +18,40 @@ namespace {
     return value;
 }
 
+// Compare only raw CTC characters with their own scores. Grammar/beam-search
+// candidates can differ from greedy output, so their positions cannot reuse
+// these scores. Provider score scales are not combined or treated as calibrated
+// probabilities: a strong disagreement merely prevents automatic acceptance.
+[[nodiscard]] bool has_strong_character_disagreement(
+    const std::span<const domain::RecognitionEvidence> evidence,
+    const float threshold) {
+    for (const auto& primary : evidence) {
+        if (primary.greedy_text.empty() ||
+            primary.greedy_text.size() != primary.greedy_character_confidences.size()) {
+            continue;
+        }
+        for (const auto& secondary : evidence) {
+            if (secondary.source == primary.source) {
+                continue;
+            }
+            for (const auto& candidate : secondary.candidates) {
+                if (candidate.text.size() != primary.greedy_text.size() ||
+                    effective_confidence(candidate) < threshold) {
+                    continue;
+                }
+                for (std::size_t index = 0U; index < primary.greedy_text.size(); ++index) {
+                    const auto char_confidence = primary.greedy_character_confidences[index];
+                    if (primary.greedy_text[index] != candidate.text[index] &&
+                        std::isfinite(char_confidence) && char_confidence >= threshold) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 SafeRecognitionDecisionPolicy::SafeRecognitionDecisionPolicy(DecisionConfig config)
@@ -110,6 +144,15 @@ domain::PlateRecognitionResult SafeRecognitionDecisionPolicy::decide(
         effective_confidence(*valid[1]) >= config_.strong_conflict_threshold) {
         review = true;
         result.decision_reasons.push_back(domain::RecognitionDecisionReason::conflicting_strong_candidates);
+    }
+    if (has_strong_character_disagreement(evidence, config_.strong_conflict_threshold)) {
+        review = true;
+        if (std::find(result.decision_reasons.begin(), result.decision_reasons.end(),
+                      domain::RecognitionDecisionReason::conflicting_strong_candidates) ==
+            result.decision_reasons.end()) {
+            result.decision_reasons.push_back(
+                domain::RecognitionDecisionReason::conflicting_strong_candidates);
+        }
     }
     if (result.degraded) {
         review = true;
