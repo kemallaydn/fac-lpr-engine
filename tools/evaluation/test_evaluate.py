@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import evaluate
 
@@ -67,6 +68,53 @@ class EvaluationTests(unittest.TestCase):
         text = evaluate.render_markdown(report)
         self.assertIn('False accepted', text)
         self.assertIn('Exact plate accuracy', text)
+
+
+    def test_multiple_accepted_results_count_each_false_accept(self):
+        rows = [{
+            'filename': 'multi.jpg',
+            'expected_status': 'ACCEPTED',
+            'required': ['34ABC123'],
+            'optional': [],
+        }]
+        output = {
+            'recognitions': [
+                {'status': 'ACCEPTED', 'plate': '34ABC123', 'geometryScore': 1.0},
+                {'status': 'ACCEPTED', 'plate': '06WRONG', 'geometryScore': 1.0},
+                {'status': 'ACCEPTED', 'plate': '07WRONG', 'geometryScore': 1.0},
+                {'status': 'REVIEW', 'plate': '34ABC123'},
+                {'status': 'REVIEW', 'plate': '08WRONG'},
+            ],
+            'totalLatencyMs': 10.0,
+        }
+        with patch.object(evaluate, 'run_cli', return_value=output):
+            report = evaluate.score_run(
+                'candidate', rows, Path('.'), Path('cli'),
+                Path('models'), Path('contract'), 'v1',
+            )
+        self.assertEqual(report['metrics']['falseAcceptCount'], 2)
+        self.assertEqual(report['metrics']['falseReviewCount'], 1)
+        self.assertEqual(report['metrics']['exactPlateAccuracy'], 1.0)
+
+    def test_correct_accepted_plate_does_not_hide_wrong_accepted_plate(self):
+        rows = [{
+            'filename': 'multi.jpg', 'expected_status': 'ACCEPTED',
+            'required': ['34ABC123'], 'optional': ['06DEF456'],
+        }]
+        output = {
+            'recognitions': [
+                {'status': 'ACCEPTED', 'plate': '34ABC123'},
+                {'status': 'ACCEPTED', 'plate': '06DEF456'},
+                {'status': 'ACCEPTED', 'plate': '35BAD999'},
+            ],
+            'totalLatencyMs': 10.0,
+        }
+        with patch.object(evaluate, 'run_cli', return_value=output):
+            report = evaluate.score_run(
+                'candidate', rows, Path('.'), Path('cli'),
+                Path('models'), Path('contract'), 'v1',
+            )
+        self.assertEqual(report['metrics']['falseAcceptCount'], 1)
 
 
 if __name__ == '__main__':
