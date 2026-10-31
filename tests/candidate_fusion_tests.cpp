@@ -110,4 +110,39 @@ TEST(CandidateFusion, InvalidConfigurationFailsFast) {
         fac_lpr::application::ConfigurationError);
 }
 
+
+TEST(CandidateFusion, RepeatedCropsFromSameRecognizerDoNotInflateConfidence) {
+    const WeightedMultiCropCandidateFusion fusion{};
+    const std::vector<RecognitionEvidence> single{
+        evidence("lprnet", 0.80F, {
+            PlateCandidate{.text = "34ABC123", .confidence = 0.72F,
+                           .calibrated_confidence = 0.72F, .format_valid = true}})};
+    auto repeated = single;
+    repeated.insert(repeated.end(), 7U, single.front());
+
+    const auto baseline = fusion.fuse(single, {});
+    const auto duplicated = fusion.fuse(repeated, {});
+    ASSERT_EQ(baseline.size(), 1U);
+    ASSERT_EQ(duplicated.size(), 1U);
+    EXPECT_FLOAT_EQ(duplicated.front().confidence, baseline.front().confidence);
+}
+
+TEST(CandidateFusion, SameRecognizerUsesBestCropWithoutCompounding) {
+    const WeightedMultiCropCandidateFusion fusion{};
+    const auto weaker = evidence("lprnet", 0.80F, {
+        PlateCandidate{.text = "34ABC123", .confidence = 0.60F,
+                       .calibrated_confidence = 0.60F, .format_valid = true}});
+    const auto stronger = evidence("lprnet", 0.90F, {
+        PlateCandidate{.text = "34ABC123", .confidence = 0.90F,
+                       .calibrated_confidence = 0.90F, .format_valid = true}});
+    const std::vector<RecognitionEvidence> both{weaker, stronger};
+    const std::vector<RecognitionEvidence> best_only{stronger};
+
+    const auto fused = fusion.fuse(both, {});
+    const auto baseline = fusion.fuse(best_only, {});
+    ASSERT_EQ(fused.size(), 1U);
+    ASSERT_EQ(baseline.size(), 1U);
+    EXPECT_FLOAT_EQ(fused.front().confidence, baseline.front().confidence);
+}
+
 } // namespace
