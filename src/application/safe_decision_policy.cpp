@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace fac_lpr::application {
@@ -131,6 +132,80 @@ struct PaddleReview final {
     return false;
 }
 
+// Experimental cross-provider corroboration. Paddle never supplies a
+// calibrated confidence. Return ONLY the native LPRNet candidate score.
+[[nodiscard]] std::optional<std::pair<std::string, float>> conditional_corroboration(
+    const std::span<const domain::RecognitionEvidence> evidence,
+    const std::vector<const domain::PlateCandidate*>& valid,
+    const DecisionConfig& config,
+    const float geometry, const float crop, const bool degraded) {
+    if (!config.enable_paddle_conditional_accept || degraded || valid.empty() ||
+        !std::isfinite(geometry) || geometry < config.minimum_geometry_score ||
+        crop < config.minimum_crop_quality) {
+        return std::nullopt;
+    }
+    const TurkishPlateGrammar grammar{};
+    std::optional<std::string> selected{};
+    float paddle_best = 0.0F;
+    for (const auto& source : evidence) {
+        if (source.source != "paddleocr") continue;
+        for (const auto& candidate : source.candidates) {
+            const float score = candidate.confidence;
+            if (!std::isfinite(score) || score < 0.0F || score > 1.0F) {
+                throw ProviderError("invalid PaddleOCR candidate confidence");
+            }
+            if (score < config.strong_conflict_threshold) continue;
+            // A second strong reading, even below the ACCEPT threshold,
+            // vetoes an automatic decision if it disagrees.
+            if (!grammar.is_valid_normalized(candidate.text) ||
+                (selected && *selected != candidate.text)) return std::nullopt;
+            selected = candidate.text;
+            paddle_best = std::max(paddle_best, score);
+        }
+    }
+    if (!selected || paddle_best < config.paddle_accept_minimum_score) return std::nullopt;
+    std::optional<float> lpr_support{};
+    for (const auto& source : evidence) {
+        if (source.source != "lprnet" && source.source != "lprnet_onnx") continue;
+        for (const auto& candidate : source.candidates) {
+            if (candidate.format_valid && candidate.text == *selected) {
+                const float score = effective_confidence(candidate);
+                lpr_support = lpr_support ? std::max(*lpr_support, score) : score;
+            }
+        }
+        // Only positional scores for an exactly aligned CTC greedy string.
+        if (source.greedy_text.size() == selected->size() &&
+            source.greedy_character_confidences.size() == selected->size()) {
+            for (std::size_t i = 0U; i < selected->size(); ++i) {
+                const float score = source.greedy_character_confidences[i];
+                if (source.greedy_text[i] != (*selected)[i] &&
+                    std::isfinite(score) && score >= config.strong_conflict_threshold) {
+                    return std::nullopt;
+                }
+            }
+        }
+    }
+    if (!lpr_support || *lpr_support < config.paddle_accept_minimum_lpr_score) {
+        return std::nullopt;
+    }
+    if (valid[0]->text == *selected) {
+        const float winner = effective_confidence(*valid[0]);
+        const float second = valid.size() > 1U ? effective_confidence(*valid[1]) : 0.0F;
+        if (winner >= config.accepted_confidence_threshold &&
+            winner - second >= config.paddle_accept_min_top_gap) {
+            return std::pair{*selected, *lpr_support};
+        }
+    } else if (valid.size() >= 2U && valid[1]->text == *selected) {
+        const float winner = effective_confidence(*valid[0]);
+        const float runner = effective_confidence(*valid[1]);
+        if (runner >= config.accepted_confidence_threshold &&
+            winner - runner <= config.paddle_accept_max_non_top_gap) {
+            return std::pair{*selected, *lpr_support};
+        }
+    }
+    return std::nullopt;
+}
+
 // A position score can only be used for the exact greedy text that produced
 // it. If any aligned LPR crop is confident in the disputed position, do not
 // silently replace that character.
@@ -233,6 +308,17 @@ domain::PlateRecognitionResult SafeRecognitionDecisionPolicy::decide(
         detection.confidence < config_.minimum_effective_detector_confidence) {
         result.status = domain::RecognitionStatus::rejected;
         result.decision_reasons.push_back(domain::RecognitionDecisionReason::detector_confidence_below_minimum);
+        return result;
+    }
+
+    if (const auto independent = conditional_corroboration(
+            evidence, valid, config_, detection.geometry_score,
+            result.crop_quality, result.degraded)) {
+        result.plate = independent->first;
+        result.confidence = independent->second;
+        result.status = domain::RecognitionStatus::accepted;
+        result.decision_reasons.push_back(
+            domain::RecognitionDecisionReason::accepted_cross_provider_corroboration);
         return result;
     }
 

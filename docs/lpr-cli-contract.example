@@ -82,3 +82,6 @@ ocr.confusion_weight=0.15
 # and set paddle.enabled=true in your local copy of this contract.
 paddle.enabled=false
 paddle.port=8765
+
+# Experimental. Keep false until representative real video validation.
+paddle.conditional_accept=false

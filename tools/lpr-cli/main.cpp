@@ -123,6 +123,7 @@ void print_usage() {
         case Reason::candidate_confidence_below_accept: return "candidate_confidence_below_accept";
         case Reason::conflicting_strong_candidates: return "conflicting_strong_candidates";
         case Reason::secondary_ocr_review_suggestion: return "secondary_ocr_review_suggestion";
+        case Reason::accepted_cross_provider_corroboration: return "accepted_cross_provider_corroboration";
     }
     return "unknown";
 }

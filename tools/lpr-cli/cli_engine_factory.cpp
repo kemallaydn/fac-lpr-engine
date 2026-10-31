@@ -436,6 +436,15 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
 
     application::DecisionConfig decision_config{};
     decision_config.enable_paddle_review_suggestions = paddle_enabled;
+    const auto accept_setting = contract.find("paddle.conditional_accept");
+    const auto accept_mode = accept_setting == contract.end() ? std::string{"false"} : accept_setting->second;
+    if (accept_mode != "true" && accept_mode != "false") {
+        throw application::ConfigurationError("paddle.conditional_accept must be true or false");
+    }
+    decision_config.enable_paddle_conditional_accept = accept_mode == "true";
+    if (decision_config.enable_paddle_conditional_accept && !paddle_enabled) {
+        throw application::ConfigurationError("conditional acceptance requires paddle.enabled=true");
+    }
     application::LprEngineBuilder builder{};
     builder.detector(std::move(detector))
         .geometry("plate_geometry", std::make_shared<infrastructure::geometry::PlateGeometryEvaluatorAdapter>())

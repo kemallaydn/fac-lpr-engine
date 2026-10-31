@@ -47,6 +47,12 @@ struct DecisionConfig final {
     float minimum_effective_detector_confidence{0.50F};
     // Opt-in secondary OCR suggestion. Never permits automatic acceptance.
     bool enable_paddle_review_suggestions{false};
+    // Experimental opt-in: requires independent real-video validation.
+    bool enable_paddle_conditional_accept{false};
+    float paddle_accept_minimum_score{0.90F};
+    float paddle_accept_minimum_lpr_score{0.78F};
+    float paddle_accept_max_non_top_gap{0.05F};
+    float paddle_accept_min_top_gap{0.10F};
     bool allow_accept_when_degraded{false};
     bool fail_closed{true};
 };
@@ -121,6 +127,17 @@ inline void validate_engine_config(const EngineConfig& config) {
     detail::require_unit_interval(config.decision.minimum_crop_quality, "decision.minimum_crop_quality");
     detail::require_unit_interval(config.decision.minimum_geometry_score, "decision.minimum_geometry_score");
     detail::require_unit_interval(config.decision.minimum_effective_detector_confidence, "decision.minimum_effective_detector_confidence");
+    detail::require_unit_interval(config.decision.paddle_accept_minimum_score, "decision.paddle_accept_minimum_score");
+    detail::require_unit_interval(config.decision.paddle_accept_minimum_lpr_score, "decision.paddle_accept_minimum_lpr_score");
+    detail::require_unit_interval(config.decision.paddle_accept_max_non_top_gap, "decision.paddle_accept_max_non_top_gap");
+    detail::require_unit_interval(config.decision.paddle_accept_min_top_gap, "decision.paddle_accept_min_top_gap");
+    if (config.decision.enable_paddle_conditional_accept &&
+        !config.decision.enable_paddle_review_suggestions) {
+        throw ConfigurationError("conditional Paddle acceptance requires Paddle review evidence");
+    }
+    if (config.decision.paddle_accept_minimum_lpr_score < config.decision.accepted_confidence_threshold) {
+        throw ConfigurationError("conditional Paddle LPR score cannot be below accepted threshold");
+    }
     if (config.decision.review_confidence_threshold > config.decision.accepted_confidence_threshold) {
         throw ConfigurationError("decision.review_confidence_threshold cannot exceed accepted threshold");
     }

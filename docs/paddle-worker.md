@@ -99,7 +99,8 @@ geçerlidir.
 - PaddleOCR aynı kırpılmış plakayı bağımsız okur, C++ içindeki
   `RecognitionEnsemble` kanıtları taşır.
 - PaddleOCR'ın **candidate fusion ağırlığı 0**'dır: LPRNet'in kalibre edilmemiş
-  skoruyla toplanmaz, otomatik ACCEPTED üretemez.
+  skoruyla toplanmaz. Varsayılan olarak REVIEW-only kalır; deneysel koşullu
+  kabul ancak ayrı bir ayarla etkinleşir.
 - **paddle.enabled=true** iken yeni güvenli karar mantığı devrededir.
   Plaka formatına uygun, >=0.85 güvenli ve çelişmeyen Paddle sonucu;
   LPRNet adayının bulunmadığı, zayıf olduğu, tek bir eşleşen greedy
@@ -125,7 +126,33 @@ geçerlidir.
 - Worker ham plakayı loglamaz veya diske kaydetmez; yalnızca loopback'te
   çalışır. Başka makineden erişim için güvenlik tasarımını yeniden ele al.
 
-## 5. Sözdizimi ve doğrulama
+## 5. Deneysel koşullu kabul, varsayılan KAPALI
+
+`paddle.conditional_accept=false` mevcut güvenli davranışı korur.
+Yalnızca geniş ve bağımsız gerçek kamera verisiyle yanlış kabul oranı
+ölçüldükten sonra kontrollü açılmalıdır. `paddle.enabled=true` gerektirir.
+
+`paddle.conditional_accept=true` ile PaddleOCR ham skoru en az 0.90,
+aynı metni içeren LPRNet beam adayı en az 0.78 olmalıdır. Paddle ve LPRNet
+skorları birleştirilmez; final confidence LPRNet'in skorudur.
+Aynı karede birden fazla güçlü fakat farklı Paddle okuması, çok güçlü
+çelişen hizalı greedy karakteri, başarısız provider, zayıf dedektör,
+geometri veya crop kalitesi otomatik kabule engeldir.
+Top-1 LPR adayıyla eşleşmede ikinci adaya en az 0.10 fark;
+LPR top-2 alternatifiyle eşleşmede top-1 ile en çok 0.05 fark aranır.
+Diğer top-5 adayları ancak REVIEW önerisi olabilir.
+
+Bu, TEK KARELIK `ACCEPTED` teknik kararıdır. Video için ayrıca
+`RecognitionStreamSession` gerekir: varsayılan en az 2 ayrı kabul
+edilmiş kare, 1500 ms geçmiş TTL ve eşleşen tekrarlı çıktılar için
+2000 ms cooldown. Bunlar sabit bir sonuç gecikmesi değil, kriterdir.
+RTSP bağlantısı, araç kimliği takibi, kapı/bariyer yetkilendirmesi
+ve dış sistem event teslimatı motorun sorumluluğu değildir.
+
+Üç gerçek fotoğrafta 3/3 REVIEW önerisi bulunması bu koşullu otomatik
+kabul modunu canlıda açmak için yeterli kanıt DEĞİLDİR.
+
+## 6. Sözdizimi ve doğrulama
 
 ```bash
 python -m py_compile tools/paddle-worker/worker.py tools/paddle-worker/test_worker.py
