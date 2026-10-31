@@ -92,6 +92,23 @@ TEST(SafeDecisionPolicy, WeakOrSameSourceCharacterConflictDoesNotInventReview) {
               domain::RecognitionStatus::accepted);
 }
 
+TEST(SafeDecisionPolicy, GreedyScoresAreNeverAppliedToDifferentBeamCandidate) {
+    auto primary = good_evidence();
+    // Beam search may choose a valid plate different from raw greedy CTC output.
+    // Raw positional scores must not be used for the beam-selected candidate.
+    primary.greedy_text = "34A8L489";
+    primary.greedy_character_confidences = {0.99F, 0.99F, 0.99F, 0.99F,
+                                            0.99F, 0.99F, 0.99F, 0.99F};
+    auto secondary = good_evidence();
+    secondary.source = "paddleocr";
+    secondary.candidates = {{"34ABL489", 0.93F, 0.93F, false}};
+    const std::vector evidence{primary, secondary};
+    const std::vector<domain::PlateCandidate> selected{
+        {"34ABL489", 0.95F, 0.95F, true}};
+    const auto result = policy().decide(good_detection(), evidence, selected, {});
+    EXPECT_EQ(result.status, domain::RecognitionStatus::accepted);
+}
+
 TEST(SafeDecisionPolicy, DegradedProviderSetIsAtMostReview) {
     const std::vector evidence{good_evidence()};
     const std::vector<domain::PlateCandidate> candidates{{"34ABC123", 0.95F, 0.95F, true}};
