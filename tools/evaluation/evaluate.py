@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+from collections import Counter
 import json
 import math
 import statistics
@@ -47,6 +48,7 @@ def run_cli(cli: Path, image: Path, model_dir: Path, config: Path):
 
 def score_run(name, rows, fixture_dir, cli, model_dir, config, version):
     exact_hits = 0
+    required_plate_count = 0
     char_scores = []
     detected = 0
     aligned = 0
@@ -73,9 +75,14 @@ def score_run(name, rows, fixture_dir, cli, model_dir, config, version):
             status = r.get('status', 'REJECTED')
             statuses[status] = statuses.get(status, 0) + 1
 
+        # Match each required plate only once, even for multi-plate frames.
+        available = Counter(predicted)
+        required_plate_count += len(required)
+        for plate in required:
+            if available[plate] > 0:
+                exact_hits += 1
+                available[plate] -= 1
         top = predicted[0] if predicted else ''
-        if required and top in required:
-            exact_hits += 1
         if required:
             best = min((levenshtein(top, gt) / max(1, len(gt)) for gt in required), default=1.0)
             char_scores.append(max(0.0, 1.0 - best))
@@ -93,7 +100,8 @@ def score_run(name, rows, fixture_dir, cli, model_dir, config, version):
     n = len(rows)
     metrics = {
         'datasetSize': n,
-        'exactPlateAccuracy': exact_hits / n,
+        'exactPlateAccuracy': exact_hits / required_plate_count if required_plate_count else 0.0,
+        'requiredPlateCount': required_plate_count,
         'characterAccuracy': statistics.fmean(char_scores) if char_scores else 0.0,
         'detectionRecall': detected / n,
         'alignmentSuccess': aligned / n,
