@@ -1,0 +1,37 @@
+name: Hosted Parking Video Decode Gate
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'tests/fixtures/videos/**'
+      - '.github/workflows/hosted-parking-video-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parking-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Verify video content and decode
+        shell: bash
+        run: |
+          set -euo pipefail
+          video=tests/fixtures/videos/otopark-test.mp4
+          test -s "$video" || { echo "::error::Missing or empty parking video"; exit 1; }
+          file "$video"
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height,duration -of default=noprint_wrappers=1 "$video"
+          mkdir -p /tmp/parking-frames
+          ffmpeg -hide_banner -loglevel error -nostdin -i "$video" -vf fps=1 -frames:v 10 /tmp/parking-frames/frame-%03d.jpg
+          count=$(find /tmp/parking-frames -type f -name '*.jpg' | wc -l)
+          echo "Decoded frames: $count"
+          test "$count" -gt 0 || { echo "::error::No video frames decoded"; exit 1; }
+          echo "::notice::Video decode passed. Native plate recognition and mock barrier not exercised."
