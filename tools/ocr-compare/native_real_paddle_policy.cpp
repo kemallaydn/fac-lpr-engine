@@ -1,5 +1,5 @@
 // Replay 3 labelled real vehicle photo crops through verified LPRNet ONNX
-// logits, the production native C++ beam, fusion and review-only Paddle policy.
+// logits, the production native C++ beam, fusion and standard Paddle policy.
 // This is NOT full production C++ camera/perspective/multi-crop E2E.
 #include <fac_lpr/application/candidate_fusion.hpp>
 #include <fac_lpr/application/safe_decision_policy.hpp>
@@ -99,35 +99,22 @@ const char* status(domain::RecognitionStatus s) {
 } // namespace
 
 int main(int argc,char** argv) {
-    if (argc!=4 && argc!=5) {
-        std::cerr<<"usage: native-real-paddle rows.tsv contract.ini summary.md [--conditional]\n";
+    if (argc!=4) {
+        std::cerr<<"usage: native-real-paddle rows.tsv contract.ini summary.md\n";
         return 2;
     }
     try {
-        const bool conditional = argc==5 && std::string_view{argv[4]}=="--conditional";
-        if (argc==5 && !conditional) throw std::runtime_error("unexpected policy mode");
         auto decoder=beam(read_contract(argv[2]));
         app::CandidateFusionConfig fusion_config{};
         fusion_config.source_weights["paddleocr"]=0.0F;
         const app::WeightedMultiCropCandidateFusion fusion{fusion_config};
         app::DecisionConfig dc{};
-        dc.enable_paddle_review_suggestions=true;
-        dc.enable_paddle_conditional_accept=conditional;
-        if (conditional) {
-            // Diagnostic experiment only. Production defaults remain unchanged.
-            dc.accepted_confidence_threshold=0.75F;
-            dc.paddle_accept_minimum_lpr_score=0.75F;
-            dc.paddle_accept_minimum_score=0.85F;
-            dc.paddle_accept_min_top_gap=0.05F;
-            dc.paddle_accept_max_non_top_gap=0.10F;
-        }
         const app::SafeRecognitionDecisionPolicy policy{dc};
         const app::TurkishPlateGrammar grammar{};
         std::ifstream rows{argv[1]};
         std::ofstream report{argv[3]};
         if (!rows || !report) throw std::runtime_error("input/report unavailable");
-        report<<(conditional ? "# Experimental conditional ACCEPT (opt-in)\n\n" :
-               "# Default Paddle REVIEW-only policy\n\n")
+        report<<"# Standard Paddle + LPRNet decision policy\n\n"
               <<"Real YOLO box crops + ONNX model + native beam and policy. "
               <<"Not production perspective/multi-crop or confidence calibration. "
                <<"Crops use fixed diagnostic quality 0.9; NOT camera release evidence.\n\n"
@@ -187,7 +174,7 @@ int main(int argc,char** argv) {
                   <<" | "<<status(result.status)<<" | "
                   <<(is_suggestion?"yes":"no")<<" |\n";
             std::cout<<"REAL_POLICY_DIAGNOSTIC file="<<filename
-                     <<" mode="<<(conditional?"conditional":"default")
+                     <<" mode=default"
                      <<" detector="<<detection.confidence
                      <<" paddle_score="<<pscore
                      <<" beam_top5=";
@@ -232,7 +219,7 @@ int main(int argc,char** argv) {
                  <<" rejected="<<rejected
                  <<" suggestion_correct="<<secondary_correct<<"\n";
         if (!report) throw std::runtime_error("report write error");
-        return accepted_wrong==0U?0:1;
+        return accepted_wrong==0U && accepted_correct==3U ? 0:1;
     } catch (const std::exception& e) {
         std::cerr<<"REAL_POLICY_FATAL "<<e.what()<<"\n";
         return 2;
