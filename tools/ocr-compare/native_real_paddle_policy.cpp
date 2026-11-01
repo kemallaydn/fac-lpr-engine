@@ -196,6 +196,13 @@ int main(int argc,char** argv) {
                 std::cout<<(i==0U?"":",")<<candidate.text<<":"
                          <<candidate.confidence<<":"<<candidate.calibrated_confidence;
             }
+            std::cout<<" fused=";
+            for (const auto& candidate:fused)
+                std::cout<<candidate.text<<":"<<candidate.confidence<<":"
+                         <<candidate.calibrated_confidence<<",";
+            std::cout<<" greedy="<<primary.greedy_text<<" greedy_scores=";
+            for (const auto score:primary.greedy_character_confidences)
+                std::cout<<score<<",";
             std::cout<<" reasons=";
             for (const auto reason:result.decision_reasons)
                 std::cout<<static_cast<int>(reason)<<",";
