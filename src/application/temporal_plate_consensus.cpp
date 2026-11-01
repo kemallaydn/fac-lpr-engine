@@ -16,6 +16,35 @@ void require_probability(const float value, const char* name) {
     }
 }
 
+[[nodiscard]] bool review_eligible(const domain::PlateRecognitionResult& r,
+                                   const TemporalPlateConsensusConfig& cfg) {
+    if (!cfg.enable_review_corroboration || r.status != domain::RecognitionStatus::review ||
+        r.degraded || r.plate.empty() || r.detector_confidence < 0.50F ||
+        r.geometry_score < 0.50F || r.crop_quality < 0.50F ||
+        !std::isfinite(r.detector_confidence) || !std::isfinite(r.geometry_score) ||
+        !std::isfinite(r.crop_quality)) return false;
+    if (std::find(r.decision_reasons.begin(), r.decision_reasons.end(),
+            domain::RecognitionDecisionReason::secondary_ocr_review_suggestion) == r.decision_reasons.end()) return false;
+    bool paddle = false, beam = false;
+    for (const auto& e : r.evidence) {
+        if (e.source == "paddleocr") {
+            for (const auto& v : e.candidates) {
+                if (v.text == r.plate && v.format_valid &&
+                    std::isfinite(v.confidence) && v.confidence >= cfg.minimum_review_paddle_confidence) paddle = true;
+                if (v.text != r.plate && std::isfinite(v.confidence) && v.confidence >= 0.75F) return false;
+            }
+        }
+        if (e.source == "lprnet" || e.source == "lprnet_onnx") {
+            for (const auto& v : e.candidates) {
+                const float score = v.calibrated_confidence > 0.0F ? v.calibrated_confidence : v.confidence;
+                if (v.text == r.plate && v.format_valid && std::isfinite(score) &&
+                    score >= cfg.minimum_review_lpr_confidence) beam = true;
+            }
+        }
+    }
+    return paddle && beam;
+}
+
 struct Aggregate final {
     float weighted_support{0.0F};
     std::size_t frames{0U};
@@ -39,6 +68,12 @@ TemporalPlateConsensus::TemporalPlateConsensus(TemporalPlateConsensusConfig conf
     require_probability(config_.minimum_frame_confidence, "minimum_frame_confidence");
     require_probability(config_.stable_confidence_threshold, "stable_confidence_threshold");
     require_probability(config_.conflict_margin, "conflict_margin");
+    require_probability(config_.minimum_review_lpr_confidence, "minimum_review_lpr_confidence");
+    require_probability(config_.minimum_review_paddle_confidence, "minimum_review_paddle_confidence");
+    if (config_.minimum_review_supporting_frames < 3U ||
+        config_.minimum_review_supporting_frames > config_.max_history) {
+        throw ConfigurationError("minimum_review_supporting_frames must be in [3,max_history]");
+    }
 }
 
 void TemporalPlateConsensus::expire(const TimePoint now) noexcept {
@@ -62,16 +97,21 @@ TemporalConsensusResult TemporalPlateConsensus::observe(
 
     std::map<std::string, Aggregate> aggregates{};
     float total_eligible_weight = 0.0F;
+    std::map<std::string, std::size_t> review_counts{};
     for (const auto& observation : history_) {
         const auto& result = observation.result;
-        if (result.plate.empty() || result.status != domain::RecognitionStatus::accepted ||
+        const bool corroborated_review = review_eligible(result, config_);
+        if (corroborated_review) ++review_counts[result.plate];
+        if (result.plate.empty() ||
+            (result.status != domain::RecognitionStatus::accepted && !corroborated_review) ||
             !std::isfinite(result.confidence) ||
             result.confidence < config_.minimum_frame_confidence || result.confidence > 1.0F) {
             continue;
         }
-        total_eligible_weight += result.confidence;
+        const float weight = corroborated_review ? config_.minimum_review_lpr_confidence : result.confidence;
+        total_eligible_weight += weight;
         auto& aggregate = aggregates[result.plate];
-        aggregate.weighted_support += result.confidence;
+        aggregate.weighted_support += weight;
         ++aggregate.frames;
         if (aggregate.best == nullptr || result.confidence > aggregate.best->confidence) {
             aggregate.best = &result;
@@ -100,6 +140,9 @@ TemporalConsensusResult TemporalPlateConsensus::observe(
     output.support = std::clamp(winner->second.weighted_support / total_eligible_weight, 0.0F, 1.0F);
     const auto runner_up_ratio = std::clamp(runner_up_support / total_eligible_weight, 0.0F, 1.0F);
     const auto has_margin = output.support - runner_up_ratio >= config_.conflict_margin;
+    if (winner->second.best != nullptr &&
+        winner->second.best->status == domain::RecognitionStatus::review &&
+        review_counts[winner->first] < config_.minimum_review_supporting_frames) return output;
     if (winner->second.frames < config_.minimum_supporting_frames ||
         output.support < config_.stable_confidence_threshold || !has_margin ||
         winner->second.best == nullptr) {

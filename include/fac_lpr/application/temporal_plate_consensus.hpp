@@ -17,6 +17,12 @@ struct TemporalPlateConsensusConfig final {
     float minimum_frame_confidence{0.50F};
     float stable_confidence_threshold{0.75F};
     float conflict_margin{0.10F};
+    // Opt-in: only independent Paddle + native LPRNet beam REVIEW suggestions
+    // may become stable after three distinct, healthy observations.
+    bool enable_review_corroboration{false};
+    std::size_t minimum_review_supporting_frames{3U};
+    float minimum_review_lpr_confidence{0.78F};
+    float minimum_review_paddle_confidence{0.85F};
 };
 
 struct TemporalConsensusResult final {
