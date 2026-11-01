@@ -178,6 +178,7 @@ TEST(SafeDecisionPolicy, WeakGeometryAndCropQualityRequireReviewWithReasons) {
 application::SafeRecognitionDecisionPolicy paddle_policy() {
     application::DecisionConfig config{};
     config.enable_paddle_review_suggestions = true;
+    config.paddle_accept_minimum_score = 1.0F; // Review-only test fixture.
     return application::SafeRecognitionDecisionPolicy{config};
 }
 
@@ -404,21 +405,18 @@ TEST(SafeDecisionPolicy, PaddleBeamSupportDoesNotBypassDetectorOrFatalFailure) {
               domain::RecognitionStatus::rejected);
 }
 
-application::SafeRecognitionDecisionPolicy conditional_policy() {
-    application::DecisionConfig config{};
-    config.enable_paddle_review_suggestions = true;
-    config.enable_paddle_conditional_accept = true;
-    return application::SafeRecognitionDecisionPolicy{config};
+application::SafeRecognitionDecisionPolicy standard_policy() {
+    return application::SafeRecognitionDecisionPolicy{};
 }
 
-TEST(SafeDecisionPolicy, ConditionalTopOneNeedsStrongIndependentReadingAndMargin) {
+TEST(SafeDecisionPolicy, StandardTopOneNeedsStrongIndependentReadingAndMargin) {
     auto lpr = good_evidence();
     lpr.candidates = {{"34ABC123", 0.94F, 0.94F, true},
                       {"34ABC128", 0.79F, 0.79F, true}};
     const std::vector evidence{lpr, paddle_reading("34ABC123", 0.95F)};
     EXPECT_EQ(paddle_policy().decide(good_detection(), evidence, lpr.candidates, {}).status,
               domain::RecognitionStatus::review);
-    const auto result = conditional_policy().decide(good_detection(), evidence, lpr.candidates, {});
+    const auto result = standard_policy().decide(good_detection(), evidence, lpr.candidates, {});
     EXPECT_EQ(result.status, domain::RecognitionStatus::accepted);
     EXPECT_EQ(result.plate, "34ABC123");
     EXPECT_FLOAT_EQ(result.confidence, 0.94F);
@@ -426,18 +424,18 @@ TEST(SafeDecisionPolicy, ConditionalTopOneNeedsStrongIndependentReadingAndMargin
         result, domain::RecognitionDecisionReason::accepted_cross_provider_corroboration));
 }
 
-TEST(SafeDecisionPolicy, ConditionalNonTopOneRequiresTightTieAndNativeBeamSupport) {
+TEST(SafeDecisionPolicy, StandardNonTopOneRequiresTightTieAndNativeBeamSupport) {
     auto lpr = good_evidence();
     lpr.candidates = {{"34ABC128", 0.91F, 0.91F, true},
                       {"34ABC123", 0.88F, 0.88F, true}};
-    const auto result = conditional_policy().decide(good_detection(),
+    const auto result = standard_policy().decide(good_detection(),
         std::vector{lpr, paddle_reading("34ABC123", 0.95F)}, lpr.candidates, {});
     EXPECT_EQ(result.status, domain::RecognitionStatus::accepted);
     EXPECT_EQ(result.plate, "34ABC123");
     EXPECT_FLOAT_EQ(result.confidence, 0.88F);
     lpr.candidates[1].confidence = 0.50F;
     lpr.candidates[1].calibrated_confidence = 0.50F;
-    EXPECT_NE(conditional_policy().decide(good_detection(),
+    EXPECT_NE(standard_policy().decide(good_detection(),
         std::vector{lpr, paddle_reading("34ABC123", 0.95F)},
         lpr.candidates, {}).status, domain::RecognitionStatus::accepted);
 }
@@ -449,73 +447,69 @@ TEST(SafeDecisionPolicy, ConditionalTopFiveBeamMatchCanAccept) {
                       {"34ABC120", 0.90F, 0.90F, true},
                       {"34ABC123", 0.89F, 0.89F, true},
                       {"34ABC124", 0.88F, 0.88F, true}};
-    const auto accepted = conditional_policy().decide(good_detection(),
+    const auto accepted = standard_policy().decide(good_detection(),
         std::vector{lpr, paddle_reading("34ABC123", 0.96F)}, lpr.candidates, {});
     EXPECT_EQ(accepted.status, domain::RecognitionStatus::accepted);
     EXPECT_EQ(accepted.plate, "34ABC123");
     EXPECT_FLOAT_EQ(accepted.confidence, 0.89F);
     lpr.candidates[3] = {"34ABC123", 0.79F, 0.79F, true};
-    EXPECT_NE(conditional_policy().decide(good_detection(),
+    EXPECT_NE(standard_policy().decide(good_detection(),
         std::vector{lpr, paddle_reading("34ABC123", 0.96F)},
         lpr.candidates, {}).status, domain::RecognitionStatus::accepted);
     lpr.candidates[3] = {"34ABC123", 0.89F, 0.89F, true};
     lpr.candidates.push_back({"34ABC125", 0.88F, 0.88F, true});
-    EXPECT_NE(conditional_policy().decide(good_detection(),
+    EXPECT_NE(standard_policy().decide(good_detection(),
         std::vector{lpr, paddle_reading("34ABC125", 0.96F)},
         lpr.candidates, {}).status, domain::RecognitionStatus::accepted);
 }
 
-TEST(SafeDecisionPolicy, ConditionalLargeGapOrConflictingPaddleNeverAutoAccepts) {
+TEST(SafeDecisionPolicy, StandardLargeGapOrConflictingPaddleNeverAutoAccepts) {
     auto lpr = good_evidence();
     lpr.candidates = {{"34ABC128", 0.96F, 0.96F, true},
                       {"34ABC123", 0.80F, 0.80F, true}};
-    EXPECT_EQ(conditional_policy().decide(good_detection(),
+    EXPECT_EQ(standard_policy().decide(good_detection(),
         std::vector{lpr, paddle_reading("34ABC123", 0.95F)},
         lpr.candidates, {}).status, domain::RecognitionStatus::review);
     lpr.candidates[0] = {"34ABC128", 0.90F, 0.90F, true};
     lpr.candidates[1] = {"34ABC123", 0.88F, 0.88F, true};
-    EXPECT_NE(conditional_policy().decide(good_detection(),
+    EXPECT_NE(standard_policy().decide(good_detection(),
         std::vector{lpr, paddle_reading("34ABC123", 0.95F),
                     paddle_reading("34ABC128", 0.82F)},
         lpr.candidates, {}).status, domain::RecognitionStatus::accepted);
 }
 
-TEST(SafeDecisionPolicy, ConditionalStrongGreedyDisagreementPreventsAcceptance) {
+TEST(SafeDecisionPolicy, StandardStrongGreedyDisagreementPreventsAcceptance) {
     auto lpr = good_evidence();
     lpr.greedy_text = "34ABC128";
     lpr.greedy_character_confidences.assign(8U, 0.99F);
     lpr.candidates = {{"34ABC128", 0.91F, 0.91F, true},
                       {"34ABC123", 0.89F, 0.89F, true}};
-    EXPECT_NE(conditional_policy().decide(good_detection(),
+    EXPECT_NE(standard_policy().decide(good_detection(),
         std::vector{lpr, paddle_reading("34ABC123", 0.96F)},
         lpr.candidates, {}).status, domain::RecognitionStatus::accepted);
 }
 
-TEST(SafeDecisionPolicy, ConditionalRequiresHealthyProvidersAndDetection) {
+TEST(SafeDecisionPolicy, StandardRequiresHealthyProvidersAndDetection) {
     auto lpr = good_evidence();
     lpr.candidates = {{"34ABC128", 0.91F, 0.91F, true},
                       {"34ABC123", 0.89F, 0.89F, true}};
     const std::vector evidence{lpr, paddle_reading("34ABC123", 0.95F)};
     application::RecognitionDecisionContext degraded{};
     degraded.degraded = true;
-    EXPECT_NE(conditional_policy().decide(good_detection(), evidence, lpr.candidates, degraded).status,
+    EXPECT_NE(standard_policy().decide(good_detection(), evidence, lpr.candidates, degraded).status,
               domain::RecognitionStatus::accepted);
     auto geometry = good_detection();
     geometry.geometry_score = 0.0F;
-    EXPECT_NE(conditional_policy().decide(geometry, evidence, lpr.candidates, {}).status,
+    EXPECT_NE(standard_policy().decide(geometry, evidence, lpr.candidates, {}).status,
               domain::RecognitionStatus::accepted);
     auto detector = good_detection();
     detector.confidence = 0.1F;
-    EXPECT_EQ(conditional_policy().decide(detector, evidence, lpr.candidates, {}).status,
+    EXPECT_EQ(standard_policy().decide(detector, evidence, lpr.candidates, {}).status,
               domain::RecognitionStatus::rejected);
 }
 
-TEST(SafeDecisionPolicy, ConditionalCannotBeEnabledWithoutReviewAndValidSettings) {
+TEST(SafeDecisionPolicy, StandardPolicyRejectsInvalidAcceptanceThreshold) {
     application::DecisionConfig config{};
-    config.enable_paddle_conditional_accept = true;
-    EXPECT_THROW(application::SafeRecognitionDecisionPolicy{config},
-                 application::ConfigurationError);
-    config.enable_paddle_review_suggestions = true;
     config.paddle_accept_minimum_lpr_score = 0.50F;
     EXPECT_THROW(application::SafeRecognitionDecisionPolicy{config},
                  application::ConfigurationError);
