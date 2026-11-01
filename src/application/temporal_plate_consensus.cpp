@@ -71,7 +71,7 @@ TemporalPlateConsensus::TemporalPlateConsensus(TemporalPlateConsensusConfig conf
     require_probability(config_.minimum_review_lpr_confidence, "minimum_review_lpr_confidence");
     require_probability(config_.minimum_review_paddle_confidence, "minimum_review_paddle_confidence");
     if (config_.minimum_review_supporting_frames < 3U ||
-        config_.minimum_review_supporting_frames > config_.max_history) {
+        (config_.enable_review_corroboration && config_.minimum_review_supporting_frames > config_.max_history)) {
         throw ConfigurationError("minimum_review_supporting_frames must be in [3,max_history]");
     }
 }
@@ -104,8 +104,8 @@ TemporalConsensusResult TemporalPlateConsensus::observe(
         if (corroborated_review) ++review_counts[result.plate];
         if (result.plate.empty() ||
             (result.status != domain::RecognitionStatus::accepted && !corroborated_review) ||
-            !std::isfinite(result.confidence) ||
-            result.confidence < config_.minimum_frame_confidence || result.confidence > 1.0F) {
+            (!corroborated_review && (!std::isfinite(result.confidence) ||
+            result.confidence < config_.minimum_frame_confidence || result.confidence > 1.0F))) {
             continue;
         }
         const float weight = corroborated_review ? config_.minimum_review_lpr_confidence : result.confidence;
