@@ -267,11 +267,11 @@ TEST(SafeDecisionPolicy, PaddleMatchingPrimaryDoesNotInflateLprnetConfidence) {
     EXPECT_FLOAT_EQ(result.confidence, 0.91F);
 }
 
-TEST(SafeDecisionPolicy, PaddleFeatureDisabledKeepsOldBehavior) {
+TEST(SafeDecisionPolicy, DefaultPaddleConflictRequiresReview) {
     const std::vector evidence{good_evidence(), paddle_reading("34ABC128")};
     const std::vector<domain::PlateCandidate> fused{{"34ABC123", 0.91F, 0.91F, true}};
     const auto result = policy().decide(good_detection(), evidence, fused, {});
-    EXPECT_EQ(result.status, domain::RecognitionStatus::accepted);
+    EXPECT_EQ(result.status, domain::RecognitionStatus::review);
     EXPECT_EQ(result.plate, "34ABC123");
 }
 
