@@ -39,20 +39,19 @@ struct CropConfig final {
 };
 
 struct DecisionConfig final {
-    float accepted_confidence_threshold{0.78F};
+    float accepted_confidence_threshold{0.75F};
     float review_confidence_threshold{0.55F};
     float strong_conflict_threshold{0.70F};
     float minimum_crop_quality{0.28F};
     float minimum_geometry_score{0.20F};
     float minimum_effective_detector_confidence{0.50F};
-    // Opt-in secondary OCR suggestion. Never permits automatic acceptance.
-    bool enable_paddle_review_suggestions{false};
-    // Experimental opt-in: requires independent real-video validation.
-    bool enable_paddle_conditional_accept{false};
-    float paddle_accept_minimum_score{0.90F};
-    float paddle_accept_minimum_lpr_score{0.78F};
-    float paddle_accept_max_non_top_gap{0.05F};
-    float paddle_accept_min_top_gap{0.10F};
+    // Default: independent PaddleOCR corroboration of native LPRNet beam candidates.
+    bool enable_paddle_review_suggestions{true};
+    bool enable_paddle_conditional_accept{true};
+    float paddle_accept_minimum_score{0.85F};
+    float paddle_accept_minimum_lpr_score{0.75F};
+    float paddle_accept_max_non_top_gap{0.10F};
+    float paddle_accept_min_top_gap{0.05F};
     bool allow_accept_when_degraded{false};
     bool fail_closed{true};
 };
