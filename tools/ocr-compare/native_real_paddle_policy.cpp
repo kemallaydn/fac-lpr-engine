@@ -113,6 +113,14 @@ int main(int argc,char** argv) {
         app::DecisionConfig dc{};
         dc.enable_paddle_review_suggestions=true;
         dc.enable_paddle_conditional_accept=conditional;
+        if (conditional) {
+            // Diagnostic experiment only. Production defaults remain unchanged.
+            dc.accepted_confidence_threshold=0.75F;
+            dc.paddle_accept_minimum_lpr_score=0.75F;
+            dc.paddle_accept_minimum_score=0.85F;
+            dc.paddle_accept_min_top_gap=0.05F;
+            dc.paddle_accept_max_non_top_gap=0.10F;
+        }
         const app::SafeRecognitionDecisionPolicy policy{dc};
         const app::TurkishPlateGrammar grammar{};
         std::ifstream rows{argv[1]};
