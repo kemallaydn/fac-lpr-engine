@@ -132,14 +132,14 @@ struct PaddleReview final {
     return false;
 }
 
-// Experimental cross-provider corroboration. Paddle never supplies a
+// Standard cross-provider corroboration. Paddle never supplies a
 // calibrated confidence. Return ONLY the native LPRNet candidate score.
 [[nodiscard]] std::optional<std::pair<std::string, float>> conditional_corroboration(
     const std::span<const domain::RecognitionEvidence> evidence,
     const std::vector<const domain::PlateCandidate*>& valid,
     const DecisionConfig& config,
     const float geometry, const float crop, const bool degraded) {
-    if (!config.enable_paddle_conditional_accept || degraded || valid.empty() ||
+    if (degraded || valid.empty() ||
         !std::isfinite(geometry) || geometry < config.minimum_geometry_score ||
         crop < config.minimum_crop_quality) {
         return std::nullopt;
