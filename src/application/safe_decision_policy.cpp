@@ -194,14 +194,13 @@ struct PaddleReview final {
         if (source.source != "lprnet" && source.source != "lprnet_onnx") continue;
         const auto limit = std::min<std::size_t>(5U, source.candidates.size());
         if (limit == 0U) continue;
-        float top = 0.0F;
-        float second = 0.0F;
+        const float top = effective_confidence(source.candidates.front());
+        const float second = limit > 1U
+            ? effective_confidence(source.candidates[1]) : 0.0F;
         for (std::size_t i = 0U; i < limit; ++i) {
             const auto& candidate = source.candidates[i];
             if (!candidate.format_valid) continue;
             const float score = effective_confidence(candidate);
-            if (i == 0U) top = score;
-            if (i == 1U) second = score;
             if (candidate.text != *selected ||
                 score < config.paddle_accept_minimum_lpr_score) continue;
             if (i == 0U) {
