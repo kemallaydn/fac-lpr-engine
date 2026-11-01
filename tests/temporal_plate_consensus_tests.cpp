@@ -168,6 +168,29 @@ TEST(TemporalPlateConsensusTests, CorroboratedReviewsNeedThreeIndependentFrames)
     EXPECT_EQ(stable.stable_result->status, RecognitionStatus::accepted);
 }
 
+TEST(TemporalPlateConsensusTests, ReplayedTimestampCannotFakeThreeFrames) {
+    TemporalPlateConsensusConfig config{};
+    config.enable_review_corroboration = true;
+    TemporalPlateConsensus consensus{config};
+    const auto now = TemporalPlateConsensus::Clock::now();
+    auto frame = result("34ABC123", 0.0F, RecognitionStatus::review);
+    frame.detector_confidence = 0.9F;
+    frame.geometry_score = 0.9F;
+    frame.crop_quality = 0.9F;
+    frame.decision_reasons.push_back(fac_lpr::domain::RecognitionDecisionReason::secondary_ocr_review_suggestion);
+    fac_lpr::domain::RecognitionEvidence lpr{};
+    lpr.source = "lprnet";
+    lpr.candidates.push_back({"34ABC123", 0.90F, 0.90F, true});
+    fac_lpr::domain::RecognitionEvidence paddle{};
+    paddle.source = "paddleocr";
+    paddle.candidates.push_back({"34ABC123", 0.95F, 0.0F, true});
+    frame.evidence = {lpr, paddle};
+    for (int i = 0; i < 4; ++i)
+        EXPECT_FALSE(consensus.observe(frame, now).stable_result.has_value());
+    EXPECT_FALSE(consensus.observe(frame, now + std::chrono::milliseconds{10}).stable_result.has_value());
+    EXPECT_TRUE(consensus.observe(frame, now + std::chrono::milliseconds{20}).stable_result.has_value());
+}
+
 TEST(TemporalPlateConsensusTests, NoPaddleOrBeamOrDegradedNeverPromotesReviews) {
     TemporalPlateConsensusConfig config{};
     config.enable_review_corroboration = true;

@@ -98,10 +98,18 @@ TemporalConsensusResult TemporalPlateConsensus::observe(
     std::map<std::string, Aggregate> aggregates{};
     float total_eligible_weight = 0.0F;
     std::map<std::string, std::size_t> review_counts{};
+    std::map<std::string, TimePoint> last_review_timestamp{};
     for (const auto& observation : history_) {
         const auto& result = observation.result;
         const bool corroborated_review = review_eligible(result, config_);
-        if (corroborated_review) ++review_counts[result.plate];
+        if (corroborated_review) {
+            const auto previous = last_review_timestamp.find(result.plate);
+            if (previous != last_review_timestamp.end() && previous->second == observation.timestamp) {
+                continue; // Same timestamp is not independent temporal evidence.
+            }
+            last_review_timestamp[result.plate] = observation.timestamp;
+            ++review_counts[result.plate];
+        }
         if (result.plate.empty() ||
             (result.status != domain::RecognitionStatus::accepted && !corroborated_review) ||
             (!corroborated_review && (!std::isfinite(result.confidence) ||
