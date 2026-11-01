@@ -441,9 +441,11 @@ std::shared_ptr<application::LprPipeline> build_pipeline_from_contract(
     if (accept_mode != "true" && accept_mode != "false") {
         throw application::ConfigurationError("paddle.conditional_accept must be true or false");
     }
-    decision_config.enable_paddle_conditional_accept = accept_mode == "true";
-    if (decision_config.enable_paddle_conditional_accept && !paddle_enabled) {
+    if (accept_mode == "true" && !paddle_enabled) {
         throw application::ConfigurationError("conditional acceptance requires paddle.enabled=true");
+    }
+    if (accept_mode == "true") {
+        throw application::ConfigurationError("paddle.conditional_accept is not supported by the current decision policy");
     }
     application::LprEngineBuilder builder{};
     builder.detector(std::move(detector))
