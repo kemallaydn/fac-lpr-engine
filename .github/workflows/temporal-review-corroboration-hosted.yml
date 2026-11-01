@@ -1,0 +1,33 @@
+name: temporal-review-corroboration-hosted
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/application/temporal_plate_consensus.cpp'
+      - 'include/fac_lpr/application/temporal_plate_consensus.hpp'
+      - 'tests/temporal_plate_consensus_tests.cpp'
+      - '.github/workflows/temporal-review-corroboration-hosted.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  temporal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler and GoogleTest
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ libgtest-dev
+      - name: Build temporal consensus tests with strict warnings
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror \
+            -Iinclude src/application/temporal_plate_consensus.cpp \
+            tests/temporal_plate_consensus_tests.cpp \
+            -lgtest_main -lgtest -pthread -o /tmp/fac-lpr-temporal-tests
+      - name: Run temporal regression tests
+        run: /tmp/fac-lpr-temporal-tests --gtest_color=no
