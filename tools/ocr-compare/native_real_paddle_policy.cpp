@@ -178,6 +178,20 @@ int main(int argc,char** argv) {
                   <<" | "<<first<<" | "<<fields[3]<<" | "<<result.plate
                   <<" | "<<status(result.status)<<" | "
                   <<(is_suggestion?"yes":"no")<<" |\n";
+            std::cout<<"REAL_POLICY_DIAGNOSTIC file="<<filename
+                     <<" mode="<<(conditional?"conditional":"default")
+                     <<" detector="<<detection.confidence
+                     <<" paddle_score="<<pscore
+                     <<" beam_top5=";
+            for (std::size_t i=0U; i<std::min<std::size_t>(5U,decoded.candidates.size()); ++i) {
+                const auto& candidate=decoded.candidates[i];
+                std::cout<<(i==0U?"":",")<<candidate.text<<":"
+                         <<candidate.confidence<<":"<<candidate.calibrated_confidence;
+            }
+            std::cout<<" reasons=";
+            for (const auto reason:result.decision_reasons)
+                std::cout<<static_cast<int>(reason)<<",";
+            std::cout<<"\\n";
             std::cout<<"REAL_POLICY_CASE file="<<filename
                      <<" expected="<<truth<<" beam="<<first
                      <<" paddle="<<fields[3]<<" decision="<<result.plate
