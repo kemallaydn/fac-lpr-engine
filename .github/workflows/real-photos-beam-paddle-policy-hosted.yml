@@ -6,6 +6,7 @@ on:
     branches: [dev]
     paths:
       - 'src/application/safe_decision_policy.cpp'
+      - 'include/fac_lpr/application/config.hpp'
       - 'src/application/temporal_plate_consensus.cpp'
       - 'include/fac_lpr/application/temporal_plate_consensus.hpp'
       - 'tests/temporal_plate_consensus_tests.cpp'
@@ -89,15 +90,8 @@ jobs:
             artifacts/real-native-policy/real-policy-input.tsv \
             docs/lpr-cli-contract.example \
             artifacts/real-native-policy/report.md
-          /tmp/native-real-paddle-policy \
-            artifacts/real-native-policy/real-policy-input.tsv \
-            docs/lpr-cli-contract.example \
-            artifacts/real-native-policy/conditional-report.md \
-            --conditional
           cat artifacts/real-native-policy/report.md
           cat artifacts/real-native-policy/report.md >> "$GITHUB_STEP_SUMMARY"
-          cat artifacts/real-native-policy/conditional-report.md
-          cat artifacts/real-native-policy/conditional-report.md >> "$GITHUB_STEP_SUMMARY"
       - name: Archive actual model diagnostics and extracted crops
         if: always()
         uses: actions/upload-artifact@v4
@@ -105,7 +99,6 @@ jobs:
           name: real-photo-paddle-beam-native-policy
           path: |
             artifacts/real-native-policy/report.md
-            artifacts/real-native-policy/conditional-report.md
             artifacts/real-native-policy/export.json
             artifacts/real-native-policy/crops/
             artifacts/real-paddle-photos/results.json
