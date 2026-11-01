@@ -1,0 +1,65 @@
+name: barrier-video-real-models-hosted
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - 'tests/fixtures/videos/**'
+      - 'tools/ocr-compare/evaluate_barrier_video.py'
+      - '.github/workflows/barrier-video-real-models-hosted.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  barrier-video-diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: 'True'
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real CPU inference dependencies
+        run: |
+          python -m pip install 'numpy==1.26.4' 'Pillow==11.3.0' \
+            'opencv-python-headless==4.11.0.86' 'onnxruntime==1.22.1' \
+            'paddlepaddle==3.2.0' 'paddleocr==3.3.0'
+      - name: Inspect real video
+        run: |
+          python - <<'PY'
+          import cv2
+          from pathlib import Path
+          p = Path("tests/fixtures/videos/otopark-test.mp4")
+          if not p.is_file():
+              raise RuntimeError("Video fixture missing")
+          v = cv2.VideoCapture(str(p))
+          if not v.isOpened():
+              raise RuntimeError("Video decode failed")
+          print("VIDEO_METADATA", {"bytes": p.stat().st_size,
+                "fps": v.get(cv2.CAP_PROP_FPS),
+                "width": v.get(cv2.CAP_PROP_FRAME_WIDTH),
+                "height": v.get(cv2.CAP_PROP_FRAME_HEIGHT),
+                "frames": v.get(cv2.CAP_PROP_FRAME_COUNT)})
+          v.release()
+          PY
+      - name: Run real YOLO LPRNet and PaddleOCR on video samples
+        run: |
+          python tools/ocr-compare/evaluate_barrier_video.py \
+            --video tests/fixtures/videos/otopark-test.mp4 \
+            --out artifacts/barrier-video --sample-seconds 0.5 --max-frames 90
+      - name: Archive video diagnostic reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: barrier-video-real-model-results
+          path: |
+            artifacts/barrier-video/results.json
+            artifacts/barrier-video/report.md
+          if-no-files-found: warn
+          retention-days: 14
