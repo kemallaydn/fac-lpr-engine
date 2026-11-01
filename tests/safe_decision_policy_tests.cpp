@@ -366,16 +366,16 @@ TEST(SafeDecisionPolicy, PaddleBeamAgreementCannotBeUsedWhenPaddleCropsConflict)
     EXPECT_FALSE(has_reason(result, domain::RecognitionDecisionReason::secondary_ocr_review_suggestion));
 }
 
-TEST(SafeDecisionPolicy, PaddleBeamSupportIsOptInAndDoesNotChangeDefault) {
+TEST(SafeDecisionPolicy, PaddleBeamSupportIsEnabledByDefaultAndCanSuggestReview) {
     auto lpr = good_evidence();
     lpr.candidates = {{"34ABC128", 0.97F, 0.97F, true},
                       {"34ABC123", 0.45F, 0.45F, true}};
     const std::vector evidence{lpr, paddle_reading("34ABC123", 0.93F)};
     const std::vector<domain::PlateCandidate> fused{{"34ABC128", 0.97F, 0.97F, true}};
     const auto result = policy().decide(good_detection(), evidence, fused, {});
-    EXPECT_EQ(result.status, domain::RecognitionStatus::accepted);
-    EXPECT_EQ(result.plate, "34ABC128");
-    EXPECT_FALSE(has_reason(result, domain::RecognitionDecisionReason::secondary_ocr_review_suggestion));
+    EXPECT_EQ(result.status, domain::RecognitionStatus::review);
+    EXPECT_EQ(result.plate, "34ABC123");
+    EXPECT_TRUE(has_reason(result, domain::RecognitionDecisionReason::secondary_ocr_review_suggestion));
 }
 
 TEST(SafeDecisionPolicy, PaddleBeamSupportCannotOverrideInvalidCandidate) {
