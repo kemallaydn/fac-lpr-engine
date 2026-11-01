@@ -25,6 +25,8 @@ void require_probability(const float value, const char* name) {
         !std::isfinite(r.crop_quality)) return false;
     if (std::find(r.decision_reasons.begin(), r.decision_reasons.end(),
             domain::RecognitionDecisionReason::secondary_ocr_review_suggestion) == r.decision_reasons.end()) return false;
+    if (std::find(r.decision_reasons.begin(), r.decision_reasons.end(),
+            domain::RecognitionDecisionReason::conflicting_strong_candidates) != r.decision_reasons.end()) return false;
     bool paddle = false, beam = false;
     for (const auto& e : r.evidence) {
         if (e.source == "paddleocr") {
@@ -39,6 +41,8 @@ void require_probability(const float value, const char* name) {
                 const float score = v.calibrated_confidence > 0.0F ? v.calibrated_confidence : v.confidence;
                 if (v.text == r.plate && v.format_valid && std::isfinite(score) &&
                     score >= cfg.minimum_review_lpr_confidence) beam = true;
+                if (v.text != r.plate && v.format_valid && std::isfinite(score) &&
+                    score >= cfg.minimum_review_lpr_confidence) return false;
             }
         }
     }
