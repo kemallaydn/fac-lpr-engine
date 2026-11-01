@@ -7,6 +7,7 @@ on:
     paths:
       - 'tests/fixtures/videos/**'
       - 'tools/ocr-compare/evaluate_barrier_video.py'
+      - 'tools/ocr-compare/simulate_barrier_from_video.py'
       - '.github/workflows/barrier-video-real-models-hosted.yml'
 
 permissions:
@@ -53,6 +54,11 @@ jobs:
           python tools/ocr-compare/evaluate_barrier_video.py \
             --video tests/fixtures/videos/otopark-test.mp4 \
             --out artifacts/barrier-video --sample-seconds 0.5 --max-frames 90
+      - name: Simulate authorized barrier and fail-closed cases from actual video OCR
+        run: |
+          python tools/ocr-compare/simulate_barrier_from_video.py \
+            --results artifacts/barrier-video/results.json \
+            --registered-plate 34EZS794 --out artifacts/barrier-video
       - name: Archive video diagnostic reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -61,5 +67,6 @@ jobs:
           path: |
             artifacts/barrier-video/results.json
             artifacts/barrier-video/report.md
+            artifacts/barrier-video/barrier-dry-run.json
           if-no-files-found: warn
           retention-days: 14
