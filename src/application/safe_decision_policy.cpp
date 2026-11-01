@@ -188,20 +188,22 @@ struct PaddleReview final {
     if (!lpr_support || *lpr_support < config.paddle_accept_minimum_lpr_score) {
         return std::nullopt;
     }
-    if (valid[0]->text == *selected) {
-        const float winner = effective_confidence(*valid[0]);
-        const float second = valid.size() > 1U ? effective_confidence(*valid[1]) : 0.0F;
-        if (winner >= config.accepted_confidence_threshold &&
-            winner - second >= config.paddle_accept_min_top_gap) {
+    // The native LPRNet beam top-5 is the corroboration search space.
+    // Preserve the original score/gap safeguards for non-top candidates.
+    const auto limit = std::min<std::size_t>(5U, valid.size());
+    for (std::size_t index = 0U; index < limit; ++index) {
+        if (valid[index]->text != *selected) continue;
+        const float matched = effective_confidence(*valid[index]);
+        if (matched < config.accepted_confidence_threshold) return std::nullopt;
+        const float winner = effective_confidence(*valid.front());
+        if (index == 0U) {
+            const float second = valid.size() > 1U ? effective_confidence(*valid[1]) : 0.0F;
+            if (winner - second >= config.paddle_accept_min_top_gap)
+                return std::pair{*selected, *lpr_support};
+        } else if (winner - matched <= config.paddle_accept_max_non_top_gap) {
             return std::pair{*selected, *lpr_support};
         }
-    } else if (valid.size() >= 2U && valid[1]->text == *selected) {
-        const float winner = effective_confidence(*valid[0]);
-        const float runner = effective_confidence(*valid[1]);
-        if (runner >= config.accepted_confidence_threshold &&
-            winner - runner <= config.paddle_accept_max_non_top_gap) {
-            return std::pair{*selected, *lpr_support};
-        }
+        return std::nullopt;
     }
     return std::nullopt;
 }

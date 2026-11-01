@@ -442,6 +442,29 @@ TEST(SafeDecisionPolicy, ConditionalNonTopOneRequiresTightTieAndNativeBeamSuppor
         lpr.candidates, {}).status, domain::RecognitionStatus::accepted);
 }
 
+TEST(SafeDecisionPolicy, ConditionalTopFiveBeamMatchCanAccept) {
+    auto lpr = good_evidence();
+    lpr.candidates = {{"34ABC128", 0.92F, 0.92F, true},
+                      {"34ABC129", 0.91F, 0.91F, true},
+                      {"34ABC120", 0.90F, 0.90F, true},
+                      {"34ABC123", 0.89F, 0.89F, true},
+                      {"34ABC124", 0.88F, 0.88F, true}};
+    const auto accepted = conditional_policy().decide(good_detection(),
+        std::vector{lpr, paddle_reading("34ABC123", 0.96F)}, lpr.candidates, {});
+    EXPECT_EQ(accepted.status, domain::RecognitionStatus::accepted);
+    EXPECT_EQ(accepted.plate, "34ABC123");
+    EXPECT_FLOAT_EQ(accepted.confidence, 0.89F);
+    lpr.candidates[3] = {"34ABC123", 0.79F, 0.79F, true};
+    EXPECT_NE(conditional_policy().decide(good_detection(),
+        std::vector{lpr, paddle_reading("34ABC123", 0.96F)},
+        lpr.candidates, {}).status, domain::RecognitionStatus::accepted);
+    lpr.candidates[3] = {"34ABC123", 0.89F, 0.89F, true};
+    lpr.candidates.push_back({"34ABC125", 0.88F, 0.88F, true});
+    EXPECT_NE(conditional_policy().decide(good_detection(),
+        std::vector{lpr, paddle_reading("34ABC125", 0.96F)},
+        lpr.candidates, {}).status, domain::RecognitionStatus::accepted);
+}
+
 TEST(SafeDecisionPolicy, ConditionalLargeGapOrConflictingPaddleNeverAutoAccepts) {
     auto lpr = good_evidence();
     lpr.candidates = {{"34ABC128", 0.96F, 0.96F, true},
