@@ -47,7 +47,6 @@ struct DecisionConfig final {
     float minimum_effective_detector_confidence{0.50F};
     // Default: independent PaddleOCR corroboration of native LPRNet beam candidates.
     bool enable_paddle_review_suggestions{true};
-    bool enable_paddle_conditional_accept{true};
     float paddle_accept_minimum_score{0.85F};
     float paddle_accept_minimum_lpr_score{0.75F};
     float paddle_accept_max_non_top_gap{0.10F};
@@ -130,10 +129,6 @@ inline void validate_engine_config(const EngineConfig& config) {
     detail::require_unit_interval(config.decision.paddle_accept_minimum_lpr_score, "decision.paddle_accept_minimum_lpr_score");
     detail::require_unit_interval(config.decision.paddle_accept_max_non_top_gap, "decision.paddle_accept_max_non_top_gap");
     detail::require_unit_interval(config.decision.paddle_accept_min_top_gap, "decision.paddle_accept_min_top_gap");
-    if (config.decision.enable_paddle_conditional_accept &&
-        !config.decision.enable_paddle_review_suggestions) {
-        throw ConfigurationError("conditional Paddle acceptance requires Paddle review evidence");
-    }
     if (config.decision.paddle_accept_minimum_lpr_score < config.decision.accepted_confidence_threshold) {
         throw ConfigurationError("conditional Paddle LPR score cannot be below accepted threshold");
     }
