@@ -6,6 +6,9 @@ on:
     branches: [dev]
     paths:
       - 'src/application/safe_decision_policy.cpp'
+      - 'src/application/temporal_plate_consensus.cpp'
+      - 'include/fac_lpr/application/temporal_plate_consensus.hpp'
+      - 'tests/temporal_plate_consensus_tests.cpp'
       - 'tools/ocr-compare/native_real_paddle_policy.cpp'
       - '.github/workflows/real-photos-beam-paddle-policy-hosted.yml'
       - 'tests/fixtures/real/**'
