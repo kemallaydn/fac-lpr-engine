@@ -1,4 +1,5 @@
 #include <fac_lpr/application/safe_decision_policy.hpp>
+#include <fac_lpr/application/error.hpp>
 
 #include <gtest/gtest.h>
 
