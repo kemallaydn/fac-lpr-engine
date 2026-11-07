@@ -29,6 +29,68 @@ env:
   VCPKG_DISABLE_METRICS: '1'
 
 jobs:
+  macos-intel:
+    name: macOS Intel x86_64 build-test
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-osx
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite
+      FAC_LPR_VCPKG_INSTALLED_DIR: ${{ github.workspace }}/build/vcpkg_installed
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .vcpkg-binary-cache
+            .cache/onnxruntime
+          key: ci-macos-intel-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-baseline.txt', 'cmake/onnxruntime-version.txt', 'cmake/onnxruntime-osx-x86_64.sha256') }}
+          restore-keys: ci-macos-intel-
+      - name: Verify Intel runner
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          cmake --version
+          ninja --version
+          xcode-select -p
+      - name: Restore native dependencies
+        run: bash scripts/bootstrap-dependencies.sh
+      - name: Configure Intel build
+        run: >-
+          cmake -S . -B build/ci-macos-x86_64 -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES=x86_64
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed
+          -DVCPKG_TARGET_TRIPLET=x64-osx
+          -DFAC_LPR_ONNXRUNTIME_ROOT=${{ github.workspace }}/build/deps/onnxruntime
+          -DFAC_LPR_WITH_SPDLOG=ON
+          -DFAC_LPR_WITH_ONNX_RUNTIME=ON
+          -DFAC_LPR_WITH_OPENCV=ON
+          -DFAC_LPR_BUILD_SHARED=ON
+          -DFAC_LPR_BUILD_LPR_CLI=ON
+          -DFAC_LPR_BUILD_TESTS=ON
+      - name: Build and verify Intel native outputs
+        run: |
+          set -euo pipefail
+          cmake --build build/ci-macos-x86_64 --parallel 2
+          ctest --test-dir build/ci-macos-x86_64 --output-on-failure --output-junit artifacts/reports/ctest-macos-intel.xml
+          native_lib=$(find build/ci-macos-x86_64/artifacts/lib -maxdepth 1 -type f -name 'libfac_lpr_engine*.dylib' -print -quit)
+          test -n "$native_lib"
+          lipo -archs "$native_lib" | grep -q 'x86_64'
+      - name: Upload Intel build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-intel-native-${{ github.run_id }}
+          path: |
+            build/ci-macos-x86_64/Testing/
+            artifacts/reports/ctest-macos-intel.xml
+            build/ci-macos-x86_64/artifacts/lib/
+          if-no-files-found: warn
+          retention-days: 14
+
   linux:
     if: ${{ vars.FAC_LPR_HOSTED_CI_ENABLED == 'true' }}
     name: Linux ${{ matrix.compiler }} build-test
