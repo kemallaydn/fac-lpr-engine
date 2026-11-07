@@ -86,7 +86,7 @@ jobs:
           name: macos-intel-native-${{ github.run_id }}
           path: |
             build/ci-macos-x86_64/Testing/
-          build/ci-macos-x86_64/artifacts/reports/public-fixture-regression.json
+            build/ci-macos-x86_64/artifacts/reports/public-fixture-regression.json
             artifacts/reports/ctest-macos-intel.xml
             build/ci-macos-x86_64/artifacts/lib/
           if-no-files-found: warn
