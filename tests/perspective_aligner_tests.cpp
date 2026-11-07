@@ -5,7 +5,6 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
-#include <stop_token>
 #include <vector>
 
 namespace {
@@ -65,7 +64,7 @@ TEST(PerspectiveAligner, InvalidQuadrilateralFallsBackToBoundingBox) {
 TEST(PerspectiveAligner, CancellationIsFailClosed) {
     std::vector<std::byte> bytes(120U * 60U, std::byte{0});
     const ImageView source{bytes, 120U, 60U, 120U, PixelFormat::gray8};
-    std::stop_source stop_source{};
+    fac_lpr::application::CancellationSource stop_source{};
     stop_source.request_stop();
     OperationContext context{};
     context.stop_token = stop_source.get_token();

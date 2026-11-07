@@ -1,8 +1,9 @@
 #pragma once
 
+#include <fac_lpr/application/cancellation_token.hpp>
+
 #include <chrono>
 #include <optional>
-#include <stop_token>
 #include <string_view>
 
 namespace fac_lpr::application {
@@ -15,7 +16,7 @@ public:
 };
 
 struct OperationContext final {
-    std::stop_token stop_token{};
+    CancellationToken stop_token{};
     std::optional<std::chrono::steady_clock::time_point> deadline{};
     IStageTimingSink* timing_sink{nullptr};
 
