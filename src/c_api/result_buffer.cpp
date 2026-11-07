@@ -106,6 +106,10 @@ constexpr std::size_t max_result_bytes = application::default_resource_budget.ma
             return FAC_LPR_REASON_CANDIDATE_CONFIDENCE_BELOW_ACCEPT_V1;
         case domain::RecognitionDecisionReason::conflicting_strong_candidates:
             return FAC_LPR_REASON_CONFLICTING_STRONG_CANDIDATES_V1;
+        case domain::RecognitionDecisionReason::secondary_ocr_review_suggestion:
+            return FAC_LPR_REASON_SECONDARY_OCR_REVIEW_SUGGESTION_V1;
+        case domain::RecognitionDecisionReason::accepted_cross_provider_corroboration:
+            return FAC_LPR_REASON_ACCEPTED_CROSS_PROVIDER_CORROBORATION_V1;
     }
     throw application::InternalError("unknown decision reason");
 }
