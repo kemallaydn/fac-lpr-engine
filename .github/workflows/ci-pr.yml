@@ -3,6 +3,19 @@ name: ci-pr
 on:
   pull_request:
     branches: [main, dev]
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/ci-pr.yml'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'cmake/**'
+      - 'scripts/bootstrap-dependencies.sh'
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'vcpkg.json'
+      - 'vcpkg-configuration.json'
   workflow_dispatch:
 
 permissions:
