@@ -11,6 +11,12 @@
         "png"
       ]
     },
+    {
+      "name": "libjpeg-turbo",
+      "features": [
+        "jpeg8"
+      ]
+    },
     "gtest",
     "nlohmann-json",
     "spdlog"
