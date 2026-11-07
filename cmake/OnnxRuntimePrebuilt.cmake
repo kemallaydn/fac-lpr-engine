@@ -67,6 +67,6 @@ function(fac_lpr_import_onnxruntime root)
             INTERFACE_INCLUDE_DIRECTORIES "${_ort_include}"
         )
     else()
-        message(FATAL_ERROR "Prebuilt ONNX Runtime bootstrap currently supports Windows x64, Linux x64, and macOS ARM64")
+        message(FATAL_ERROR "Prebuilt ONNX Runtime bootstrap currently supports Windows x64, Linux x64, and macOS ARM64/Intel x86_64")
     endif()
 endfunction()

@@ -29,6 +29,12 @@ case "${OS_NAME}:${ARCH_NAME}" in
     ORT_LIBRARY="${ORT_ROOT}/lib/libonnxruntime.dylib"
     ORT_SHA_FILE="${ROOT_DIR}/cmake/onnxruntime-osx-arm64.sha256"
     ;;
+  Darwin:x86_64)
+    DEFAULT_TRIPLET="x64-osx"
+    ORT_PLATFORM="osx-x86_64"
+    ORT_LIBRARY="${ORT_ROOT}/lib/libonnxruntime.dylib"
+    ORT_SHA_FILE="${ROOT_DIR}/cmake/onnxruntime-osx-x86_64.sha256"
+    ;;
   *)
     echo "Unsupported bootstrap platform: ${OS_NAME}/${ARCH_NAME}" >&2
     exit 2

@@ -78,6 +78,13 @@ Expected plate text future regression'a uydurulmak için gevşetilmemelidir.
 
 ## Validation evidence
 
+### macOS Intel x86_64 target — implementation present, validation pending
+
+- Dependency bootstrap now selects the official ONNX Runtime macOS x86_64 release asset and the `x64-osx` vcpkg triplet on Intel Macs.
+- `macos-x86_64` CMake preset and a `macos-15-intel` CI lane were added for native build/test verification.
+- This local Apple Silicon session did not run the Intel lane. No Intel runtime or FAC Access Intel installer has been validated; keep customer support claims gated until exact-head CI passes and the complete x64 Paddle OCR + Device Service payload is exercised on Intel hardware.
+- PaddlePaddle 3.3.1 has no macOS x86_64 wheel in the official PyPI release. PaddlePaddle 3.0.0 does publish a CPython 3.13 Intel wheel, but the current PaddleOCR 3.7 worker/model combination must pass its real OCR regression suite before that older engine is used in an Intel release.
+
 Promote edilen runtime candidate için doğrulanan başlıca gate'ler:
 
 - Linux x64 Debug/Release full Docker validation: success;
