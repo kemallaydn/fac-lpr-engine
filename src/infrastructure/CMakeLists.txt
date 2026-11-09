@@ -31,6 +31,7 @@ if(FAC_LPR_WITH_PADDLE_HTTP_WORKER)
     find_package(CURL REQUIRED)
     find_package(nlohmann_json CONFIG REQUIRED)
     target_sources(fac_lpr_paddle_adapter PRIVATE paddle/curl_paddle_ocr_worker.cpp)
+    target_compile_definitions(fac_lpr_paddle_adapter PRIVATE NOMINMAX)
     target_link_libraries(fac_lpr_paddle_adapter PRIVATE
         CURL::libcurl nlohmann_json::nlohmann_json)
     target_compile_definitions(fac_lpr_paddle_adapter PUBLIC FAC_LPR_WITH_PADDLE_HTTP_WORKER=1)
